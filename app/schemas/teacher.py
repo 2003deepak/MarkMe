@@ -2,8 +2,9 @@ from beanie import Document, Indexed, before_event, Insert, Update
 from pydantic import EmailStr, HttpUrl, Field, field_validator
 from typing import List, Optional
 from passlib.context import CryptContext
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
+import random
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -14,13 +15,16 @@ class Teacher(Document):
     last_name: str = Field(..., alias="lastName")
     profile_picture: Optional[HttpUrl] = Field(None, alias="profilePicture")
     email: Indexed(EmailStr)
-    password: str
+    password: str  # 6-digit PIN
     phone: str
     departments: List[str]
     title: str
     subjects_assigned: List[str] = Field(default_factory=list, alias="subjectsAssigned")  # ObjectId as string
-    password_reset_token: Optional[str] = Field(None, alias="passwordResetToken")
-    password_reset_expires: Optional[float] = Field(None, alias="passwordResetExpires")
+
+    # OTP fields for password reset
+    password_reset_otp: Optional[str] = Field(None, alias="passwordResetOtp")
+    password_reset_otp_expires: Optional[datetime] = Field(None, alias="passwordResetOtpExpires")
+
     created_at: Optional[float] = Field(None, alias="createdAt")
     updated_at: Optional[float] = Field(None, alias="updatedAt")
 
@@ -66,8 +70,25 @@ class Teacher(Document):
     async def hash_password(self):
         if self.password and (self.is_modified("password") or self.is_new):
             self.password = pwd_context.hash(self.password)
-            self.password_reset_token = None
-            self.password_reset_expires = None
+            # Clear OTP fields on password change
+            self.password_reset_otp = None
+            self.password_reset_otp_expires = None
+
+    # OTP management methods
+    def generate_otp(self, expiry_minutes: int = 10) -> str:
+        otp = f"{random.randint(100000, 999999)}"  # 6-digit OTP
+        self.password_reset_otp = otp
+        self.password_reset_otp_expires = datetime.utcnow() + timedelta(minutes=expiry_minutes)
+        return otp
+
+    def verify_otp(self, otp: str) -> bool:
+        if (
+            self.password_reset_otp is None
+            or self.password_reset_otp_expires is None
+            or datetime.utcnow() > self.password_reset_otp_expires
+        ):
+            return False
+        return otp == self.password_reset_otp
 
     class Settings:
         name = "teachers"

@@ -1,4 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+
 
 class Settings(BaseSettings):
     # MongoDB settings
@@ -13,14 +15,13 @@ class Settings(BaseSettings):
     # Redis settings
     REDIS_HOST: str 
     REDIS_PORT: int 
-    REDIS_DB: int 
 
     # Project settings
     PROJECT_NAME: str = "Your FastAPI Project"
     API_V1_STR: str = "/api/v1"
 
     # Environment (development, production, testing)
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str 
 
     # Load environment variables from .env file
     model_config = SettingsConfigDict(

@@ -2,7 +2,9 @@ from beanie import Document, Indexed, before_event, Insert, Update
 from pydantic import EmailStr, HttpUrl, Field, field_validator
 from typing import Optional
 from passlib.context import CryptContext
-from datetime import datetime
+from datetime import datetime, timedelta
+import random
+import re
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -11,19 +13,21 @@ class Clerk(Document):
     middle_name: Optional[str] = Field(None, alias="middleName")
     last_name: str = Field(..., alias="lastName")
     email: Indexed(EmailStr)
-    password: str
+    password: str  # 6-digit numeric PIN
     department: str
     phone: str
     profile_picture: Optional[HttpUrl] = Field(None, alias="profilePicture")
-    password_reset_token: Optional[str] = Field(None, alias="passwordResetToken")
-    password_reset_expires: Optional[float] = Field(None, alias="passwordResetExpires")
+
+    # OTP fields for password reset
+    password_reset_otp: Optional[str] = Field(None, alias="passwordResetOtp")
+    password_reset_otp_expires: Optional[datetime] = Field(None, alias="passwordResetOtpExpires")
+
     created_at: Optional[float] = Field(None, alias="createdAt")
     updated_at: Optional[float] = Field(None, alias="updatedAt")
 
     @field_validator("phone")
     @classmethod
     def validate_phone(cls, v):
-        import re
         if not re.match(r"^\d{10}$", v):
             raise ValueError("Phone number must be 10 digits")
         return v
@@ -31,7 +35,6 @@ class Clerk(Document):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v):
-        import re
         if not re.match(r"^\d{6}$", v):
             raise ValueError("Password must be a 6-digit numeric PIN")
         return v
@@ -50,6 +53,25 @@ class Clerk(Document):
     async def hash_password(self):
         if self.password and (self.is_modified("password") or self.is_new):
             self.password = pwd_context.hash(self.password)
+            # Clear OTP fields on password change
+            self.password_reset_otp = None
+            self.password_reset_otp_expires = None
+
+    # OTP management methods
+    def generate_otp(self, expiry_minutes: int = 10) -> str:
+        otp = f"{random.randint(100000, 999999)}"  # 6-digit OTP
+        self.password_reset_otp = otp
+        self.password_reset_otp_expires = datetime.utcnow() + timedelta(minutes=expiry_minutes)
+        return otp
+
+    def verify_otp(self, otp: str) -> bool:
+        if (
+            self.password_reset_otp is None
+            or self.password_reset_otp_expires is None
+            or datetime.utcnow() > self.password_reset_otp_expires
+        ):
+            return False
+        return otp == self.password_reset_otp
 
     class Settings:
         name = "clerks"

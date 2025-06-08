@@ -5,9 +5,10 @@ from datetime import datetime
 
 class Subject(Document):
     subject_code: Indexed(str) = Field(..., alias="subjectCode")
-    name: str
+    subject_name: str
     department: str
     semester: int
+    program :str 
     type: str
     credit_hours: int = Field(..., alias="creditHours")
     teacher_assigned: List[str] = Field(..., alias="teacherAssigned")  # ObjectId as string
