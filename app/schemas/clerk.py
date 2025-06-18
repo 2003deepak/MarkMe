@@ -13,7 +13,7 @@ class Clerk(Document):
     middle_name: Optional[str] = Field(None, alias="middleName")
     last_name: str = Field(..., alias="lastName")
     email: Indexed(EmailStr)
-    password: str  # 6-digit numeric PIN
+    password: Optional[str] = None # 6-digit numeric PIN
     department: str
     phone: str
     profile_picture: Optional[HttpUrl] = Field(None, alias="profilePicture")
@@ -35,7 +35,11 @@ class Clerk(Document):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v):
-        if not re.match(r"^\d{6}$", v):
+        if v is None:
+            return v  
+        if v.startswith("$2b$"):
+            return v
+        if not re.match(r"\d{6}", v):
             raise ValueError("Password must be a 6-digit numeric PIN")
         return v
 
@@ -51,7 +55,7 @@ class Clerk(Document):
 
     @before_event(Insert, Update)
     async def hash_password(self):
-        if self.password and (self.is_modified("password") or self.is_new):
+        if self.password :
             self.password = pwd_context.hash(self.password)
             # Clear OTP fields on password change
             self.password_reset_otp = None

@@ -9,6 +9,7 @@ from app.schemas.exception_timetable import ExceptionTimetable, SlotReference, N
 from app.schemas.student import Student
 from app.schemas.subject import Subject
 from app.schemas.attendance import Attendance
+from app.schemas.otp import OTP
 
 # Global client to hold the MongoDB connection
 client: Optional[AsyncIOMotorClient] = None
@@ -38,7 +39,8 @@ async def init_db():
             NewSlot,
             Student,
             Subject,
-            Attendance
+            Attendance,
+            OTP
         ]
     )
 

@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     REDIS_HOST: str 
     REDIS_PORT: int 
 
+    # Mail settings    
+    MAIL_USERNAME: str
+    MAIL_PASSWORD: str
+    MAIL_FROM: str
+    MAIL_PORT: int
+    MAIL_SERVER: str
+
     # Project settings
     PROJECT_NAME: str = "Your FastAPI Project"
     API_V1_STR: str = "/api/v1"
@@ -30,6 +37,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore"
     )
+
 
 # Instantiate settings
 settings = Settings()

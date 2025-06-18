@@ -15,7 +15,7 @@ class Teacher(Document):
     last_name: str = Field(..., alias="lastName")
     profile_picture: Optional[HttpUrl] = Field(None, alias="profilePicture")
     email: Indexed(EmailStr)
-    password: str  # 6-digit PIN
+    password: Optional[str] = None # 6-digit numeric PIN
     phone: str
     departments: List[str]
     title: str
@@ -68,7 +68,7 @@ class Teacher(Document):
 
     @before_event(Insert, Update)
     async def hash_password(self):
-        if self.password and (self.is_modified("password") or self.is_new):
+        if self.password:
             self.password = pwd_context.hash(self.password)
             # Clear OTP fields on password change
             self.password_reset_otp = None

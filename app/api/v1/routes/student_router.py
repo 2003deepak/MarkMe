@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+from app.services.student import register_student
+from fastapi import Body
 
 router = APIRouter()
 
@@ -10,3 +12,8 @@ router = APIRouter()
 
 
 # @router.post("/register")
+
+
+@router.post("/register")
+async def register_student_route(data: dict = Body(...)):
+    return await register_student(data)

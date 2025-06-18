@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
+from pydantic import BaseModel, EmailStr
+from app.services.auth import login_user, send_otp, reset_user_password
 
 router = APIRouter()
 
@@ -31,3 +33,30 @@ router = APIRouter()
 # save the new pin in the database
 
 # @router.post("/resetPassword")
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+    role: str
+
+@router.post("/login")
+async def login(payload: LoginRequest):
+    return await login_user(payload)
+
+class ForgotPasswordRequest(BaseModel):
+    email_or_phone: str
+
+@router.post("/forgotPassword")
+async def forgot_password(payload: ForgotPasswordRequest):
+    return await send_otp(payload.email_or_phone)
+
+class ResetPasswordRequest(BaseModel):
+    email_or_phone: str
+    otp: str
+    new_password: str
+
+@router.post("/resetPassword")
+async def reset_password(payload: ResetPasswordRequest):
+    return await reset_user_password(payload.email_or_phone, payload.otp, payload.new_password)
+

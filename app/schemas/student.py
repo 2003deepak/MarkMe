@@ -84,7 +84,7 @@ class Student(Document):
 
     @before_event(Insert, Update)
     async def hash_password(self):
-        if self.password and (self.is_modified("password") or self.is_new):
+        if self.password:
             self.password = pwd_context.hash(self.password)
             # Clear OTP on password change
             self.password_reset_otp = None
