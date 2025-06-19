@@ -1,29 +1,29 @@
-from fastapi import APIRouter, Depends
-from app.services.clerk import create_subject, create_teacher
-from fastapi import Body
+from fastapi import APIRouter, Depends, Body
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.services.clerk_services.create_teacher import create_teacher
+from app.services.clerk_services.create_subject import create_subject
+from app.middleware.is_logged_in import is_logged_in
 
-
-router = APIRouter()
-
-
-# Ask for subject name, subject code, department, semester, program ,  # type (Lecture/Lab), credit hours
-# Save the subject in the database
-
-# @router.post("/subject/create")
-
-
-
-# Ask for first name, middle_name , last name, email, mobile number, password ( generate random ), dob, roll number, department, title , subject assiggned ( array fo subjects )
-
-# @router.post("/teacher/create")
-
+# --- Pydantic Imports
+from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest
 
 router = APIRouter()
+security = HTTPBearer()  # Define security scheme
 
 @router.post("/subject/create")
-async def create_subject_route(data: dict = Body(...)):
-    return await create_subject(data)
+async def create_subject_route(
+    request: CreateSubjectRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    
+    return await create_subject(request,user_data)
 
 @router.post("/teacher/create")
-async def create_teacher_route(data: dict = Body(...)):
-    return await create_teacher(data)
+async def create_teacher_route(
+    request: TeacherRegisterRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+   
+    return await create_teacher(request,user_data)

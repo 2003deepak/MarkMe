@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import auth_router,student_router,admin_router,clerk_router,system_router
-from app.core.database import init_db, close_db  
-from app.core.config import settings  # Import settings
+from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router
+from app.core.database import init_db, close_db
+from app.core.config import settings
 
 # Initialize FastAPI app
 app = FastAPI(
-    title=settings.PROJECT_NAME,  # Use from config.py
+    title=settings.PROJECT_NAME,
     description="A FastAPI project",
     version="1.0.0"
 )
@@ -21,11 +21,11 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(auth_router.router, prefix="/api/v1/auth")
-app.include_router(system_router.router, prefix="/api/v1/system")
-app.include_router(student_router.router, prefix="/api/v1/student")
-app.include_router(admin_router.router, prefix="/api/v1/admin")
-app.include_router(clerk_router.router, prefix="/api/v1/clerk")
+app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(system_router.router, prefix="/api/v1/system", tags=["System Check"])
+app.include_router(student_router.router, prefix="/api/v1/student", tags=["Students"])
+app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(clerk_router.router, prefix="/api/v1/clerk", tags=["Clerk"])
 
 # Startup event to initialize database
 @app.on_event("startup")

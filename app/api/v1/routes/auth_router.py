@@ -1,62 +1,38 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException,Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from app.core.config import settings
 from pydantic import BaseModel, EmailStr
-from app.services.auth import login_user, send_otp, reset_user_password
+from app.middleware.is_logged_in import is_logged_in
+from app.services.auth_services.auth import login_user, request_password_reset, reset_user_password
+
+# --- Pydantics Model Import ----- 
+from app.models.allModel import LoginRequest , ForgotPasswordRequest,ResetPasswordRequest
 
 router = APIRouter()
+security = HTTPBearer()  
 
 
-# User logins to the system , whether it is a student/admin/teacher/clerk 
-# Take email and password and role as input
-# If sucessful, return a token and json response 
-# I want JSON response to be like this: 
-# { status: 'fail', message: 'Invalid Username or Password' }
-# { status: 'success', message: 'User logged in successfully', data : "any data to send back"}
-
-
-# @router.post("/login")
-
-
-# Ask user for his regsitered email address/Mobile Numer
-# If email or mobile number is not registered, return a message saying "Email or Mobile Number not registered"
-# If registered, send a 6-digit OTP to the email or mobile number
-# Save the OTP in the database with an expiry time of 5 minutes
-
-# @router.post("/forgotPassword")
-
-
-
-# Ask user for the OTP sent to his email or mobile number
-# If OTP is correct, allow user to reset password
-# Ask for new 6 digit pin 
-# save the new pin in the database
-
-# @router.post("/resetPassword")
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-    role: str
 
 @router.post("/login")
-async def login(payload: LoginRequest):
-    return await login_user(payload)
+async def login(request : LoginRequest):
+    return await login_user(request)
 
-class ForgotPasswordRequest(BaseModel):
-    email_or_phone: str
+
+@router.post("/logout")
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(security), 
+    user_data: dict = Depends(is_logged_in)  
+):
+    return {"status": "success", "message": "Logout successful"}
+
 
 @router.post("/forgotPassword")
-async def forgot_password(payload: ForgotPasswordRequest):
-    return await send_otp(payload.email_or_phone)
+async def forgot_password(request: ForgotPasswordRequest):
+    return await request_password_reset(request)
 
-class ResetPasswordRequest(BaseModel):
-    email_or_phone: str
-    otp: str
-    new_password: str
 
 @router.post("/resetPassword")
-async def reset_password(payload: ResetPasswordRequest):
-    return await reset_user_password(payload.email_or_phone, payload.otp, payload.new_password)
+async def reset_password(request: ResetPasswordRequest):
+    return await reset_user_password(request)
 

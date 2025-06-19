@@ -13,13 +13,3 @@ conf = ConnectionConfig(
     USE_CREDENTIALS = True,
     VALIDATE_CERTS = True
 )
-
-async def send_email(subject: str, email_to: EmailStr, body: str):
-    message = MessageSchema(
-        subject=subject,
-        recipients=[email_to],
-        body=body,
-        subtype="html"
-    )
-    fm = FastMail(conf)
-    await fm.send_message(message)

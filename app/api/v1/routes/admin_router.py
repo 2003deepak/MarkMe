@@ -1,13 +1,17 @@
-from fastapi import APIRouter, Depends
-from app.services.admin import create_clerk
-from fastapi import Body
+from fastapi import APIRouter, Depends, Body
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.services.admin_services.create_clerk import create_clerk
+from app.middleware.is_logged_in import is_logged_in
+from app.models.allModel import CreateClerkRequest
 
 router = APIRouter()
-
-
-# Ask first name, middle_name , last name, email, mobile number, 6 digit pin ( generate random) , department
-# Create a clerk account with the above details and send confirmation email to him 
+security = HTTPBearer()  # Define security scheme
 
 @router.post("/clerk/create")
-async def create_clerk_route(data: dict = Body(...)):
-    return await create_clerk(data)
+async def create_clerk_route(
+    request: CreateClerkRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    
+    return await create_clerk(request,user_data)
