@@ -20,7 +20,7 @@ class Student(BaseModel):
     department: str
     semester: int
     batch_year: int 
-    face_embedding: List[float] 
+    face_embedding: Optional[List[float]] = None
     password_reset_otp: Optional[str] = None
     password_reset_otp_expires: Optional[datetime] = None
 
@@ -54,11 +54,15 @@ class Student(BaseModel):
             raise ValueError("Batch year must be between 2000 and 2100")
         return v
 
+    
     @field_validator("face_embedding")
     def validate_face_embedding(cls, v):
-        if len(v) != 0 and len(v) != 512:
+        if v is None or v == []:  # Accept both None and empty list
+            return None
+        if not isinstance(v, list) or len(v) != 512:
             raise ValueError("faceEmbedding must be a 512-dimensional vector")
         return v
+
 
     @field_validator("dob")
     def validate_dob(cls, v):
@@ -80,6 +84,7 @@ class StudentRepository:
     async def _ensure_indexes(self):
         await self.collection.create_index("student_id", unique=True)
         await self.collection.create_index("email", unique=True)
+        await self.collection.create_index("roll_number", unique=True)  
         await self.collection.create_index([("department", 1), ("semester", 1), ("batch_year", 1)])
         await self.collection.create_index("created_at")
         await self.collection.create_index("updated_at")

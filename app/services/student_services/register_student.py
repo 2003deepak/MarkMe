@@ -2,50 +2,40 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import get_db
 from datetime import datetime
 from passlib.context import CryptContext
-from app.utils.extract_student_embedding import extract_student_embedding
 from app.schemas.student import Student, StudentRepository
 from pydantic import ValidationError
 from typing import List
+from app.utils.publisher import send_to_queue  # NEW: publisher for RabbitMQ
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def register_student(student_data: Student, images: List[UploadFile]):
     try:
-        # Get database connection
         db = get_db()
         repo = StudentRepository(db.client, db.name)
 
-        # Check if student exists
+        # Check if student already exists
         if await db.students.find_one({"email": student_data.email}):
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "status": "fail",
-                    "message": "Student already exists"
-                }
-            )
-
-        # Generate face embedding
-        try:
-            face_embedding = await extract_student_embedding(images)
-            face_embedding_list = face_embedding.tolist()
-        except Exception as e:
-            print(f"Face embedding error: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "status": "fail",
-                    "message": "Error processing face embeddings"
-                }
+                detail={"status": "fail", "message": "Student already exists"}
             )
 
         # Generate student ID
         student_id = f"{student_data.program.upper()}-{student_data.department.upper()}-{student_data.batch_year}-{student_data.semester}-{student_data.roll_number}"
 
-        # Hash the password
+        # Hash password
         hashed_password = pwd_context.hash(str(student_data.password))
 
-        # Create student document
+        # Save images temporarily to disk
+        image_paths = []
+        for image in images:
+            path = f"/tmp/{student_id}_{image.filename}"
+            with open(path, "wb") as f:
+                f.write(await image.read())
+            image_paths.append(path)
+
+        # Create student record with empty embedding
         student_doc = Student(
             student_id=student_id,
             first_name=student_data.first_name,
@@ -54,21 +44,37 @@ async def register_student(student_data: Student, images: List[UploadFile]):
             email=student_data.email,
             password=hashed_password,
             phone=student_data.phone,
-            dob=student_data.dob,  # Keep as datetime, validate in model
+            dob=student_data.dob,
             roll_number=student_data.roll_number,
             program=student_data.program,
             department=student_data.department,
             semester=student_data.semester,
             batch_year=student_data.batch_year,
-            face_embedding=face_embedding_list,
+            face_embedding=None  # initially None
         )
 
-        # Convert to dict and apply timestamps
         student_dict = student_doc.dict()
         student_dict = await repo._apply_timestamps(student_dict)
-
-        # Insert document
         await db.students.insert_one(student_dict)
+
+        # ✅ Send Welcome Email Task to Queue
+        await send_to_queue("email_queue", {
+            "type": "send_email",
+            "data": {
+                "to": student_data.email,
+                "subject": "Welcome to MarkMe!",
+                "body": f"Hello {student_data.first_name}, your registration is successful!"
+            }
+        }, priority=5)  # Medium priority for email
+
+        # ✅ Send Embedding Generation Task to Queue
+        await send_to_queue("embedding_queue", {
+            "type": "generate_embedding",
+            "data": {
+                "student_id": student_id,
+                "image_paths": image_paths
+            }
+        }, priority=2)  # Low priority for embedding
 
         return {
             "status": "success",
@@ -82,7 +88,7 @@ async def register_student(student_data: Student, images: List[UploadFile]):
 
     except ValidationError as e:
         error = e.errors()[0]
-        loc = ".".join(str(x) for x in error["loc"])  # Convert loc to string
+        loc = ".".join(str(x) for x in error["loc"])
         msg = error["msg"]
         error_msg = f"Invalid {loc}: {msg.lower()}"
         if loc == "password" and "string_too_long" in str(error["type"]):
@@ -92,19 +98,14 @@ async def register_student(student_data: Student, images: List[UploadFile]):
 
         raise HTTPException(
             status_code=422,
-            detail={
-                "status": "fail",
-                "message": error_msg
-            }
+            detail={"status": "fail", "message": error_msg}
         )
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"Student Creation error: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail={
-                "status": "fail",
-                "message": f"Error registering student: {str(e)}"
-            }
+            detail={"status": "fail", "message": f"Error registering student: {str(e)}"}
         )

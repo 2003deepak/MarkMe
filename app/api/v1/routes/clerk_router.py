@@ -27,3 +27,44 @@ async def create_teacher_route(
 ):
    
     return await create_teacher(request,user_data)
+
+
+
+# In this route , i want that clerk can create a timetable for a specific program and specific semester
+# In the function , validate that current role is clerk and then proceed to create the timetable
+# The request should academic_year,department,program,semester,class_name and schedule ( List of Session ( Pydantic Model) )
+
+# The Session Pydantic Model should have the following fields: start_time, end_time, subject, teacher (_id) , room ( _id) 
+
+# Expected JSON structure :- 
+
+# {
+#   "academicYear": "2024",
+#   "department": "BTECH",
+#   "program": "MCA",
+#   "semester": "1",
+#   "schedule": {
+#     "Monday": [
+#       {
+#         "startTime": "09:00",
+#         "endTime": "10:30",
+#         "subject": "507f1f77bcf86cd799439011", // Math ID
+#         "teacher": "507f1f77bcf86cd799439012"  // Prof. X ID
+#       },
+#       // More sessions...
+#     ],
+#     // Other days...
+#   }
+# }
+
+
+# @router.post("/timetable/create")
+# async def create_timetable(
+#     request: DefinePydanticModel,  # Replace with your actual Pydantic model
+#     credentials: HTTPAuthorizationCredentials = Depends(security),
+#     user_data: dict = Depends(is_logged_in)
+# ):
+
+
+   
+    

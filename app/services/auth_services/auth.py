@@ -7,8 +7,7 @@ from typing import Optional
 from app.utils.security import verify_password , create_access_token , get_password_hash
 from app.core.database import get_db
 import random
-from app.schemas.otp import OTP
-from app.utils.send_email import send_email
+from app.utils.publisher import send_to_queue
 
 
 async def login_user(request):
@@ -101,12 +100,16 @@ async def request_password_reset(request):
         )
 
     # send email to registered mail
+    await send_to_queue("email_queue", {
+            "type": "send_email",
+            "data": {
+                "to": request.email,
+                "subject": "Your OTP for Password Reset",
+                "body": f"<p>Your OTP is <strong>{otp}</strong>. It will expire in 5 minutes.</p>"
+            }
+        }, priority=10)  # High priority for email
 
-    await send_email(
-        subject="Your OTP for Password Reset",
-        email_to=request.email,
-        body=f"<p>Your OTP is <strong>{otp}</strong>. It will expire in 5 minutes.</p>"
-    )
+    
     
 
     return {

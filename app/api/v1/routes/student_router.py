@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Form, UploadFile, File, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.student_services.register_student import register_student
 from app.schemas.student import Student
 from app.models.allModel import StudentRegisterRequest
 from pydantic import ValidationError
 from typing import List
 from datetime import date
+from app.middleware.is_logged_in import is_logged_in
+
+
 
 router = APIRouter()
 
@@ -86,3 +90,39 @@ async def register_student_route(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+
+# In this route, I want to get the details of the logged-in student.
+# The function should return the student's email and other details.
+# The user_data should be fetched from the is_logged_in dependency, which checks the JWT token
+# and returns the user data.
+# Check the role of the user in user_data and ensure it is a student.
+# The response should be a JSON object with the student's details.
+
+
+# @router.get("/me")
+# async def get_me(
+#     request: , # Just ask for email of the student , Create a Pydantic Model for this
+#     credentials: HTTPAuthorizationCredentials = Depends(security),
+#     user_data: dict = Depends(is_logged_in)
+# ):
+   
+#     return await function(request,user_data)
+
+
+
+# In this route, I want to update the profile of the logged-in student.
+# The request should contain the fields that can be updated :- 
+# first_name , middle_name , last_name , email , profile_picture , dob , phone 
+# The user_data should be fetched from the is_logged_in dependency, which checks the JWT token
+# and returns the user data.
+# Check the role of the user in user_data and ensure it is a student.
+
+#router.put("/me/update-profile")
+# async def update_profile(
+#     request: UpdateProfileRequest,  # Define this Pydantic model for profile updates
+#     credentials: HTTPAuthorizationCredentials = Depends(security),
+#     user_data: dict = Depends(is_logged_in)
+# ):
+
+#     return await function(request,user_data)

@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     MAIL_PORT: int
     MAIL_SERVER: str
 
+    # RabbitMQ settings
+    RABBITMQ_URL: str 
+
     # Project settings
     PROJECT_NAME: str = "Your FastAPI Project"
     API_V1_STR: str = "/api/v1"

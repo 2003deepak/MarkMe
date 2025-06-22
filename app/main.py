@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router
 from app.core.database import init_db, close_db
 from app.core.config import settings
+from app.core.rabbit_setup import setup_rabbitmq
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -31,7 +32,9 @@ app.include_router(clerk_router.router, prefix="/api/v1/clerk", tags=["Clerk"])
 @app.on_event("startup")
 async def startup_event():
     print("📦 Connecting to DB...")
+    print("🔄 Initializing Rabbit MQ...")
     await init_db()
+    await setup_rabbitmq()
 
 # Shutdown event to close database connection
 @app.on_event("shutdown")

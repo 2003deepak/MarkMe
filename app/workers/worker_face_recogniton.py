@@ -1,0 +1,1 @@
+print("Face recognition worker initialized")
