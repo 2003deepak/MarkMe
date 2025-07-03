@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException
+from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.student_services.register_student import register_student
+from app.services.student_services.get_student_detail import get_student_detail
+from app.services.student_services.update_student_profile import update_student_profile
 from app.schemas.student import Student
-from app.models.allModel import StudentRegisterRequest
-from pydantic import ValidationError
-from typing import List
+from pydantic import ValidationError, BaseModel
+from typing import List, Optional
 from datetime import date
+import json
 from app.middleware.is_logged_in import is_logged_in
 
-
+# -- Pydantic Model Import
+from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest # Assuming UpdateProfileRequest is in allModel
 
 router = APIRouter()
+security = HTTPBearer()  # Define security scheme
+
 
 @router.post("/register")
 async def register_student_route(
@@ -90,39 +95,54 @@ async def register_student_route(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-    
-
-# In this route, I want to get the details of the logged-in student.
-# The function should return the student's email and other details.
-# The user_data should be fetched from the is_logged_in dependency, which checks the JWT token
-# and returns the user data.
-# Check the role of the user in user_data and ensure it is a student.
-# The response should be a JSON object with the student's details.
 
 
-# @router.get("/me")
-# async def get_me(
-#     request: , # Just ask for email of the student , Create a Pydantic Model for this
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-   
-#     return await function(request,user_data)
+@router.get("/me")
+async def get_me(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    # Ensure the user is a student (example role check)
+    if user_data.get("role") != "student":
+        raise HTTPException(status_code=403, detail="Access denied: Not a student.")
+    return await get_student_detail(user_data)
 
 
+@router.put("/me/update-profile")
+async def update_profile(
 
-# In this route, I want to update the profile of the logged-in student.
-# The request should contain the fields that can be updated :- 
-# first_name , middle_name , last_name , email , profile_picture , dob , phone 
-# The user_data should be fetched from the is_logged_in dependency, which checks the JWT token
-# and returns the user data.
-# Check the role of the user in user_data and ensure it is a student.
+    first_name: Optional[str] = Form(None),
+    middle_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    dob: Optional[str] = Form(None, description="Date of birth in YYYY-MM-DD format"),
+    profile_picture: Optional[UploadFile] = File(None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    # Ensure the user is a student
+    if user_data.get("role") != "student":
+        raise HTTPException(status_code=403, detail="Access denied: Not a student.")
 
-#router.put("/me/update-profile")
-# async def update_profile(
-#     request: UpdateProfileRequest,  # Define this Pydantic model for profile updates
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
+    try:
+        # Create UpdateProfileRequest object from form data
+        update_request_data = UpdateProfileRequest(
+            first_name=first_name,
+            middle_name=middle_name,
+            last_name=last_name,
+            phone=phone,
+            dob=dob,
+        )
 
-#     return await function(request,user_data)
+        return await update_student_profile(
+            request_data=update_request_data,
+            user_data=user_data,
+            profile_picture=profile_picture
+        )
+    except ValidationError as e:
+        # Pydantic validation errors from UpdateProfileRequest
+        raise HTTPException(status_code=422, detail=json.loads(e.json()))
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")

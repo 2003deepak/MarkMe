@@ -4,6 +4,7 @@ from datetime import datetime
 from passlib.context import CryptContext
 from app.schemas.student import Student, StudentRepository
 from pydantic import ValidationError
+from app.utils.security import get_password_hash
 from typing import List
 from app.utils.publisher import send_to_queue  # NEW: publisher for RabbitMQ
 
@@ -25,7 +26,7 @@ async def register_student(student_data: Student, images: List[UploadFile]):
         student_id = f"{student_data.program.upper()}-{student_data.department.upper()}-{student_data.batch_year}-{student_data.semester}-{student_data.roll_number}"
 
         # Hash password
-        hashed_password = pwd_context.hash(str(student_data.password))
+        hashed_password = get_password_hash(str(student_data.password))
 
         # Save images temporarily to disk
         image_paths = []

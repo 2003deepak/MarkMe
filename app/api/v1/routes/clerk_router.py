@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, Body
+from app.schemas.timetable import Timetable
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
+from app.services.clerk_services.add_timetable import add_timetable
 from app.middleware.is_logged_in import is_logged_in
 
 # --- Pydantic Imports
@@ -58,13 +60,15 @@ async def create_teacher_route(
 # }
 
 
-# @router.post("/timetable/create")
-# async def create_timetable(
-#     request: DefinePydanticModel,  # Replace with your actual Pydantic model
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
 
+@router.post("/timetable/create")
+async def create_timetable(
+    request: Timetable,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    
+    return await add_timetable(request,user_data)
 
    
     

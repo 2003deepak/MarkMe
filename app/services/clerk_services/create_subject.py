@@ -19,6 +19,7 @@ async def create_subject(request,user_data):
         # Get database connection
         db = get_db()
         repo = SubjectRepository(db.client, db.name)
+        await repo._ensure_indexes()
 
         # Validate request using Subject model
         subject_data = Subject(
@@ -33,7 +34,7 @@ async def create_subject(request,user_data):
         )
 
         # Check if subject exists
-        if await db.subjects.find_one({"subject_code": subject_data.subject_code.upper()}):
+        if await db.subjects.find_one({"subject_code": subject_data.subject_code.upper(),"type": subject_data.type}):
             raise HTTPException(
                 status_code=400,
                 detail={

@@ -6,14 +6,11 @@ import re
 from datetime import datetime
 
 
-
-
 # Pydantic model for Session
 class Session(BaseModel):
     start_time: str = Field(...)  # Format: "HH:MM"
     end_time: str = Field(...)    # Format: "HH:MM"
     subject: str              # Reference to Subject ID
-    teacher: str              # Reference to Teacher ID
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -31,14 +28,15 @@ class Session(BaseModel):
     @field_validator("end_time")
     @classmethod
     def validate_time_order(cls, end_time, values):
-        if "start_time" in values:
-            start = datetime.strptime(values["start_time"], "%H:%M")
+        # Ensure start_time is present in values.data before accessing it
+        if "start_time" in values.data:
+            start = datetime.strptime(values.data["start_time"], "%H:%M")
             end = datetime.strptime(end_time, "%H:%M")
             if end <= start:
                 raise ValueError("End time must be after start time")
         return end_time
     
-    @field_validator("subject", "teacher")
+    @field_validator("subject")
     @classmethod
     def validate_object_id(cls, v):
         if not ObjectId.is_valid(v):
@@ -73,7 +71,6 @@ class TimetableRepository:
         self.db = client[db_name]
         self.timetables = self.db["timetables"]
         self.subjects = self.db["subjects"]
-        self.teachers = self.db["teachers"]
 
     async def ensure_indexes(self):
         """Create necessary indexes."""
@@ -86,14 +83,11 @@ class TimetableRepository:
         )
 
     async def validate_references(self, session: Session):
-        """Validate subject and teacher references exist."""
-        subject_id = ObjectId(session.subject.id)
-        teacher_id = ObjectId(session.teacher.id)
+        """
+        Validate subject reference exists.
+        The Session model's subject field is directly the ObjectId string.
+        """
+        # Access session.subject directly, as it is already the ObjectId string
+        subject_id = ObjectId(session.subject) 
         if not await self.subjects.find_one({"_id": subject_id}):
-            raise ValueError(f"Subject with ID {session.subject.id} does not exist")
-        if not await self.teachers.find_one({"_id": teacher_id}):
-            raise ValueError(f"Teacher with ID {session.teacher.id} does not exist")
-
-
-
-   
+            raise ValueError(f"Subject with ID {session.subject} does not exist")

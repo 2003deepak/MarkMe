@@ -29,9 +29,7 @@ class SlotReference(Document):
 class NewSlot(Document):
     start_time: str = Field(..., alias="startTime")
     end_time: str = Field(..., alias="endTime")
-    subject: str  # ObjectId as string
-    teacher: str  # ObjectId as string
-    room: str
+   
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -53,13 +51,11 @@ class ExceptionTimetable(Document):
     action: str
     slot_reference: Optional[SlotReference] = Field(None, alias="slotReference")
     new_slot: Optional[NewSlot] = Field(None, alias="newSlot")
-    created_at: Optional[float] = Field(None, alias="createdAt")
-    updated_at: Optional[float] = Field(None, alias="updatedAt")
-
+   
     @field_validator("action")
     @classmethod
     def validate_action(cls, v):
-        if v not in ["Cancel", "Add"]:
+        if v not in ["Cancel", "Rescheduled" , "Add"]:
             raise ValueError("Action must be either 'Cancel' or 'Add'")
         return v
 

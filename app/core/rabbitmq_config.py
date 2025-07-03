@@ -5,6 +5,7 @@ class RabbitMQSettings(BaseSettings):
     email_queue: str = "email_queue"
     embedding_queue: str = "embedding_queue"
     face_queue: str = "face_recog_queue"
+    session_queue : str = "session_queue"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     MAIL_SERVER: str
 
     # RabbitMQ settings
-    RABBITMQ_URL: str 
+    RABBITMQ_URL: str
+
+    #ImageKitIO Settings
+    IMAGEKIT_PUBLIC_KEY: str
+    IMAGEKIT_PRIVATE_KEY: str
+    IMAGEKIT_URL_ENDPOINT: str 
 
     # Project settings
     PROJECT_NAME: str = "Your FastAPI Project"

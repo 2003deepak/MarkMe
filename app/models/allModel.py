@@ -1,10 +1,11 @@
-from pydantic import BaseModel, EmailStr , constr ,Field, field_validator
+from pydantic import BaseModel, EmailStr,Field
 from enum import Enum
+from app.schemas.timetable import Session,Timetable
 from typing import Optional, List
-from fastapi import Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from typing import Optional
 import re
-from datetime import date
+from datetime import date , date
 
 class StudentRegisterRequest(BaseModel):
     first_name: str 
@@ -64,4 +65,15 @@ class CreateSubjectRequest(BaseModel):
     type: str
     credit: int 
 
-    
+
+class ChangePasswordRequest(BaseModel):
+    current_password : str 
+    new_password : str
+    email : EmailStr
+
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None 
+    dob: Optional[str] = None 

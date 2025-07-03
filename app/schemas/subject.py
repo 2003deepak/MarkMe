@@ -43,10 +43,9 @@ class SubjectRepository:
     def __init__(self, client: AsyncIOMotorClient, db_name: str):
         self.db = client[db_name]
         self.collection = self.db["subjects"]
-        self._ensure_indexes()
 
     async def _ensure_indexes(self):
-        await self.collection.create_index("subject_code", unique=True)
+        await self.collection.create_index([("subject_code", 1), ("type", 1)], unique=True)
         await self.collection.create_index([("department", 1), ("semester", 1)])
         await self.collection.create_index("created_at")
         await self.collection.create_index("updated_at")

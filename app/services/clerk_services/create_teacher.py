@@ -16,7 +16,7 @@ async def create_teacher(request,user_data):
                 status_code=400,
                 detail={
                     "status": "fail",
-                    "message": "You Dont have right to create clerk"
+                    "message": "You Dont have right to create teacher"
                 }
             )
 
@@ -45,16 +45,7 @@ async def create_teacher(request,user_data):
 
             # print(existing_subjects)
             
-            if len(existing_subjects) != len(request.subjects_assigned):
-                existing_subject_codes = {s["subject_code"] for s in existing_subjects}
-                invalid_subjects = set(request.subjects_assigned) - existing_subject_codes
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "status": "fail",
-                        "message": f"Invalid subject codes: {', '.join(invalid_subjects)}"
-                    }
-                )
+            
 
         # Generate 6-digit teacher ID starting with "T"
         teacher_id = f"T{random.randint(100000, 999999)}"
@@ -89,7 +80,7 @@ async def create_teacher(request,user_data):
         # Populate teacher_assigned in Subject DB with teacher _id
         if request.subjects_assigned:
             for subject_code in request.subjects_assigned:
-                await db.subjects.update_one(
+                await db.subjects.update_many(
                     {"subject_code": subject_code},
                     {"$addToSet": {"teacher_assigned": teacher_id_str}}
                 )

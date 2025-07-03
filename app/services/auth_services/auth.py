@@ -119,6 +119,7 @@ async def request_password_reset(request):
 
 
 async def reset_user_password(request):
+
     db = get_db()
     email = request.email
     otp = request.otp
@@ -183,6 +184,74 @@ async def reset_user_password(request):
         "status": "success",
         "message": "Password reset successfully"
     }
+
+
+async def change_current_password(request, user_data):
+    db = get_db()
+    current_password = request.current_password
+    new_password = request.new_password
+    request_email = request.email
+
+    # Extract role and user_id from JWT payload
+    user_email = user_data["email"]
+    token_role = user_data["role"].lower()
+
+    # Validate if role from token matches the role in request path
+    if request_email != user_email:
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "fail", "message": "You are not authorized to change others' password"},
+        )
+
+    # Validate new password length
+    if len(new_password) != 6 or not new_password.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "New password must be exactly 6 digits"},
+        )
+
+    # Fetch user based on role
+    user_model = {
+        "student": db.students,
+        "teacher": db.teachers,
+        "clerk": db.clerks
+    }
+
+    collection = user_model.get(token_role)
+
+    if collection is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "Invalid user role"},
+        )
+
+    user = await collection.find_one({"email": user_email})
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "fail", "message": "User not found"},
+        )
+
+    # Check if current password matches
+    if not verify_password(current_password, user["password"]):  # use user["password"] since it's a dict
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "fail", "message": "Incorrect current password"},
+        )
+
+    # Prevent using the same password again
+    if current_password == new_password:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "New password cannot be same as current password"},
+        )
+
+    # Hash and update the password
+    hashed_password = get_password_hash(new_password)
+    await collection.update_one({"email": user_email}, {"$set": {"password": hashed_password}})
+
+    return {"status": "success", "message": "Password updated successfully"}
 
 
 async def get_user_by_email_role(email: str, role: str) -> Optional[dict]:

@@ -5,7 +5,9 @@ from app.core.rabbitmq_config import settings
 QUEUE_PRIORITY_CONFIG = {
     settings.face_queue: 10,        # Highest (face recognition)
     settings.email_queue: 10,        # Medium (5 - Registration email , 10 - Reset Password Mail) , 1
-    settings.embedding_queue: 10     # Lowest (vector embeddings)
+    settings.embedding_queue: 10,     # Lowest (vector embeddings)
+    settings.session_queue :10
+    
 }
 
 async def setup_rabbitmq():
