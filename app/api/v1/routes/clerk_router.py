@@ -7,7 +7,7 @@ from app.services.clerk_services.add_timetable import add_timetable
 from app.middleware.is_logged_in import is_logged_in
 
 # --- Pydantic Imports
-from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest
+from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest , TimetableRequest
 
 router = APIRouter()
 security = HTTPBearer()  # Define security scheme
@@ -63,7 +63,7 @@ async def create_teacher_route(
 
 @router.post("/timetable/create")
 async def create_timetable(
-    request: Timetable,
+    request: TimetableRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):

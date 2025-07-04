@@ -1,17 +1,17 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List
+from typing import Optional
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 
 class Attendance(BaseModel):
-    timetable_id: str = Field(..., alias="timetableId")  # ObjectId as string
+    timetable_id: ObjectId
     date: datetime
     day: str
     slot_index: int
-    subject_id: str 
-    teacher_id: str 
-    students: str
+    subject: ObjectId
+    component_type: str
+    students: Optional[str] = None
 
     @field_validator("day")
     @classmethod
@@ -28,12 +28,15 @@ class Attendance(BaseModel):
             raise ValueError("slotIndex must be at least 0")
         return v
 
-    @field_validator("timetable_id", "subject_id", "teacher_id")
+    @field_validator("timetable_id", "subject")
     @classmethod
     def validate_object_id(cls, v):
         if not ObjectId.is_valid(v):
             raise ValueError("Invalid ObjectId format")
-        return v
+        return ObjectId(v)  # Convert to ObjectId
+
+    class Config:
+        arbitrary_types_allowed = True  # Allow ObjectId type
 
 class AttendanceRepository:
     def __init__(self, client: AsyncIOMotorClient, db_name: str):
@@ -41,10 +44,7 @@ class AttendanceRepository:
         self.collection = self.db["attendances"]
 
     async def ensure_indexes(self):
-        
         await self.collection.create_index(
             [("timetable_id", 1), ("date", 1), ("day", 1), ("slot_index", 1)],
             unique=True
         )
-
-    

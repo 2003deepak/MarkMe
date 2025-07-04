@@ -2,6 +2,18 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
+from bson.objectid import ObjectId
+
+
+class Component(BaseModel):
+    type: str  # Lecture or Lab
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v):
+        if v not in ["Lecture", "Lab"]:
+            raise ValueError("Type must be either 'Lecture' or 'Lab'")
+        return v
 
 class Subject(BaseModel):
     subject_code: str 
@@ -9,9 +21,9 @@ class Subject(BaseModel):
     department: str
     semester: int
     program: str
-    type: str
+    components: List[Component]
     credit: int
-    teacher_assigned: List[str] 
+    teacher_assigned: Optional[ObjectId] = None  
 
     @field_validator("subject_code")
     def uppercase_subject_code(cls, v):
@@ -27,17 +39,15 @@ class Subject(BaseModel):
             raise ValueError("Semester must be between 1 and 10")
         return v
 
-    @field_validator("type")
-    def validate_type(cls, v):
-        if v not in ["Lecture", "Lab"]:
-            raise ValueError("Type must be either 'Lecture' or 'Lab'")
-        return v
-
+  
     @field_validator("credit")
     def validate_credit(cls, v):
         if not (1 <= v <= 10):
             raise ValueError("Credit must be between 1 and 10")
         return v
+
+    class Config:
+        arbitrary_types_allowed = True
 
 class SubjectRepository:
     def __init__(self, client: AsyncIOMotorClient, db_name: str):

@@ -1,7 +1,7 @@
-from pydantic import BaseModel, EmailStr,Field
+from pydantic import BaseModel, EmailStr,Field ,field_validator
 from enum import Enum
 from app.schemas.timetable import Session,Timetable
-from typing import Optional, List
+from typing import Optional, List , Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from typing import Optional
 import re
@@ -54,7 +54,8 @@ class CreateClerkRequest(BaseModel):
     department: str
     program : str
 
-
+class Component(BaseModel):
+    type: str  # "Lecture", "Lab", etc.
 
 class CreateSubjectRequest(BaseModel):
     subject_code: str 
@@ -62,7 +63,7 @@ class CreateSubjectRequest(BaseModel):
     department: str
     semester: int
     program: str
-    type: str
+    components: List[Component]
     credit: int 
 
 
@@ -77,3 +78,21 @@ class UpdateProfileRequest(BaseModel):
     last_name: Optional[str] = None
     phone: Optional[str] = None 
     dob: Optional[str] = None 
+
+
+class SessionRequest(BaseModel):
+    start_time: str
+    end_time: str
+    subject: str
+    component: str 
+
+   
+class TimetableRequest(BaseModel):
+    academic_year: str
+    department: str
+    program: str
+    semester: str
+    schedule: Dict[str, List[SessionRequest]] = {
+        "Monday": [], "Tuesday": [], "Wednesday": [], 
+        "Thursday": [], "Friday": [], "Saturday": [], "Sunday": []
+    }

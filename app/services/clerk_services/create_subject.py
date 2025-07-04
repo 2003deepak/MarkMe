@@ -1,54 +1,52 @@
 from fastapi import HTTPException
 from app.core.database import get_db
-from app.schemas.subject import Subject, SubjectRepository
+from app.schemas.subject import Subject, SubjectRepository, Component
 from pydantic import ValidationError
+from bson.objectid import ObjectId
 
-async def create_subject(request,user_data):
 
-    if user_data["role"] != "clerk" :
+async def create_subject(request, user_data):
+    if user_data["role"] != "clerk":
         raise HTTPException(
-                status_code=400,
-                detail={
-                    "status": "fail",
-                    "message": "You Dont have right to create clerk"
-                }
-            )
-
+            status_code=400,
+            detail={
+                "status": "fail",
+                "message": "You don't have the right to create a subject"
+            }
+        )
 
     try:
-        # Get database connection
         db = get_db()
         repo = SubjectRepository(db.client, db.name)
         await repo._ensure_indexes()
 
-        # Validate request using Subject model
+        # Build Component list from request
+        components = [Component(type=comp.type) for comp in request.components]
+
         subject_data = Subject(
             subject_code=request.subject_code,
             subject_name=request.subject_name,
             department=request.department,
             semester=request.semester,
             program=request.program,
-            type=request.type,
             credit=request.credit,
-            teacher_assigned=[]
+            components=components
         )
 
-        # Check if subject exists
-        if await db.subjects.find_one({"subject_code": subject_data.subject_code.upper(),"type": subject_data.type}):
+        existing = await db.subjects.find_one({"subject_code": subject_data.subject_code.upper()})
+        if existing:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "status": "fail",
-                    "message": "Subject already exists"
+                    "message": "Subject with this code already exists"
                 }
             )
 
-        # Convert Subject to dict and apply timestamps
-        subject_dict = subject_data.dict()  # Fixed: Use subject_data instead of subject_dict
-        subject_dict = await repo._apply_timestamps(subject_dict)  # Pass dict to _apply_timestamps
+        subject_dict = subject_data.dict()
+        subject_dict = await repo._apply_timestamps(subject_dict)
 
-        # Insert subject into database
-        result = await db.subjects.insert_one(subject_dict)
+        await db.subjects.insert_one(subject_dict)
 
         return {
             "status": "success",
@@ -59,13 +57,12 @@ async def create_subject(request,user_data):
                 "department": subject_dict["department"],
                 "semester": subject_dict["semester"],
                 "program": subject_dict["program"],
-                "type": subject_dict["type"],
-                "credit_hours": subject_dict["credit"]
+                "credit": subject_dict["credit"],
+                "components": subject_dict["components"]
             }
         }
 
     except ValidationError as e:
-        # Extract the first error message
         error_msg = str(e.errors()[0]['msg'])
         raise HTTPException(
             status_code=422,
@@ -74,11 +71,10 @@ async def create_subject(request,user_data):
                 "message": error_msg
             }
         )
+
     except HTTPException as he:
-        # If it's already in our format, just re-raise
         if isinstance(he.detail, dict) and "status" in he.detail and "message" in he.detail:
             raise he
-        # Otherwise, reformat it
         raise HTTPException(
             status_code=he.status_code,
             detail={
@@ -86,6 +82,7 @@ async def create_subject(request,user_data):
                 "message": he.detail
             }
         )
+
     except Exception as e:
         print(f"Subject Creation error: {str(e)}")
         raise HTTPException(

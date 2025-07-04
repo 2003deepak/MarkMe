@@ -10,7 +10,8 @@ from datetime import datetime
 class Session(BaseModel):
     start_time: str = Field(...)  # Format: "HH:MM"
     end_time: str = Field(...)    # Format: "HH:MM"
-    subject: str              # Reference to Subject ID
+    subject: ObjectId             # Reference to Subject ID
+    component: str = Field(...)    # Component type (e.g., Lecture, Tutorial, Lab)
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -42,6 +43,9 @@ class Session(BaseModel):
         if not ObjectId.is_valid(v):
             raise ValueError("Invalid ObjectId format")
         return v
+    
+    class Config:
+        arbitrary_types_allowed = True  # Allow ObjectId type
 
     
     
@@ -59,7 +63,7 @@ class Timetable(BaseModel):
     @field_validator("academic_year")
     @classmethod
     def validate_academic_year(cls, v):
-        if not re.match(r"^\d{4}-\d{2}$", v):
+        if not re.match(r"^\d{4}", v):
             raise ValueError("Academic year must be in YYYY-YY format")
         return v
 

@@ -9,18 +9,15 @@ import random
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-async def create_teacher(request,user_data):
-
-    if user_data["role"] != "clerk" :
+async def create_teacher(request, user_data):
+    if user_data["role"] != "clerk":
         raise HTTPException(
-                status_code=400,
-                detail={
-                    "status": "fail",
-                    "message": "You Dont have right to create teacher"
-                }
-            )
-
-
+            status_code=400,
+            detail={
+                "status": "fail",
+                "message": "You don't have the right to create a teacher"
+            }
+        )
 
     try:
         # Get database connection
@@ -42,10 +39,17 @@ async def create_teacher(request,user_data):
         if request.subjects_assigned:
             existing_subjects_cursor = db.subjects.find({"subject_code": {"$in": request.subjects_assigned}})
             existing_subjects = await existing_subjects_cursor.to_list(length=None)
-
-            # print(existing_subjects)
-            
-            
+            # Verify that all requested subject codes exist in the database
+            found_subject_codes = {subject["subject_code"] for subject in existing_subjects}
+            invalid_subjects = set(request.subjects_assigned) - found_subject_codes
+            if invalid_subjects:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "status": "fail",
+                        "message": f"Invalid subject codes: {', '.join(invalid_subjects)}"
+                    }
+                )
 
         # Generate 6-digit teacher ID starting with "T"
         teacher_id = f"T{random.randint(100000, 999999)}"
@@ -66,7 +70,7 @@ async def create_teacher(request,user_data):
             password=hashed_password,
             mobile_number=request.mobile_number,
             department=request.department,
-            subjects_assigned=[str(subject["_id"]) for subject in existing_subjects]  # Store subject _id values
+            subjects_assigned=[subject["_id"] for subject in existing_subjects]  # Store all matching subject _ids
         )
 
         # Convert to dict and apply timestamps
@@ -75,14 +79,15 @@ async def create_teacher(request,user_data):
 
         # Insert teacher into database
         result = await db.teachers.insert_one(teacher_dict)
-        teacher_id_str = str(result.inserted_id)  # Get the _id as string
+        teacher_id_obj = result.inserted_id  # Get the _id as ObjectId
 
         # Populate teacher_assigned in Subject DB with teacher _id
         if request.subjects_assigned:
             for subject_code in request.subjects_assigned:
-                await db.subjects.update_many(
+                # Assign teacher to all subjects with this subject_code (e.g., both Lecture and Lab)
+                await db.subjects.update_one(
                     {"subject_code": subject_code},
-                    {"$addToSet": {"teacher_assigned": teacher_id_str}}
+                    {"$set": {"teacher_assigned": teacher_id_obj}}
                 )
 
         # Send confirmation email with generated password
@@ -108,9 +113,7 @@ async def create_teacher(request,user_data):
         }
 
     except ValidationError as e:
-        print(e)
-        error_msg = str(e.errors()[0]['msg'])
-
+        error_msg = str(e.errors()[0]["msg"])
         raise HTTPException(
             status_code=422,
             detail={
