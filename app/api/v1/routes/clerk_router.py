@@ -32,35 +32,6 @@ async def create_teacher_route(
 
 
 
-# In this route , i want that clerk can create a timetable for a specific program and specific semester
-# In the function , validate that current role is clerk and then proceed to create the timetable
-# The request should academic_year,department,program,semester,class_name and schedule ( List of Session ( Pydantic Model) )
-
-# The Session Pydantic Model should have the following fields: start_time, end_time, subject, teacher (_id) , room ( _id) 
-
-# Expected JSON structure :- 
-
-# {
-#   "academicYear": "2024",
-#   "department": "BTECH",
-#   "program": "MCA",
-#   "semester": "1",
-#   "schedule": {
-#     "Monday": [
-#       {
-#         "startTime": "09:00",
-#         "endTime": "10:30",
-#         "subject": "507f1f77bcf86cd799439011", // Math ID
-#         "teacher": "507f1f77bcf86cd799439012"  // Prof. X ID
-#       },
-#       // More sessions...
-#     ],
-#     // Other days...
-#   }
-# }
-
-
-
 @router.post("/timetable/create")
 async def create_timetable(
     request: TimetableRequest,
@@ -69,6 +40,56 @@ async def create_timetable(
 ):
     
     return await add_timetable(request,user_data)
+
+
+# In this route i want to get all teacher listed under the clerk respective department
+# First check the role of the user , proceed if clerk is there
+# It will be a get request with no body , fetch the department of the clerk and list all the teachers under that department
+# Check if the teachers data is present in the Redis DB Cache , if present return it
+# If not present , fetch it from the MongoDB and store it in the Redis Cache and
+# Make a list of teacher and store it efficiently in redis cache
+# Pls exclude the field while fetching data from mongo db ( password, created_at, updated_at) 
+
+# @router.post("/teacher")
+# async def get_all_teacher(
+#     credentials: HTTPAuthorizationCredentials = Depends(security),
+#     user_data: dict = Depends(is_logged_in)
+# ):
+    
+#     return await get_all_teacher(user_data)
+
+
+
+# Purpose: Fetch basic information of a specific teacher
+#
+# Flow:
+# 1. This route expects a teacher_id in the request body.
+# 2. First, verify that the current user has the role 'clerk'. Only clerks are authorized to access this data.
+# 3. For Version 1.0:
+#    - Attempt to retrieve the teacher's basic info from Redis cache.
+#    - The cache key used here is the same one stored during the `/me` route for the teacher, 
+#      so there’s no need to create or duplicate a new cache key specifically for this route.
+#    - If the data is present in Redis, return it directly to improve performance.
+#    - If not found in cache, fallback logic (optional) can fetch from MongoDB.
+
+# 4. For Version 2.0:
+#    - Extend the response with detailed teacher information from MongoDB such as:
+#        - Total hours taught
+#        - Student performance stats
+#        - Attendance records, etc
+# 
+
+# @router.get("/teacher/:teacherid")
+# async def get_teacher(
+#     request : 
+#     credentials: HTTPAuthorizationCredentials = Depends(security),
+#     user_data: dict = Depends(is_logged_in)
+# ):
+    
+#     return await get_teacher(request , user_data)
+
+
+
 
    
     

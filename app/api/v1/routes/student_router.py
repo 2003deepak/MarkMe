@@ -102,9 +102,7 @@ async def get_me(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):
-    # Ensure the user is a student (example role check)
-    if user_data.get("role") != "student":
-        raise HTTPException(status_code=403, detail="Access denied: Not a student.")
+    
     return await get_student_detail(user_data)
 
 
@@ -120,9 +118,7 @@ async def update_profile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):
-    # Ensure the user is a student
-    if user_data.get("role") != "student":
-        raise HTTPException(status_code=403, detail="Access denied: Not a student.")
+
 
     try:
         # Create UpdateProfileRequest object from form data

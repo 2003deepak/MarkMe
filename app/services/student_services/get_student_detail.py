@@ -15,8 +15,9 @@ class MongoJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 async def get_student_detail(user_data):
+
     user_email = user_data["email"]
-    user_role = user_data.get("role", "").lower()
+    user_role = user_data["role"]
 
     if user_role != "student":
         raise HTTPException(

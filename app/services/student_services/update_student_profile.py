@@ -9,6 +9,14 @@ import httpx
 import base64
 
 async def update_student_profile(request_data, user_data, profile_picture: Optional[UploadFile] = None):
+    
+     # Validate user role
+    if user_data["role"] != "student":
+        raise HTTPException(
+            status_code=403,
+            detail="Only Students can access their profile"
+        )
+    
     try:
         db = get_db()
         student_email = user_data["email"]

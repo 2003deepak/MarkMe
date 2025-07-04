@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router
+from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router , teacher_router
 from app.core.database import init_db, close_db
 from app.core.config import settings
 from app.core.rabbit_setup import setup_rabbitmq
@@ -27,6 +27,7 @@ app.include_router(system_router.router, prefix="/api/v1/system", tags=["System 
 app.include_router(student_router.router, prefix="/api/v1/student", tags=["Students"])
 app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(clerk_router.router, prefix="/api/v1/clerk", tags=["Clerk"])
+app.include_router(teacher_router.router, prefix="/api/v1/teacher", tags=["Teacher"])
 
 # Startup event to initialize database
 @app.on_event("startup")
