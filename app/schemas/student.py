@@ -13,6 +13,7 @@ class Student(BaseModel):
     email: str
     password: str
     profile_picture: Optional[HttpUrl] = None
+    profile_picture_id : str = None 
     dob: str
     roll_number: int 
     phone: int

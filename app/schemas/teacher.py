@@ -14,6 +14,7 @@ class Teacher(BaseModel):
     middle_name: Optional[str] = None
     last_name: str 
     profile_picture: Optional[HttpUrl] = None
+    profile_picture_id : str = None 
     email: EmailStr
     password: Optional[str] = None 
     mobile_number: int

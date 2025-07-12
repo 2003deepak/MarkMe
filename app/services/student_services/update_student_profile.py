@@ -2,7 +2,7 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.redis import redis_client
 from datetime import datetime
-from app.utils.imagekit_uploader import upload_image_to_imagekit
+from app.utils.imagekit_uploader import upload_image_to_imagekit,delete_file
 from typing import Optional
 from pydantic import ValidationError
 import httpx
@@ -38,16 +38,27 @@ async def update_student_profile(request_data, user_data, profile_picture: Optio
                     detail={"status": "fail", "message": "File must be an image"}
                 )
             
+            # Delete existing profile picture if it exists
+            if student.get("profile_picture_id"):
+                try:
+                    await delete_file(student["profile_picture_id"])
+                except Exception as e:
+                    print(f"Failed to delete existing profile picture: {str(e)}")
+                    
+
+            
             file_bytes = await profile_picture.read()
             encoded = base64.b64encode(file_bytes).decode("utf-8")
             
 
             try:
-                profile_picture_url_result = await upload_image_to_imagekit(
+                profile_picture_result = await upload_image_to_imagekit(
                     file=encoded,
                     folder="profile_image",
                 )
-                update_data["profile_picture"] = profile_picture_url_result
+                update_data["profile_picture"] = profile_picture_result.get("url")
+                update_data["profile_picture_id"] = profile_picture_result.get("fileId")
+
             except Exception as e:
                 print(f"Image upload error (file): {str(e)}")
                 raise HTTPException(

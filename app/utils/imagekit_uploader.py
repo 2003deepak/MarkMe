@@ -15,7 +15,6 @@ async def upload_image_to_imagekit(file: bytes, folder: str):
     try:
         filename = f"{uuid.uuid4().hex}.jpg"
 
-        # Upload file as bytes
         upload = imagekit.upload_file(
             file=file,
             file_name=filename,
@@ -26,12 +25,31 @@ async def upload_image_to_imagekit(file: bytes, folder: str):
             )
         )
 
-        # Validate upload
-        if not hasattr(upload, "response_metadata") or not upload.response_metadata.raw.get("url"):
-            raise Exception(f"Image upload to ImageKit failed: {upload.response_metadata.raw.get('message', 'Unknown error')}")
+        if not hasattr(upload, "response_metadata"):
+            raise Exception("No response metadata from ImageKit")
 
-        return upload.response_metadata.raw["url"]
+        metadata = upload.response_metadata.raw
+
+        if not metadata.get("url") or not metadata.get("fileId"):
+            raise Exception(f"Upload failed: {metadata.get('message', 'Unknown error')}")
+
+        return {
+            "url": metadata["url"],
+            "fileId": metadata["fileId"]
+        }
 
     except Exception as e:
         print(f"ImageKit upload error: {str(e)}")
+        raise
+
+
+async def delete_file(file_id: str):
+    try:
+        # Step 2: Delete the file using file_id
+        delete_response = imagekit.delete_file(file_id=file_id)
+
+        return {"status": "success", "message": f"File with ID {file_id} deleted successfully"}
+
+    except Exception as e:
+        print(f"ImageKit delete error: {str(e)}")
         raise

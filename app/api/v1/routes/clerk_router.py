@@ -45,21 +45,7 @@ async def create_timetable(
     return await add_timetable(request,user_data)
 
 
-# In this route i want to get all teacher listed under the clerk respective department
-# First check the role of the user , proceed if clerk is there
-# It will be a get request with no body , fetch the department of the clerk and list all the teachers under that department
-# Check if the teachers data is present in the Redis DB Cache , if present return it
-# If not present , fetch it from the MongoDB and store it in the Redis Cache and
-# Make a list of teacher and store it efficiently in redis cache
-# Pls exclude the field while fetching data from mongo db ( password, created_at, updated_at) 
 
-# @router.post("/teacher")
-# async def get_all_teacher(
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-    
-#     return await get_all_teacher(user_data)
 @router.get("/teacher")
 async def get_all_teachers_route(
     credentials: HTTPAuthorizationCredentials = Depends(security),

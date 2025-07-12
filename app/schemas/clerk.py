@@ -16,6 +16,7 @@ class Clerk(BaseModel):
     program:str
     phone: int = Field(..., alias="phone")
     profile_picture: Optional[str] = None
+    profile_picture_id : str = None 
     password_reset_otp: Optional[str] = None
     password_reset_otp_expires: Optional[datetime] = None
     

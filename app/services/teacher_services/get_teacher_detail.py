@@ -14,6 +14,7 @@ class MongoJSONEncoder(json.JSONEncoder):
 
 #  1. Get Teacher’s Own Profile
 async def get_teacher_me(user_data: dict):
+    
     if user_data["role"] != "teacher":
         raise HTTPException(status_code=403, detail="Only teachers can access this route")
 

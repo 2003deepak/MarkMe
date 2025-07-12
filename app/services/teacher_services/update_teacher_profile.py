@@ -1,7 +1,7 @@
 from fastapi import HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.redis import redis_client
-from app.utils.imagekit_uploader import upload_image_to_imagekit
+from app.utils.imagekit_uploader import upload_image_to_imagekit,delete_file
 from datetime import datetime
 from typing import Optional
 import base64
@@ -25,9 +25,21 @@ async def update_teacher_profile(request_data, user_data, profile_picture: Optio
             raise HTTPException(status_code=400, detail="File must be an image")
         
         encoded = base64.b64encode(await profile_picture.read()).decode("utf-8")
+
+         # Delete existing profile picture if it exists
+        if teacher.get("profile_picture_id"):
+            try:
+                await delete_file(teacher["profile_picture_id"])
+            except Exception as e:
+                print(f"Failed to delete existing profile picture: {str(e)}")
+
+
         try:
-            profile_picture_url = await upload_image_to_imagekit(encoded, "teacher_profile")
-            update_data["profile_picture"] = profile_picture_url
+            profile_picture_result = await upload_image_to_imagekit(encoded, "profile_image")
+
+            update_data["profile_picture"] = profile_picture_result.get("url")
+            update_data["profile_picture_id"] = profile_picture_result.get("fileId")
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
 

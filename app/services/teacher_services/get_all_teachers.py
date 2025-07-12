@@ -7,27 +7,48 @@ async def get_all_teachers(user_data):
     if user_data["role"] != "clerk":
         raise HTTPException(status_code=403, detail="Only clerks can access this route")
     
-    department = user_data.get("department")
-    if not department:
-        raise HTTPException(status_code=400, detail="Department not found in user data")
-    
-    cache_key = f"teachers:{department}"
-    cached_teachers = await redis_client.get(cache_key)
+    db = get_db()
+    email = user_data["email"]
 
+    # Use find_one to get the clerk's department only
+    clerk = await db.clerks.find_one(
+        {"email": email},
+        {"department": 1} 
+    )
+
+    if clerk is None or "department" not in clerk:
+        raise HTTPException(status_code=400, detail="Clerk department not found")
+
+    department = clerk["department"]
+    cache_key = f"teachers:{department}"
+
+    # Try fetching from Redis
+    cached_teachers = await redis_client.get(cache_key)
     if cached_teachers:
         return {"status": "success", "data": json.loads(cached_teachers)}
 
-    db = get_db()
+    # Fetch teachers from MongoDB, including only JSON-serializable fields
     teachers_cursor = db.teachers.find(
         {"department": department},
-        {"password": 0, "created_at": 0, "updated_at": 0}
+        {
+            "teacher_id": 1,
+            "first_name": 1,
+            "middle_name": 1,
+            "last_name": 1,
+            "profile_picture": 1,
+            "email": 1,
+            "mobile_number": 1,
+            "department": 1,
+            "phone": 1
+        }  
     )
 
     teachers = []
     async for teacher in teachers_cursor:
-        teacher["_id"] = str(teacher["_id"])
+        teacher.pop("_id", None)
         teachers.append(teacher)
 
-    await redis_client.setex(cache_key, 3600, json.dumps(teachers))  # 1 hour cache
+    # Cache result in Redis for 1 hour
+    await redis_client.setex(cache_key, 3600, json.dumps(teachers))
 
     return {"status": "success", "data": teachers}
