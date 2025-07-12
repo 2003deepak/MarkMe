@@ -5,6 +5,9 @@ from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
 from app.services.clerk_services.add_timetable import add_timetable
 from app.middleware.is_logged_in import is_logged_in
+from app.services.teacher_services.get_all_teachers import get_all_teachers
+from app.services.teacher_services.get_teacher_detail import get_teacher_by_id
+from fastapi import Path
 
 # --- Pydantic Imports
 from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest , TimetableRequest
@@ -57,7 +60,12 @@ async def create_timetable(
 # ):
     
 #     return await get_all_teacher(user_data)
-
+@router.get("/teacher")
+async def get_all_teachers_route(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_all_teachers(user_data)
 
 
 # Purpose: Fetch basic information of a specific teacher
@@ -88,7 +96,13 @@ async def create_timetable(
     
 #     return await get_teacher(request , user_data)
 
-
+@router.get("/teacher/{teacher_id}")
+async def get_teacher_route(
+    teacher_id: str = Path(..., description="Teacher ID to fetch details for"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_teacher_by_id(teacher_id, user_data)
 
 
    

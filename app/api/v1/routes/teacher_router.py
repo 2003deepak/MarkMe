@@ -5,6 +5,9 @@ from typing import List, Optional
 from datetime import date
 import json
 from app.middleware.is_logged_in import is_logged_in
+from app.services.teacher_services.get_teacher_detail import get_teacher_me
+from app.services.teacher_services.update_teacher_profile import update_teacher_profile
+from app.models.allModel import UpdateProfileRequest
 
 # -- Pydantic Model Import
 
@@ -29,7 +32,12 @@ security = HTTPBearer()  # Define security scheme
 # ):
     
 #     return await get_student_detail(user_data)
-
+@router.get("/me")
+async def get_teacher_me_route(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_teacher_me(user_data)
 
 # In this route i want to update the profile of teacher
 # It will be a form data request with the following fields
@@ -75,3 +83,26 @@ security = HTTPBearer()  # Define security scheme
 #         raise e
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+@router.put("/me/update-profile")
+async def update_teacher_profile_route(
+    first_name: Optional[str] = Form(None),
+    middle_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    mobile_number: Optional[str] = Form(None),
+    profile_picture: Optional[UploadFile] = File(None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    try:
+        request_data = UpdateProfileRequest(
+            first_name=first_name,
+            middle_name=middle_name,
+            last_name=last_name,
+            phone=mobile_number,
+            dob=None  # Teacher may not update DOB
+        )
+        return await update_teacher_profile(request_data, user_data, profile_picture)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=json.loads(e.json()))
