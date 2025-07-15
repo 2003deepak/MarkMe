@@ -6,7 +6,7 @@ from app.schemas.student import Student, StudentRepository
 from pydantic import ValidationError
 from app.utils.security import get_password_hash
 from typing import List
-from app.utils.publisher import send_to_queue  # NEW: publisher for RabbitMQ
+from app.utils.publisher import send_to_queue  
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
