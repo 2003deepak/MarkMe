@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body,Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.admin_services.create_clerk import create_clerk
+from app.services.admin_services.get_clerk import get_clerk,get_clerk_by_id
 from app.middleware.is_logged_in import is_logged_in
 from app.models.allModel import CreateClerkRequest
 
@@ -32,12 +33,12 @@ async def create_clerk_route(
 # ( This functions is having similar implementation as get_all_teachers function in app/services/teacher_services/get_all_teachers.py)
 
 @router.get("/clerk/{deptartment}")
-# async def get_subject(
-#     department: str = Path(..., description="Departement to fetch clerks for"),
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-#     return await get_clerk(department,user_data)
+async def get_subject(
+    department: str = Path(..., description="Departement to fetch clerks for"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_clerk(department,user_data)
 
 
 
@@ -61,12 +62,12 @@ async def create_clerk_route(
 
 
 @router.get("/clerk/{clerk_id}")
-# async def get_subject_by_id_route(
-#     clerk_id: str = Path(..., description="Clerk ID to fetch details for"),
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-#     return await get_clerk_by_id(subject_id, user_data)
+async def get_subject_by_id_route(
+    clerk_id: str = Path(..., description="Clerk ID to fetch details for"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_clerk_by_id(clerk_id, user_data)
 
-   
+
     

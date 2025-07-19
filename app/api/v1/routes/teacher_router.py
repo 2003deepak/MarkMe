@@ -64,7 +64,7 @@ async def update_teacher_profile_route(
 # 5. Return the session if found; otherwise []
 
 
-@router.get("/session/current")
+# @router.get("/session/current")
 # async def get_current_session():
 #     try:
         
@@ -161,7 +161,7 @@ async def update_teacher_profile_route(
 
 # 5. If no students are found, return an empty array
 
-@router.get("/student/search")
+# @router.get("/student/search")
 
 
 
@@ -202,4 +202,9 @@ async def update_teacher_profile_route(
 # 7. Add an empty placeholder (TODO) for notifying students who were absent
 #    → After saving attendance, you can later publish a message or trigger notification
 
-@router.post("/session/markAttendance/{session_id}")
+# @router.post("/session/markAttendance/{session_id}")
+async def create_Session(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_teacher_me(user_data)

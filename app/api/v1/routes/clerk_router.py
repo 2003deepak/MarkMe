@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body,Path
 from app.schemas.timetable import Timetable
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.clerk_services.create_teacher import create_teacher
@@ -7,7 +7,8 @@ from app.services.clerk_services.add_timetable import add_timetable
 from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.get_all_teachers import get_all_teachers
 from app.services.teacher_services.get_teacher_detail import get_teacher_by_id
-from fastapi import Path
+from app.services.clerk_services.get_subject_detail import get_subject_detail,get_subject_by_id
+
 
 # --- Pydantic Imports
 from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest , TimetableRequest
@@ -79,11 +80,11 @@ async def get_teacher_route(
 # ( This functions is having similar implementation as get_all_teachers function in app/services/teacher_services/get_all_teachers.py)
 
 @router.get("/subject")
-# async def get_subject(
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-#     return await get_subject(user_data)
+async def get_subject(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_subject_detail(user_data)
 
 
 
@@ -125,12 +126,12 @@ async def get_teacher_route(
 # Current focus: Implement Version 1.0 only, but keep it modular and scalable for 2.0 extension
 
 @router.get("/subject/{subject_id}")
-# async def get_subject_by_id_route(
-#     subject_id: str = Path(..., description="Subject ID to fetch details for"),
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-#     return await get_subject_by_id(subject_id, user_data)
+async def get_subject_by_id_route(
+    subject_id: str = Path(..., description="Subject ID to fetch details for"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_subject_by_id(subject_id, user_data)
 
-   
+
     
