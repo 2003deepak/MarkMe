@@ -4,7 +4,7 @@ import json
 from app.core.database import get_db
 from bson import ObjectId
 from datetime import datetime
-
+from fastapi.encoders import jsonable_encoder
 
 # JSON encoder to handle ObjectId and datetime
 class MongoJSONEncoder(json.JSONEncoder):
@@ -15,9 +15,8 @@ class MongoJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-
-async def get_subject_detail(user_data):
-    print("🧾 user_data =", user_data)  # 🔍 Inspect structure
+async def get_subject_detail(user_data: dict):
+    print(f"🧾 user_data = {user_data}")  # 🔍 Inspect structure
     user_email = user_data["email"]
     user_role = user_data["role"]
     
@@ -39,19 +38,26 @@ async def get_subject_detail(user_data):
     
     clerks_collection = get_db().clerks
     clerk = await clerks_collection.find_one({"email": user_email}, exclude_fields)
-    clerk_department = clerk.get('department')
-    print(f"➡️ Requested by: {user_email} (Role: {user_role} Department {clerk_department}")
     
+    if not clerk:
+        print(f"❌ Clerk not found for email: {user_email}")
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "fail", "message": "Clerk not found"}
+        )
     
-
-    cache_key_clerk = f"{user_role}:{clerk_department}"
-    cached_subject = await redis_client.get(cache_key_clerk)
+    clerk_department = clerk.get("department")
+    print(f"➡️ Requested by: {user_email} (Role: {user_role}, Department: {clerk_department})")
+    
+    # Simplified Redis key naming
+    cache_key = f"subject:{clerk_department}"
+    cached_subject = await redis_client.get(cache_key)
 
     if cached_subject:
-        print("✅ Found data in Redis cache")
+        print(f"✅ Found data in Redis cache: {cache_key}")
         subject_data = json.loads(cached_subject)
         if "subjects" in subject_data:
-            print(f"📦 Returning cached subjects for {cache_key_clerk}")
+            print(f"📦 Returning cached subjects for {cache_key}")
             return {"status": "success", "data": subject_data}
 
     print("ℹ️ No cached data found — fetching from DB...")
@@ -70,10 +76,8 @@ async def get_subject_detail(user_data):
         print("❌ No subjects found in DB")
         raise HTTPException(
             status_code=404,
-            detail={"status": "fail", "message": "Subjects not found"}
+            detail={"status": "fail", "message": f"No subjects found for department {clerk_department}"}
         )
-
-
 
     # Wrap in dict before saving to Redis
     subject_data = {
@@ -82,14 +86,15 @@ async def get_subject_detail(user_data):
     }
 
     # Save to Redis with 24hr TTL
-    await redis_client.set(cache_key_clerk, json.dumps(subject_data,cls=MongoJSONEncoder), ex=86400)
+    serialized_subject_data = json.dumps(subject_data, cls=MongoJSONEncoder)
+    await redis_client.set(cache_key, serialized_subject_data, ex=86400)
     print(f"📥 Saved subjects for {clerk_department} to Redis (TTL 24h)")
 
-    return {"status": "success", "data": subject_data}
-        
-        
-async def get_subject_by_id(subject_id, user_data):
-    print("🧾 user_data =", user_data, "Subject id ", subject_id)
+    # Use jsonable_encoder for response
+    return {"status": "success", "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
+
+async def get_subject_by_id(subject_id: str, user_data: dict):
+    print(f"🧾 user_data = {user_data}, Subject id = {subject_id}")
     subject_id = subject_id.upper()
     user_email = user_data["email"]
     user_role = user_data["role"]
@@ -101,6 +106,7 @@ async def get_subject_by_id(subject_id, user_data):
             detail={"status": "fail", "message": "Only Clerk can access this route"}
         )
 
+    # Fetch clerk to get department
     exclude_fields = {
         "password": 0,
         "created_at": 0,
@@ -111,38 +117,45 @@ async def get_subject_by_id(subject_id, user_data):
 
     clerks_collection = get_db().clerks
     clerk = await clerks_collection.find_one({"email": user_email}, exclude_fields)
-    clerk_department = clerk.get('department')
-    print(f"➡️ Requested by: {user_email} (Role: {user_role} Department {clerk_department})")
+    
+    if not clerk:
+        print(f"❌ Clerk not found for email: {user_email}")
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "fail", "message": "Clerk not found"}
+        )
 
-    cache_key_clerk = f"{user_role}:{clerk_department}:{subject_id}"
-    cached_subject = await redis_client.get(cache_key_clerk)
+    clerk_department = clerk.get("department")
+    print(f"➡️ Requested by: {user_email} (Role: {user_role}, Department: {clerk_department})")
+
+    # Simplified Redis key naming
+    cache_key = f"subject:{subject_id}"
+    cached_subject = await redis_client.get(cache_key)
 
     if cached_subject:
-        print("✅ Found data in Redis cache")
+        print(f"✅ Found data in Redis cache: {cache_key}")
         return {"status": "success", "data": json.loads(cached_subject)}
 
     print("ℹ️ No cached data found — fetching from DB...")
 
+    # Query subject directly by subject_code and department
     subjects_collection = get_db().subjects
-    cursor = subjects_collection.find({"department": clerk_department}, {"created_at": 0, "updated_at": 0})
-    subjects = await cursor.to_list(length=None)
+    subject = await subjects_collection.find_one(
+        {"subject_code": subject_id, "department": clerk_department},
+        {"created_at": 0, "updated_at": 0}
+    )
 
-    if not subjects:
-        print("❌ No subjects found in DB")
+    if not subject:
+        print(f"❌ Subject not found: {subject_id} in department {clerk_department}")
         raise HTTPException(
             status_code=404,
-            detail={"status": "fail", "message": "Subjects not found"}
+            detail={"status": "fail", "message": f"Subject with ID {subject_id} not found in department {clerk_department}"}
         )
 
-    for subject in subjects:
-        if subject.get("subject_code","") == subject_id:
-            print(f"🎯 Found matching subject: {subject}")
-            await redis_client.set(cache_key_clerk, json.dumps(subject, cls=MongoJSONEncoder), ex=86400)
-            print(f"📥 Saved subject {subject_id} for {clerk_department} to Redis (TTL 24h)")
-            return {"status": "success", "data": json.loads(json.dumps(subject, cls=MongoJSONEncoder))}
+    # Save to Redis with 24hr TTL
+    serialized_subject = json.dumps(subject, cls=MongoJSONEncoder)
+    await redis_client.set(cache_key, serialized_subject, ex=86400)
+    print(f"📥 Saved subject {subject_id} for {clerk_department} to Redis (TTL 24h)")
 
-    # If loop ends without return
-    raise HTTPException(
-        status_code=404,
-        detail={"status": "fail", "message": f"Subject with ID {subject_id} not found"}
-    )
+    # Use jsonable_encoder for response
+    return {"status": "success", "data": jsonable_encoder(subject, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
