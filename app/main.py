@@ -35,7 +35,7 @@ async def startup_event():
     print("📦 Connecting to DB...")
     print("🔄 Initializing Rabbit MQ...")
     await init_db()
-    # await setup_rabbitmq()
+    await setup_rabbitmq()
 
 # Shutdown event to close database connection
 @app.on_event("shutdown")

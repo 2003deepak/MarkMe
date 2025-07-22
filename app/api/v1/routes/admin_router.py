@@ -42,32 +42,13 @@ async def get_subject(
 
 
 
-
-# In this route, fetch detailed data for a specific clerk by their ID
-
-# Step 1: Verify the user's role using the token — only allow access if the user is a "admin"
-
-# Step 2: This is a GET request — the clerk_id will be passed as a path parameter (not in the body)
-
-# Step 3: Check if clerk data (for that department) is available in Redis Cache
-#         - If present, return the specific subject data using the subject_id
-#         - If not present in cache:
-#           - Fetch the clerk list from MongoDB where department matches
-#           - Exclude unnecessary fields: created_at, updated_at
-#           - Store the list of subjects efficiently in Redis Cache
-#           - Return the requested subject's details from the fetched data
-
-# Step 5: Return the clerk data as the response
-
-
-
-@router.get("/clerk/id/{clerk_id}")
+@router.get("/clerk/id/{email_id}")
 async def get_subject_by_id_route(
-    clerk_id: str = Path(..., description="Clerk ID to fetch details for"),
+    email_id: str = Path(..., description="Email ID"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):
-    return await get_clerk_by_id(clerk_id, user_data)
+    return await get_clerk_by_id(email_id, user_data)
 
 
     
