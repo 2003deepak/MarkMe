@@ -135,7 +135,7 @@ async def update_teacher_profile_route(
 # Once the face recogniton work is added to the queue , in the file worker_face_recogniton , integrate the logic 
 # of the file ( given by me in the other repo )
 
-@router.websocket("/session/recognize/{session_id}")
+# @router.websocket("/session/recognize/{session_id}")
 # async def recognize_students_websocket(websocket: WebSocket, session_id: str):
 
 
@@ -203,8 +203,70 @@ async def update_teacher_profile_route(
 #    → After saving attendance, you can later publish a message or trigger notification
 
 # @router.post("/session/markAttendance/{session_id}")
-async def create_Session(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
-    return await get_teacher_me(user_data)
+# async def create_Session(
+#     credentials: HTTPAuthorizationCredentials = Depends(security),
+#     user_data: dict = Depends(is_logged_in)
+# ):
+#     return await get_teacher_me(user_data)
+
+
+
+
+
+# Injamul Your Work 
+
+# In this route , it is used to add/cancel/reschedule a session for the teacher
+# Ask for the timetable_id , date , action (Cancel, Rescheduled, Add)
+# The payload data will change based on the action
+# If action is Cancel, then slotReference is required
+# If action is Rescheduled, then slotReference and newSlot are required
+# No fixed structure for the payload, it will change based on the action
+# Try to do it in JSON or basic form data using Form 
+
+# Note : Currently work only for the action Cancel and Rescheduled , pass for the action Add
+    
+# Payload Structure for Action Cancel :-
+
+# {
+#   "timetable_id": "68679bca26d91dfb7170c560",
+#   "date": "2025-07-25T00:00:00",
+#   "action": "Cancel",
+#   "slotReference": {
+#     "day": "Monday",
+#     "slotIndex": 1
+#   }
+# } 
+
+# Payload Structure for Action Rescheduled :-
+
+# {
+#   "timetable_id": "68679bca26d91dfb7170c560",
+#   "date": "2025-07-25T00:00:00",
+#   "action": "Rescheduled",
+#   "slotReference": {
+#     "day": "Monday",
+#     "slotIndex": 1
+#   },
+#   "newSlot": {
+#     "startTime": "10:00",
+#     "endTime": "11:00",
+#     "subject": "Maths"
+#   }
+# }
+
+
+# Do proper validation for the payload
+# If the time_table_id is not present in the database or redis , return proper error
+# If the new subject id is having issue , handle that 
+
+
+# Once data is prepared add to exception_sessions collection in the database
+# You can refer to the ExceptionSession Schema class in exception_session.py for the structure
+
+
+# @router.post("/exception_session/create")
+# # async def create_Session(
+# #     credentials: HTTPAuthorizationCredentials = Depends(security),
+# #     user_data: dict = Depends(is_logged_in)
+# # ):
+# #     return await get_teacher_me(user_data)
