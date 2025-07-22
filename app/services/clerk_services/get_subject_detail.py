@@ -16,7 +16,6 @@ class MongoJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 async def get_subject_detail(user_data: dict):
-
     print(f"🧾 user_data = {user_data}")  # 🔍 Inspect structure
     user_email = user_data["email"]
     user_role = user_data["role"]
@@ -51,7 +50,7 @@ async def get_subject_detail(user_data: dict):
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Department: {clerk_department})")
     
     # Simplified Redis key naming
-    cache_key = f"subjects:{clerk_department.lower()}"
+    cache_key = f"subject:{clerk_department}"
     cached_subject = await redis_client.get(cache_key)
 
     if cached_subject:
@@ -95,7 +94,6 @@ async def get_subject_detail(user_data: dict):
     return {"status": "success", "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
 
 async def get_subject_by_id(subject_id: str, user_data: dict):
-
     print(f"🧾 user_data = {user_data}, Subject id = {subject_id}")
     subject_id = subject_id.upper()
     user_email = user_data["email"]

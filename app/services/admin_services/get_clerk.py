@@ -34,7 +34,7 @@ async def get_clerk(department: str, user_data: dict):
         )
     
     # Improved Redis key naming
-    cache_key = f"clerk:{department.lower()}"
+    cache_key = f"clerk:{department}"
     cached_clerk = await redis_client.get(cache_key)
     
     if cached_clerk:

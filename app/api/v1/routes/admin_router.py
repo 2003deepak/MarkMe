@@ -18,20 +18,6 @@ async def create_clerk_route(
     return await create_clerk(request,user_data)
 
 
-
-# In this route, fetch all clerks listed under the given department
-# Step 1: Check the role of the user (from the token). Proceed only if the user is a "admin"
-# Step 2: This will be a GET request and does not require a request body
-# Step 4: Check if the clerk for this department are already stored in Redis Cache
-#         - If cached data exists, return it directly
-#         - If not, fetch the clerk list from MongoDB where department matches
-#           - While fetching from MongoDB, exclude the fields: created_at and updated_at
-#           - Store the clerk list efficiently in Redis cache for future use
-# Step 5: Return the clerk list as the response
-
-# Note ( Pls refer to the code in app/services/teacher_services/get_all_teachers.py for implementation details):
-# ( This functions is having similar implementation as get_all_teachers function in app/services/teacher_services/get_all_teachers.py)
-
 @router.get("/clerk/department/{department}")
 async def get_subject(
     department: str = Path(..., description="Departement to fetch clerks for"),
@@ -48,7 +34,11 @@ async def get_subject_by_id_route(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):
+<<<<<<< HEAD
     return await get_clerk_by_id(email_id, user_data)
 
 
     
+=======
+    return await get_clerk_by_id(email_id, user_data)
+>>>>>>> clerk-admin-ops

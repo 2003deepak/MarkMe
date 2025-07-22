@@ -95,6 +95,3 @@ async def get_subject_by_id_route(
     user_data: dict = Depends(is_logged_in)
 ):
     return await get_subject_by_id(subject_id, user_data)
-
-
-    
