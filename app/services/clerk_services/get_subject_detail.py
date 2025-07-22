@@ -73,7 +73,7 @@ async def get_subject_detail(user_data):
             detail={"status": "fail", "message": "Subjects not found"}
         )
 
- 
+
 
     # Wrap in dict before saving to Redis
     subject_data = {
@@ -88,19 +88,19 @@ async def get_subject_detail(user_data):
     return {"status": "success", "data": subject_data}
         
         
-        
 async def get_subject_by_id(subject_id, user_data):
-    print("🧾 user_data =", user_data,"Subject id ",subject_id)  # 🔍 Inspect structure
+    print("🧾 user_data =", user_data, "Subject id ", subject_id)
+    subject_id = subject_id.upper()
     user_email = user_data["email"]
     user_role = user_data["role"]
-    
+
     if user_role != "clerk":
         print("❌ Access denied: Not a clerk")
         raise HTTPException(
             status_code=403,
             detail={"status": "fail", "message": "Only Clerk can access this route"}
         )
-        
+
     exclude_fields = {
         "password": 0,
         "created_at": 0,
@@ -108,39 +108,23 @@ async def get_subject_by_id(subject_id, user_data):
         "password_reset_otp": 0,
         "password_reset_otp_expires": 0,
     }
-    
+
     clerks_collection = get_db().clerks
     clerk = await clerks_collection.find_one({"email": user_email}, exclude_fields)
     clerk_department = clerk.get('department')
-    print(f"➡️ Requested by: {user_email} (Role: {user_role} Department {clerk_department}")
-    
-    
-    cache_key_clerk = f"{user_role}:{clerk_department}"
+    print(f"➡️ Requested by: {user_email} (Role: {user_role} Department {clerk_department})")
+
+    cache_key_clerk = f"{user_role}:{clerk_department}:{subject_id}"
     cached_subject = await redis_client.get(cache_key_clerk)
 
     if cached_subject:
         print("✅ Found data in Redis cache")
-        subject_data = json.loads(cached_subject)
-        if "subjects" in subject_data:
-            # 🔍 Iterate through cached subjects and find match
-            for subject in subject_data["subjects"]:
-                if subject.get("subject_code") == subject_id:
-                    print(f"🎯 Found matching subject: {subject}")
-                    return {"status": "success", "data": subject}
-            print(f"📦 Returning cached subjects for {cache_key_clerk}")
-            
+        return {"status": "success", "data": json.loads(cached_subject)}
 
     print("ℹ️ No cached data found — fetching from DB...")
-    
-    
-    # Filter out unwanted fields from subjects
-    exclude_fields = {
-        "created_at": 0,
-        "updated_at": 0,
-    }
 
     subjects_collection = get_db().subjects
-    cursor = subjects_collection.find({"department": clerk_department}, exclude_fields)
+    cursor = subjects_collection.find({"department": clerk_department}, {"created_at": 0, "updated_at": 0})
     subjects = await cursor.to_list(length=None)
 
     if not subjects:
@@ -150,23 +134,15 @@ async def get_subject_by_id(subject_id, user_data):
             detail={"status": "fail", "message": "Subjects not found"}
         )
 
-
-    # Wrap in dict before saving to Redis
-    subject_data = {
-        "department": clerk_department,
-        "subjects": subjects
-    }
-
-    # Save to Redis with 24hr TTL
-    await redis_client.set(cache_key_clerk, json.dumps(subject_data,cls=MongoJSONEncoder), ex=86400)
-    print(f"📥 Saved subjects for {clerk_department} to Redis (TTL 24h)")
-
     for subject in subjects:
-        if subject.get("subject_code") == subject_id:
+        if subject.get("subject_code","") == subject_id:
             print(f"🎯 Found matching subject: {subject}")
-            return {"status": "success", "data": subject}
-        else:
-            raise HTTPException(
-            status_code=404,
-            detail={"status": "fail", "message": "Subject with not found"}
-        )
+            await redis_client.set(cache_key_clerk, json.dumps(subject, cls=MongoJSONEncoder), ex=86400)
+            print(f"📥 Saved subject {subject_id} for {clerk_department} to Redis (TTL 24h)")
+            return {"status": "success", "data": json.loads(json.dumps(subject, cls=MongoJSONEncoder))}
+
+    # If loop ends without return
+    raise HTTPException(
+        status_code=404,
+        detail={"status": "fail", "message": f"Subject with ID {subject_id} not found"}
+    )

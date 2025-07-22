@@ -13,3 +13,17 @@ A FastAPI project.
 - `app/`: Core application code
 - `tests/`: Unit and integration tests
 - `docs/`: Documentation
+
+Admin User:
+{
+"email": "admin@gmail.com",
+"password": "123456",
+"role": "admin"
+}
+
+Clerk:
+{
+"email": "yadavsuraj7449@gmail.com",
+"password": "123455",
+"role": "clerk"
+}

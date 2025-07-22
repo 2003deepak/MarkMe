@@ -32,7 +32,7 @@ async def create_clerk_route(
 # Note ( Pls refer to the code in app/services/teacher_services/get_all_teachers.py for implementation details):
 # ( This functions is having similar implementation as get_all_teachers function in app/services/teacher_services/get_all_teachers.py)
 
-@router.get("/clerk/{deptartment}")
+@router.get("/clerk/department/{department}")
 async def get_subject(
     department: str = Path(..., description="Departement to fetch clerks for"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -61,7 +61,7 @@ async def get_subject(
 
 
 
-@router.get("/clerk/{clerk_id}")
+@router.get("/clerk/id/{clerk_id}")
 async def get_subject_by_id_route(
     clerk_id: str = Path(..., description="Clerk ID to fetch details for"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
