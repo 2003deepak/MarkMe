@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Body,Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.admin_services.create_clerk import create_clerk
+from app.services.admin_services.delete_clerk import delete_clerk
 from app.services.admin_services.get_clerk import get_clerk,get_clerk_by_id
 from app.middleware.is_logged_in import is_logged_in
 from app.models.allModel import CreateClerkRequest
@@ -59,13 +60,13 @@ async def get_subject_by_id_route(
 # To check the email queue you can need to run another process
 # python -m app.worker.email_worker
 
-# @router.put("/clerk/delete/{email_id}")
-# async def delete_clerk_route(
-#     email_id: str = Path(..., description="Email ID"),
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-#     return await delete_clerk(email_id, user_data)
+@router.put("/clerk/delete/{email_id}")
+async def delete_clerk_route(
+    email_id: str = Path(..., description="Email ID"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await delete_clerk(email_id, user_data)
 
 
 

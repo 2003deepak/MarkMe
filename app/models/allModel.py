@@ -3,9 +3,9 @@ from enum import Enum
 from app.schemas.timetable import Session,Timetable
 from typing import Optional, List , Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from typing import Optional
+from typing import Optional,Literal
 import re
-from datetime import date , date
+from datetime import date , datetime
 
 class StudentRegisterRequest(BaseModel):
     first_name: str 
@@ -30,7 +30,7 @@ class TeacherRegisterRequest(BaseModel):
     department: str
     subjects_assigned: List[str] = []
 
-  
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -86,7 +86,9 @@ class SessionRequest(BaseModel):
     subject: str
     component: str 
 
-   
+
+
+
 class TimetableRequest(BaseModel):
     academic_year: str
     department: str
@@ -96,3 +98,25 @@ class TimetableRequest(BaseModel):
         "Monday": [], "Tuesday": [], "Wednesday": [], 
         "Thursday": [], "Friday": [], "Saturday": [], "Sunday": []
     }
+    
+class SlotReference(BaseModel):
+    day: str
+    slotIndex: int
+
+class NewSlot(BaseModel):
+    startTime: str  # in HH:MM
+    endTime: str
+    subject: str  # can be subject name or subject_id depending on system
+
+class CancelPayload(BaseModel):
+    timetable_id: str
+    date: datetime
+    action: Literal["Cancel"]
+    slotReference: SlotReference
+
+class ReschedulePayload(BaseModel):
+    timetable_id: str
+    date: datetime
+    action: Literal["Rescheduled"]
+    slotReference: SlotReference
+    newSlot: NewSlot

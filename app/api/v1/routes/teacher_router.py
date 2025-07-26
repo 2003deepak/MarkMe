@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends,Request,Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import ValidationError, BaseModel
 from typing import List, Optional
@@ -7,8 +7,10 @@ import json
 from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
 from app.services.teacher_services.update_teacher_profile import update_teacher_profile
+from app.services.teacher_services.exception_session import exception_session
 from app.models.allModel import UpdateProfileRequest
-
+from app.models.allModel import CancelPayload, ReschedulePayload
+from typing import Union, Literal
 # -- Pydantic Model Import
 
 router = APIRouter()
@@ -264,9 +266,17 @@ async def update_teacher_profile_route(
 # You can refer to the ExceptionSession Schema class in exception_session.py for the structure
 
 
-# @router.post("/exception_session/create")
-# # async def create_Session(
-# #     credentials: HTTPAuthorizationCredentials = Depends(security),
-# #     user_data: dict = Depends(is_logged_in)
-# # ):
-# #     return await get_teacher_me(user_data)
+@router.post("/exception_session/create")
+async def create_Session(
+    payload: Union[CancelPayload, ReschedulePayload] = Body(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    if payload.action == "Cancel":
+        # Handle cancel logic
+        print("Cancel payload:", payload)
+    elif payload.action == "Rescheduled":
+        # Handle reschedule logic
+        print("Reschedule payload:", payload)
+
+    return await exception_session(payload.dict(), user_data)
