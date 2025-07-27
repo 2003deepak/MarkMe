@@ -1,16 +1,21 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import List
-from motor.motor_asyncio import AsyncIOMotorClient
-import pymongo
+from beanie import Document, Indexed, Link
+from datetime import datetime
+from bson import ObjectId
+from app.schemas.subject import Subject  
+from app.schemas.student import Student
+from app.schemas.attendance import Attendance
 
-
-class StudentAttendanceSummary(BaseModel):
-    student_id: str
-    subject_id: str
+class StudentAttendanceSummary(Document):
+    student_id: Link[Student]  # type: ignore  # Keeping as string for now, consider Link[Student] if needed
+    subject_id: Link[Subject]  # Changed to Link for subject reference
     total_classes: int
     attended: int
     percentage: float
-    sessions_present: List[str]
+    sessions_present: List[Link[Attendance]]  
+    created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
+    updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 
     @field_validator("total_classes", "attended")
     @classmethod
@@ -26,15 +31,16 @@ class StudentAttendanceSummary(BaseModel):
             raise ValueError("Percentage must be between 0 and 100")
         return round(v, 2)
 
+   
 
-class StudentAttendanceSummaryRepository:
-    def __init__(self, client: AsyncIOMotorClient, db_name: str):
-        self.db = client[db_name]
-        self.collection = self.db["student_attendance_summary"]
+    class Settings:
+        name = "student_attendance_summary"
+        indexes = [
+            [("student_id", 1), ("subject_id", 1)],
+        ]
 
-    async def ensure_indexes(self):
-        await self.collection.create_index(
-            [("student_id", pymongo.ASCENDING), ("subject_id", pymongo.ASCENDING)],
-            unique=True,
-            name="student_subject_idx"
-        )
+        # Automatically update updated_at timestamp on save
+        async def pre_save(self) -> None:
+            self.updated_at = datetime.utcnow()
+            if not self.created_at:
+                self.created_at = self.updated_at

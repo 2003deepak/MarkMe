@@ -1,17 +1,17 @@
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict
-from bson import ObjectId
+from beanie import Document, Indexed
+from bson import ObjectId, DBRef
 import re
 from datetime import datetime
-
+from fastapi import HTTPException
+import logging
 
 # Pydantic model for Session
 class Session(BaseModel):
     start_time: str = Field(...)  # Format: "HH:MM"
     end_time: str = Field(...)    # Format: "HH:MM"
-    subject: ObjectId             # Reference to Subject ID
-    component: str = Field(...)    # Component type (e.g., Lecture, Tutorial, Lab)
+    subject: DBRef = Field(...)   # Changed to DBRef for subject references
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -29,69 +29,54 @@ class Session(BaseModel):
     @field_validator("end_time")
     @classmethod
     def validate_time_order(cls, end_time, values):
-        # Ensure start_time is present in values.data before accessing it
         if "start_time" in values.data:
             start = datetime.strptime(values.data["start_time"], "%H:%M")
             end = datetime.strptime(end_time, "%H:%M")
             if end <= start:
                 raise ValueError("End time must be after start time")
         return end_time
-    
+
     @field_validator("subject")
     @classmethod
-    def validate_object_id(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId format")
+    def validate_subject(cls, v):
+        if not isinstance(v, DBRef) or v.collection != "subject" or not isinstance(v.id, ObjectId):
+            raise ValueError("Subject must be a valid DBRef with collection 'subject' and ObjectId")
         return v
-    
-    class Config:
-        arbitrary_types_allowed = True  # Allow ObjectId type
 
-    
-    
-# Pydantic model for Timetable
-class Timetable(BaseModel):
-    academic_year: str = Field(...)
-    department: str = Field(...)
-    program: str = Field(...)
-    semester: str = Field(...)
+    class Config:
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str, DBRef: lambda dbref: {"$ref": dbref.collection, "$id": str(dbref.id)}}
+
+# Beanie Document model for Timetable
+class Timetable(Document):
+    academic_year: Indexed(str)  # type: ignore
+    department: Indexed(str)  # type: ignore
+    program: Indexed(str)  # type: ignore
+    semester: str
     schedule: Dict[str, List[Session]] = {
-        "Monday": [], "Tuesday": [], "Wednesday": [], 
+        "Monday": [], "Tuesday": [], "Wednesday": [],
         "Thursday": [], "Friday": [], "Saturday": [], "Sunday": []
     }
+    created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
+    updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 
     @field_validator("academic_year")
     @classmethod
     def validate_academic_year(cls, v):
         if not re.match(r"^\d{4}", v):
-            raise ValueError("Academic year must be in YYYY-YY format")
+            raise ValueError("Academic year must be in YYYY format")
         return v
 
-
- 
-# Repository for Timetable operations
-class TimetableRepository:
-    def __init__(self, client: AsyncIOMotorClient, db_name: str):
-        self.db = client[db_name]
-        self.timetables = self.db["timetables"]
-        self.subjects = self.db["subjects"]
-
-    async def ensure_indexes(self):
-        """Create necessary indexes."""
-        await self.timetables.create_index([("academic_year", 1)])
-        await self.timetables.create_index([("department", 1)])
-        await self.timetables.create_index([("program", 1)])
-        await self.timetables.create_index(
+    class Settings:
+        name = "timetables"
+        indexes = [
             [("academic_year", 1), ("department", 1), ("program", 1)],
-            unique=True
-        )
+        ]
 
-    async def validate_references(self, session: Session):
-        """
-        Validate subject reference exists.
-        The Session model's subject field is directly the ObjectId string.
-        """
-        # Access session.subject directly, as it is already the ObjectId string
-        subject_id = ObjectId(session.subject) 
-        if not await self.subjects.find_one({"_id": subject_id}):
-            raise ValueError(f"Subject with ID {session.subject} does not exist")
+        async def pre_save(self) -> None:
+            self.updated_at = datetime.utcnow()
+            if not self.created_at:
+                self.created_at = self.updated_at
+
+    class Config:
+        arbitrary_types_allowed = True

@@ -1,10 +1,14 @@
 from fastapi import HTTPException
+from pydantic import BaseModel
 from app.core.redis import redis_client
 import json
 from app.core.database import get_db
-from bson import ObjectId
+from app.schemas.clerk import Clerk
 from datetime import datetime
 from fastapi.encoders import jsonable_encoder
+from bson import ObjectId
+from typing import Optional
+from app.models.allModel import ClerkShortView
 
 # JSON encoder to handle ObjectId and datetime
 class MongoJSONEncoder(json.JSONEncoder):
@@ -16,8 +20,8 @@ class MongoJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-async def get_clerk(department: str, user_data: dict):
 
+async def get_clerk(department: str, user_data: dict):
     print(f"🧾 user_data = {user_data}")  # 🔍 Inspect structure
     
     user_email = user_data["email"]
@@ -46,17 +50,8 @@ async def get_clerk(department: str, user_data: dict):
 
     print("ℹ️ No cached data found — fetching from DB...")
 
-    # Filter out unwanted fields from clerk
-    exclude_fields = {
-        "password": 0,
-        "created_at": 0,
-        "updated_at": 0,
-        "password_reset_otp": 0,
-        "password_reset_otp_expires": 0,
-    }
-    clerks_collection = get_db().clerks
-    cursor = clerks_collection.find({"department": department}, exclude_fields)
-    clerks = await cursor.to_list(length=None)
+    # Use Beanie's project method with ClerkShortView
+    clerks = await Clerk.find(Clerk.department == department).project(ClerkShortView).to_list()
     
     if not clerks:
         print("❌ No clerks found in DB")
@@ -68,7 +63,7 @@ async def get_clerk(department: str, user_data: dict):
     # Wrap in dict before saving to Redis
     clerk_data = {
         "department": department,
-        "clerks": clerks
+        "clerks": [clerk.dict() for clerk in clerks]
     }
 
     # Serialize with MongoJSONEncoder for Redis
@@ -77,10 +72,15 @@ async def get_clerk(department: str, user_data: dict):
     print(f"📥 Saved clerks for {department} to Redis (TTL 24h)")
 
     # Use jsonable_encoder to ensure proper serialization for response
-    return {"status": "success", "data": jsonable_encoder(clerk_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
+    return {
+        "status": "success",
+        "data": jsonable_encoder(
+            clerk_data,
+            custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
+        )
+    }
 
 async def get_clerk_by_id(email_id: str, user_data: dict):
-
     print(f"🧾 user_data = {user_data}, Clerk id = {email_id}")  # 🔍 Inspect structure
     email_id = email_id.lower()
     user_email = user_data["email"]
@@ -101,24 +101,29 @@ async def get_clerk_by_id(email_id: str, user_data: dict):
         print(f"✅ Found cached clerk for {cache_key}")
         return {"status": "success", "data": json.loads(cached_clerk)}
 
-    exclude_fields = {
-        "password": 0,
-        "created_at": 0,
-        "updated_at": 0,
-        "password_reset_otp": 0,
-        "password_reset_otp_expires": 0,
-    }
-    
-    clerks_collection = get_db().clerks
-    clerk = await clerks_collection.find_one({"email": email_id}, exclude_fields)
+    # Fetch clerk by email using project method
+    clerk = await Clerk.find_one(Clerk.email == email_id).project(ClerkShortView)
     
     if not clerk:
-        raise HTTPException(status_code=404, detail=f"Clerk not found ")
+        print(f"❌ Clerk {email_id} not found in DB")
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "fail", "message": "Clerk not found"}
+        )
+
+    # Convert to dict for Redis
+    clerk_dict = clerk.dict()
 
     # Serialize with MongoJSONEncoder for Redis
-    clerk_json = json.dumps(clerk, cls=MongoJSONEncoder)
+    clerk_json = json.dumps(clerk_dict, cls=MongoJSONEncoder)
     await redis_client.setex(cache_key, 3600, clerk_json)  # Cache for 1 hour
     print(f"📥 Saved clerk {email_id} to Redis (TTL 1h)")
 
     # Use jsonable_encoder to ensure proper serialization for response
-    return {"status": "success", "data": jsonable_encoder(clerk, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
+    return {
+        "status": "success",
+        "data": jsonable_encoder(
+            clerk_dict,
+            custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
+        )
+    }

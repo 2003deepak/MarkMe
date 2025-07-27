@@ -6,7 +6,7 @@ from app.services.student_services.update_student_profile import update_student_
 from app.schemas.student import Student
 from pydantic import ValidationError, BaseModel
 from typing import List, Optional
-from datetime import date
+from datetime import datetime , date
 import json
 from app.middleware.is_logged_in import is_logged_in
 
@@ -24,8 +24,8 @@ async def register_student_route(
     last_name: str = Form(...),
     email: str = Form(...),
     password: str = Form(..., min_length=6, max_length=6),
-    phone: int = Form(...),
-    dob: str = Form(..., description="Date of birth in YYYY-MM-DD format"),
+    phone: str = Form(...),
+    dob: date = Form(..., description="Date of birth in YYYY-MM-DD format"), 
     roll_number: int = Form(...),
     program: str = Form(...),
     department: str = Form(...),
@@ -41,14 +41,7 @@ async def register_student_route(
                 detail="Please upload between 3 and 4 photos"
             )
 
-        # Validate and parse dob
-        try:
-            dob_date = date.fromisoformat(dob)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid date format for dob. Use YYYY-MM-DD"
-            )
+       
 
         # Create StudentRegisterRequest object for validation
         student_request = StudentRegisterRequest(
@@ -58,7 +51,7 @@ async def register_student_route(
             email=email,
             password=password,
             phone=phone,
-            dob=dob_date,
+            dob=dob,
             roll_number=roll_number,
             program=program,
             department=department,
@@ -81,7 +74,7 @@ async def register_student_route(
             department=student_request.department,
             semester=student_request.semester,
             batch_year=student_request.batch_year,
-            face_embedding=[],  # Placeholder, filled in register_student
+            face_embedding= None,  # Placeholder, filled in register_student
         )
 
         return await register_student(
@@ -94,6 +87,7 @@ async def register_student_route(
     except HTTPException as e:
         raise e
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
@@ -108,7 +102,6 @@ async def get_me(
 
 @router.put("/me/update-profile")
 async def update_profile(
-
     first_name: Optional[str] = Form(None),
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
@@ -118,27 +111,41 @@ async def update_profile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):
+   
+    if first_name == "":
+        first_name = None
+    if middle_name == "":
+        middle_name = None
+    if last_name == "":
+        last_name = None
+    if phone == "": # Add this for phone as well
+        phone = None
 
+    # Handle dob: convert to date object or ensure None
+    parsed_dob: Optional[date] = None
+    if dob:
+        # If dob is an empty string, treat it as None
+        if dob.strip() == "":
+            parsed_dob = None
+        else:
+            try:
+                parsed_dob = datetime.strptime(dob, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"status": "fail", "message": "Invalid date format for dob. Use YYYY-MM-DD."}
+                )
+   
+    update_request_data = UpdateProfileRequest(
+        first_name=first_name,
+        middle_name=middle_name,
+        last_name=last_name,
+        phone=phone,
+        dob=parsed_dob,
+    )
 
-    try:
-        # Create UpdateProfileRequest object from form data
-        update_request_data = UpdateProfileRequest(
-            first_name=first_name,
-            middle_name=middle_name,
-            last_name=last_name,
-            phone=phone,
-            dob=dob,
-        )
-
-        return await update_student_profile(
-            request_data=update_request_data,
-            user_data=user_data,
-            profile_picture=profile_picture
-        )
-    except ValidationError as e:
-        # Pydantic validation errors from UpdateProfileRequest
-        raise HTTPException(status_code=422, detail=json.loads(e.json()))
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    return await update_student_profile(
+        request_data=update_request_data,
+        user_data=user_data,
+        profile_picture=profile_picture
+    )

@@ -2,33 +2,35 @@ from datetime import datetime
 from typing import List, Optional
 import re
 from pydantic import BaseModel, EmailStr, Field, field_validator, HttpUrl
+from beanie import Document, Indexed, Link
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
+from datetime import date
 
-class Student(BaseModel):
-    student_id: str 
+class Student(Document):
+    student_id: Indexed(str, unique=True)  # type: ignore
     first_name: str 
     middle_name: Optional[str] 
     last_name: str 
-    email: str
+    email: Indexed(EmailStr, unique=True)  # type: ignore
     password: str
     profile_picture: Optional[HttpUrl] = None
-    profile_picture_id : str = None 
-    dob: str
-    roll_number: int 
-    phone: int
+    profile_picture_id: Optional[str] = None 
+    dob: date
+    roll_number: Indexed(int, unique=True)  # type: ignore
+    phone: str
     program: str
-    department: str
-    semester: int
-    batch_year: int 
+    department: Indexed(str)  # type: ignore
+    semester: Indexed(int)  # type: ignore
+    batch_year: Indexed(int)  # type: ignore
     face_embedding: Optional[List[float]] = None
     password_reset_otp: Optional[str] = None
     password_reset_otp_expires: Optional[datetime] = None
+    created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
+    updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 
-    # Validators
+    # Validators (unchanged)
     @field_validator("phone")
     def validate_phone(cls, v):
-        # Convert int to string for length and digit validation
         v_str = str(v)
         if not re.match(r"^\d{10}$", v_str):
             raise ValueError("Phone number must be a 10-digit number")
@@ -36,12 +38,9 @@ class Student(BaseModel):
 
     @field_validator("roll_number")
     def validate_roll_number(cls, v):
-        # Ensure roll_number is a positive integer
         if v <= 0:
             raise ValueError("Roll number must be a positive integer")
         return v
-
-    
 
     @field_validator("semester")
     def validate_semester(cls, v):
@@ -55,44 +54,23 @@ class Student(BaseModel):
             raise ValueError("Batch year must be between 2000 and 2100")
         return v
 
-    
     @field_validator("face_embedding")
     def validate_face_embedding(cls, v):
-        if v is None or v == []:  # Accept both None and empty list
+        if v is None or v == []:
             return None
         if not isinstance(v, list) or len(v) != 512:
             raise ValueError("faceEmbedding must be a 512-dimensional vector")
         return v
 
 
-    @field_validator("dob")
-    def validate_dob(cls, v):
-        # Validate that dob is in YYYY-MM-DD format
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
-            raise ValueError("DOB must be in YYYY-MM-DD format")
-        try:
-            datetime.strptime(v, "%Y-%m-%d")
-        except ValueError:
-            raise ValueError("Invalid date format or invalid date")
-        return v
 
-class StudentRepository:
-    def __init__(self, client: AsyncIOMotorClient, db_name: str):
-        self.db = client[db_name]
-        self.collection = self.db["students"]
-        self._ensure_indexes()
+    class Settings:
+        name = "students"
+        indexes = [
+            [("department", 1), ("semester", 1), ("batch_year", 1)],
+        ]
 
-    async def _ensure_indexes(self):
-        await self.collection.create_index("student_id", unique=True)
-        await self.collection.create_index("email", unique=True)
-        await self.collection.create_index("roll_number", unique=True)  
-        await self.collection.create_index([("department", 1), ("semester", 1), ("batch_year", 1)])
-        await self.collection.create_index("created_at")
-        await self.collection.create_index("updated_at")
-
-    async def _apply_timestamps(self, document: dict, is_update: bool = False) -> dict:
-        now = datetime.utcnow()
-        if not is_update and "created_at" not in document:
-            document["created_at"] = now
-        document["updated_at"] = now
-        return document
+        async def pre_save(self) -> None:
+            self.updated_at = datetime.utcnow()
+            if not self.created_at:
+                self.created_at = self.updated_at

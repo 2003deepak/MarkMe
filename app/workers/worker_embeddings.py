@@ -6,7 +6,8 @@ import warnings
 from typing import List
 from app.core.rabbitmq_config import settings
 from app.utils.extract_student_embedding import extract_student_embedding
-from app.core.database import get_db, init_db
+from app.core.database import init_db
+from app.schemas.student import Student  
 
 # Suppress all unnecessary output
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -16,10 +17,8 @@ warnings.filterwarnings("ignore")
 async def generate_embedding(student_id: str, image_paths: List[str]):
     """Generate and store face embedding for a student"""
     try:
-        db = get_db()
         face_embedding = await extract_student_embedding(image_paths)
-        await db.students.update_one(
-            {"student_id": student_id},
+        await Student.find_one(Student.student_id == student_id).update(
             {"$set": {"face_embedding": face_embedding.tolist()}}
         )
         print(f"Processed student: {student_id}")

@@ -1,9 +1,10 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorDocument, AsyncIOMotorCollection
+from beanie import Document, Indexed, Link
 from bson import ObjectId
-
+from app.schemas.timetable import Timetable  
+from app.schemas.subject import Subject  
 
 class SlotReference(BaseModel):
     day: str
@@ -27,7 +28,7 @@ class SlotReference(BaseModel):
 class NewSession(BaseModel):
     start_time: str = Field(..., alias="startTime")
     end_time: str = Field(..., alias="endTime")
-    subject: Optional[str]
+    subject: Optional[Link[Subject]] = None  # Changed to Link for subject reference
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -39,14 +40,14 @@ class NewSession(BaseModel):
             raise ValueError("Invalid time value")
         return v
 
-class ExceptionSession(BaseModel):
-    timetable_id: str
-    date: datetime
+class ExceptionSession(Document):
+    timetable_id: Link[Timetable]  # Changed to Link for timetable reference
+    date: Indexed(datetime)  # type: ignore
     action: str
     slot_reference: Optional[SlotReference] = Field(None, alias="slotReference")
     new_slot: Optional[NewSession] = Field(None, alias="newSlot")
-    created_at: Optional[float] = None
-    updated_at: Optional[float] = None
+    created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
+    updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 
     @field_validator("action")
     @classmethod
@@ -69,43 +70,13 @@ class ExceptionSession(BaseModel):
             raise ValueError("newSlot is required when action is 'Add'")
         return v
 
-
-class SlotReferenceDocument:
-    def __init__(self, day: str, slot_index: int):
-        self.day = day
-        self.slot_index = slot_index
-
-
-
-class NewSessionDocument:
-    def __init__(self, start_time: str, end_time: str, subject: Optional[str] = None):
-        self.start_time = start_time
-        self.end_time = end_time
-        self.subject = subject
-
-
-class ExceptionSessionDocument(AsyncIOMotorDocument):
-    class Settings:
-        collection = "exception_sessions"
-
-    def __init__(
-        self,
-        timetable_id: str,
-        date: datetime,
-        action: str,
-        slot_reference: Optional[SlotReferenceDocument] = None,
-        new_slot: Optional[NewSessionDocument] = None,
-        created_at: Optional[float] = None,
-        updated_at: Optional[float] = None,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.timetable_id = timetable_id
-        self.date = date
-        self.action = action
-        self.slot_reference = slot_reference
-        self.new_slot = new_slot
-        self.created_at = created_at
-        self.updated_at = updated_at
-
     
+
+    class Settings:
+        name = "exception_sessions"
+
+        # Automatically update updated_at timestamp on save
+        async def pre_save(self) -> None:
+            self.updated_at = datetime.utcnow()
+            if not self.created_at:
+                self.created_at = self.updated_at

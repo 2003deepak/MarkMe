@@ -2,25 +2,25 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import get_db
 from datetime import datetime
 from passlib.context import CryptContext
-from app.schemas.student import Student, StudentRepository
+from app.schemas.student import Student
 from pydantic import ValidationError
 from app.utils.security import get_password_hash
 from typing import List
 from app.utils.publisher import send_to_queue  
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def register_student(student_data: Student, images: List[UploadFile]):
     try:
-        db = get_db()
-        repo = StudentRepository(db.client, db.name)
+        
+        print("Starting student registration...")
 
         # Check if student already exists
-        if await db.students.find_one({"email": student_data.email}):
+        if await Student.find_one(Student.email == student_data.email):
             raise HTTPException(
                 status_code=400,
                 detail={"status": "fail", "message": "Student already exists"}
             )
+    
 
         # Generate student ID
         student_id = f"{student_data.program.upper()}-{student_data.department.upper()}-{student_data.batch_year}-{student_data.semester}-{student_data.roll_number}"
@@ -54,9 +54,8 @@ async def register_student(student_data: Student, images: List[UploadFile]):
             face_embedding=None  # initially None
         )
 
-        student_dict = student_doc.dict()
-        student_dict = await repo._apply_timestamps(student_dict)
-        await db.students.insert_one(student_dict)
+        # Save student to database (timestamps are handled by Beanie's pre_save)
+        await student_doc.save()
 
         # ✅ Send Welcome Email Task to Queue
         await send_to_queue("email_queue", {
@@ -105,7 +104,9 @@ async def register_student(student_data: Student, images: List[UploadFile]):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Student Creation error: {str(e)}")
+        print(f"Error in register_student: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail={"status": "fail", "message": f"Error registering student: {str(e)}"}

@@ -2,17 +2,18 @@ import asyncio
 from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.schemas.timetable import Timetable
-from app.core.database import get_db, init_db, close_db
+from app.core.database import init_db, close_db
 from app.utils.publisher import send_to_queue
 from app.core.config import settings
-from zoneinfo import ZoneInfo  # 🆒 for timezone-aware delay
+from zoneinfo import ZoneInfo
+from beanie.odm.fields import Link
+from app.schemas.timetable import Timetable as TimetableModel
+from bson import ObjectId
 
 async def generate_sessions_for_tomorrow():
     print("🔄 Starting generation of sessions for tomorrow...")
 
-    db = get_db()  
-    timetables_collection = db["timetables"]
-
+    # Determine the target date
     if settings.ENVIRONMENT == "production":
         tomorrow = datetime.now(tz=ZoneInfo("Asia/Kolkata")) + timedelta(days=1)
     else:
@@ -20,24 +21,26 @@ async def generate_sessions_for_tomorrow():
 
     tomorrow_date = tomorrow.date()
     weekday = tomorrow.strftime("%A")
-
     print(f"🗕 Target Date: {tomorrow_date} ({weekday})")
 
-    timetables = await timetables_collection.find().to_list(None)
+    # Fetch timetables using Beanie
+    timetables = await TimetableModel.find().to_list()
     print(f"📄 Total timetables fetched: {len(timetables)}")
 
     final_sessions = []
 
     for timetable in timetables:
         try:
-            timetable_model = Timetable(**timetable)
+            # Convert Beanie model to Pydantic schema
+            timetable_model = Timetable(**timetable.model_dump())
         except ValueError as e:
-            print(f"⚠️ Invalid timetable data for ID {timetable.get('_id')}: {str(e)}")
+            print(f"⚠️ Invalid timetable data for ID {timetable.id}: {str(e)}")
             continue
 
-        timetable_id = str(timetable["_id"])
+        timetable_id = str(timetable.id)
         print(f"🗂 Processing timetable: {timetable_id}")
 
+        # Filter valid sessions for the target weekday
         valid_sessions = [
             (idx, session) for idx, session in enumerate(timetable_model.schedule.get(weekday, []))
             if session.start_time and session.end_time and session.subject and session.component
@@ -46,6 +49,7 @@ async def generate_sessions_for_tomorrow():
 
         for idx, session in valid_sessions:
             try:
+                # Parse start time for scheduling
                 start_time = datetime.strptime(
                     f"{tomorrow_date} {session.start_time}", "%Y-%m-%d %H:%M"
                 ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
@@ -53,6 +57,24 @@ async def generate_sessions_for_tomorrow():
                 print(f"❌ Invalid time format in timetable {timetable_id}, slot {idx}: {str(e)}")
                 continue
 
+            # Handle both Link and direct ObjectId cases for subject
+            subject_id = None
+            if isinstance(session.subject, Link):
+                subject_id = str(session.subject.ref.id)  # Get the referenced ObjectId
+            elif isinstance(session.subject, ObjectId):
+                subject_id = str(session.subject)
+            elif isinstance(session.subject, str):
+                try:
+                    # Validate it's a proper ObjectId string
+                    subject_id = str(ObjectId(session.subject))
+                except:
+                    print(f"❌ Invalid subject ID format: {session.subject}")
+                    continue
+            else:
+                print(f"❌ Unsupported subject reference type: {type(session.subject)}")
+                continue
+
+            # Prepare session payload with proper subject ID serialization
             session_payload = {
                 "timetable_id": timetable_id,
                 "day": weekday,
@@ -60,7 +82,7 @@ async def generate_sessions_for_tomorrow():
                 "session": {
                     "start_time": session.start_time,
                     "end_time": session.end_time,
-                    "subject": str(session.subject),  # Convert ObjectId to string
+                    "subject": subject_id,
                     "component_type": session.component
                 },
                 "date": tomorrow.strftime("%Y-%m-%d"),
@@ -70,7 +92,8 @@ async def generate_sessions_for_tomorrow():
             print(f"📦 Prepared session payload: {session_payload}")
             final_sessions.append((start_time, session_payload))
 
-    final_sessions.sort(key=lambda x: x[0])  # sort by datetime
+    # Sort sessions by start time
+    final_sessions.sort(key=lambda x: x[0])
     print(f"📊 Total sessions to push to queue: {len(final_sessions)}")
 
     now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
@@ -79,28 +102,25 @@ async def generate_sessions_for_tomorrow():
     for i, (start_time, session_payload) in enumerate(final_sessions):
         try:
             if settings.ENVIRONMENT == "development":
-                # Simulate start_time = now + (115 + i*20) seconds
+                # Simulate start_time for development mode
                 now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-
                 fake_start = now + timedelta(seconds=115 + i * 20)
                 fake_end = fake_start + timedelta(hours=1)
-
                 session_payload["session"]["start_time"] = fake_start.strftime("%H:%M")
                 session_payload["session"]["end_time"] = fake_end.strftime("%H:%M")
                 session_payload["start_time_timestamp"] = fake_start.timestamp()
-                delay_ms = 100_00 + i * 20_00  # Simulate 10s, 12s...
+                delay_ms = 100_00 + i * 20_00  # Simulate 10s, 12s, ...
             else:
+                # Calculate delay for production mode (15 minutes before session)
                 now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
                 delay_seconds = (start_time - timedelta(minutes=15) - now).total_seconds()
                 delay_ms = max(0, int(delay_seconds * 1000))
 
+            # Send to worker queue
             await send_to_queue(queue_name, session_payload, delay_ms=delay_ms)
             print(f"📤 Pushed session {session_payload['timetable_id']}:{session_payload['slot_index']} with delay {delay_ms // 1000} seconds")
         except Exception as e:
             print(f"🚫 Failed to push session {session_payload['timetable_id']}:{session_payload['slot_index']} to queue: {str(e)}")
-
-
-
 
 async def main():
     print("🚀 Initializing DB connection...")

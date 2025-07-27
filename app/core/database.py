@@ -1,35 +1,62 @@
+from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from app.core.config import settings
-import pymongo
+from app.schemas.student import Student  
+from app.schemas.timetable import Timetable  
+from app.schemas.teacher import Teacher
+from app.schemas.clerk import Clerk
+from app.schemas.subject import Subject
+from app.schemas.attendance import Attendance
+from app.schemas.exception_session import ExceptionSession
+from app.schemas.student_attendance_summary import StudentAttendanceSummary
+from app.schemas.attendance_heatmap_college import AttendanceHeatmapCollege
+from app.schemas.department_attendance_snapshot import DepartmentAttendanceSnapshot
+from app.schemas.subject_attendance_roster import SubjectAttendanceRoster
+from app.schemas.teacher_subject_summary import TeacherSubjectSummary
+from app.schemas.subject_session_stats import SubjectSessionStats
+from app.schemas.student_risk_summary import StudentRiskSummary
 
-# Global client to hold the MongoDB connection
+
+# Global client and db
 client: Optional[AsyncIOMotorClient] = None
 db = None
 
 async def init_db():
     global client, db
-    
-    # Create MongoDB client
+
     client = AsyncIOMotorClient(settings.MONGO_URI)
-    
-    # Get database name
-    if settings.MONGO_DB_NAME:
-        db_name = settings.MONGO_DB_NAME
-    else:
-        # Extract database name from URI
-        db_name = settings.MONGO_URI.split("/")[-1].split("?")[0]
-    
+
+    db_name = settings.MONGO_DB_NAME or settings.MONGO_URI.split("/")[-1].split("?")[0]
     db = client[db_name]
-    
-    print(f"Database '{db_name}' connected successfully!")
+
+    document_models = [
+        Student,
+        Timetable,
+        Teacher,
+        Clerk,
+        Subject,
+        Attendance,
+        ExceptionSession,
+        StudentAttendanceSummary,
+        AttendanceHeatmapCollege,
+        DepartmentAttendanceSnapshot,
+        SubjectAttendanceRoster, 
+        TeacherSubjectSummary,
+        SubjectSessionStats,  
+        StudentRiskSummary
+
+
+    ]
+
+    await init_beanie(database=db, document_models=document_models)
+    print(f"✅ Database '{db_name}' connected successfully!")
 
 async def close_db():
     if client:
         client.close()
 
 def get_db():
-    """Get the database instance"""
-    if db is None:  # Explicitly check if db is None
+    if db is None:
         raise RuntimeError("Database not initialized")
     return db

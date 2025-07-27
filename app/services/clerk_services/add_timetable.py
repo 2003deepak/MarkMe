@@ -1,12 +1,13 @@
 from fastapi import HTTPException
-from bson import ObjectId
+from beanie import Link
+from bson import ObjectId , DBRef
 from datetime import datetime
-from app.core.database import get_db
-from app.schemas.timetable import Timetable
+from app.schemas.timetable import Timetable, Session
+from app.schemas.subject import Subject
+from app.models.allModel import TimetableRequest
+import logging
 
-
-async def add_timetable(request, user_data: dict):
-    
+async def add_timetable(request: TimetableRequest, user_data: dict):
     # Validate user role
     if user_data["role"] != "clerk":
         raise HTTPException(
@@ -14,99 +15,93 @@ async def add_timetable(request, user_data: dict):
             detail="Only clerks can create timetables"
         )
 
-    db = get_db()
-    
     # Validate timetable uniqueness
-    existing_timetable = await db.timetables.find_one({
-        "academic_year": request.academic_year,
-        "department": request.department,
-        "program": request.program,
-        "semester": request.semester
-    })
+    existing_timetable = await Timetable.find_one(
+        Timetable.academic_year == request.academic_year,
+        Timetable.department == request.department,
+        Timetable.program == request.program,
+        Timetable.semester == request.semester
+    )
     if existing_timetable:
         raise HTTPException(
             status_code=400,
             detail="Timetable already exists for this academic year, department, program, and semester"
         )
 
-    # Convert request to dict and prepare for insertion
-    timetable_data = request.model_dump()
-    
-    # Convert all subject strings to ObjectId in the schedule
-    for day in timetable_data["schedule"]:
-        for session in timetable_data["schedule"][day]:
-            # Validate subject ID format
-            if not ObjectId.is_valid(session["subject"]):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid subject ID format: {session['subject']}"
-                )
-            
-            # Convert to ObjectId
-            session["subject"] = ObjectId(session["subject"])
-            
-            # Validate subject exists
-            subject_exists = await db.subjects.find_one({"_id": session["subject"]})
-            if not subject_exists:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Subject with ID {session['subject']} does not exist"
-                )
+    # Collect all subject IDs from the request
+    subject_ids = set()
+    for day, sessions in request.schedule.items():
+        for session in sessions:
+            subject_ids.add(session.subject)
+
+    # Validate that all subjects exist
+    from app.schemas.subject import Subject
+    subjects = await Subject.find({"_id": {"$in": [ObjectId(sid) for sid in subject_ids]}}).to_list()
+    if len(subjects) != len(subject_ids):
+        missing_ids = subject_ids - {str(subject.id) for subject in subjects}
+        raise HTTPException(status_code=400, detail=f"Invalid subject IDs: {missing_ids}")
+
+    # Convert SessionRequest to Session
+    schedule = {}
+    for day, sessions in request.schedule.items():
+        if day not in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
+            raise HTTPException(status_code=400, detail=f"Invalid day: {day}")
+        
+        schedule[day] = [
+            Session(
+                start_time=session.start_time,
+                end_time=session.end_time,
+                subject=DBRef(collection="subject", id=ObjectId(session.subject))
+            )
+            for session in sessions
+        ]
 
     # Validate no overlapping sessions
-    for day, sessions in timetable_data["schedule"].items():
-        if day not in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid day: {day}"
-            )
-
-        # Sort sessions by start_time to simplify overlap checking
-        sorted_sessions = sorted(sessions, key=lambda s: datetime.strptime(s["start_time"], "%H:%M"))
-
+    for day, sessions in schedule.items():
+        sorted_sessions = sorted(sessions, key=lambda s: datetime.strptime(s.start_time, "%H:%M"))
+        
         for i, session in enumerate(sorted_sessions):
-            # Convert times to datetime for comparison
             try:
-                start_time = datetime.strptime(session["start_time"], "%H:%M")
-                end_time = datetime.strptime(session["end_time"], "%H:%M")
+                start_time = datetime.strptime(session.start_time, "%H:%M")
+                end_time = datetime.strptime(session.end_time, "%H:%M")
             except ValueError:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid time format in session on {day}"
                 )
             
-            # Check for overlapping sessions on same day
             for j in range(i + 1, len(sorted_sessions)):
                 other_session = sorted_sessions[j]
                 try:
-                    other_start = datetime.strptime(other_session["start_time"], "%H:%M")
-                    other_end = datetime.strptime(other_session["end_time"], "%H:%M")
+                    other_start = datetime.strptime(other_session.start_time, "%H:%M")
+                    other_end = datetime.strptime(other_session.end_time, "%H:%M")
                 except ValueError:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Invalid time format in session on {day}"
                     )
 
-                # Overlap condition: (start1 < end2 and end1 > start2)
                 if not (end_time <= other_start or start_time >= other_end):
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Overlapping sessions detected on {day}: Session from {session['start_time']}-{session['end_time']} overlaps with {other_session['start_time']}-{other_session['end_time']}"
+                        detail=f"Overlapping sessions detected on {day}: Session from {session.start_time}-{session.end_time} overlaps with {other_session.start_time}-{other_session.end_time}"
                     )
 
-    # Add creation timestamp
-    timetable_data["created_at"] = datetime.utcnow()
+    # Create Timetable document
+    timetable_data = Timetable(
+        academic_year=request.academic_year,
+        department=request.department,
+        program=request.program,
+        semester=request.semester,
+        schedule=schedule
+    )
 
-    # Insert timetable into database
-    result = await db.timetables.insert_one(timetable_data)
-
-    if not result.inserted_id:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to create timetable"
-        )
-
-    return {
-        "message": "Timetable created successfully",
-        "timetable_id": str(result.inserted_id)
-    }
+    try:
+        await timetable_data.insert()
+        return {
+            "message": "Timetable created successfully",
+            "timetable_id": str(timetable_data.id)
+        }
+    except Exception as e:
+        logging.error(f"Error creating timetable: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create timetable")

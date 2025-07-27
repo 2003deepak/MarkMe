@@ -1,9 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson.objectid import ObjectId
-
+from beanie import Document, Link
 
 class Component(BaseModel):
     type: str  # Lecture or Lab
@@ -15,54 +13,66 @@ class Component(BaseModel):
             raise ValueError("Type must be either 'Lecture' or 'Lab'")
         return v
 
-class Subject(BaseModel):
-    subject_code: str 
+class Subject(Document):
+    subject_code: str
     subject_name: str
     department: str
     semester: int
     program: str
-    components: List[Component]
+    component: str
     credit: int
-    teacher_assigned: Optional[ObjectId] = None  
+    teacher_assigned: Link["Teacher"] = None  # Assuming Teacher is defined elsewhere
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     @field_validator("subject_code")
+    @classmethod
     def uppercase_subject_code(cls, v):
         return v.upper()
 
     @field_validator("department")
+    @classmethod
     def uppercase_department(cls, v):
         return v.upper()
 
     @field_validator("semester")
+    @classmethod
     def validate_semester(cls, v):
         if not (1 <= v <= 10):
             raise ValueError("Semester must be between 1 and 10")
         return v
 
-  
     @field_validator("credit")
+    @classmethod
     def validate_credit(cls, v):
         if not (1 <= v <= 10):
             raise ValueError("Credit must be between 1 and 10")
         return v
+    
+    @field_validator("component")
+    @classmethod
+    def validate_component(cls, v):
+        if v not in ["Lecture", "Lab"]:
+            raise ValueError("Component must be either 'Lecture' or 'Lab'")
+        return v
+
+    class Settings:
+        name = "subjects"
+        indexes = [
+            [("subject_code", 1), ("component", 1)],
+            [("department", 1), ("semester", 1)],
+            "created_at",
+            "updated_at",
+        ]
+
+    async def pre_save(self) -> None:
+        self.updated_at = datetime.utcnow()
+        if not self.created_at:
+            self.created_at = self.updated_at
 
     class Config:
         arbitrary_types_allowed = True
 
-class SubjectRepository:
-    def __init__(self, client: AsyncIOMotorClient, db_name: str):
-        self.db = client[db_name]
-        self.collection = self.db["subjects"]
-
-    async def _ensure_indexes(self):
-        await self.collection.create_index([("subject_code", 1), ("type", 1)], unique=True)
-        await self.collection.create_index([("department", 1), ("semester", 1)])
-        await self.collection.create_index("created_at")
-        await self.collection.create_index("updated_at")
-
-    async def _apply_timestamps(self, document: dict, is_update: bool = False) -> dict:
-        now = datetime.utcnow()
-        if not is_update and "created_at" not in document:
-            document["created_at"] = now
-        document["updated_at"] = now
-        return document
+# Rebuild model to resolve forward references (if Teacher is defined later or in another file)
+# Subject.model_rebuild()

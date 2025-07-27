@@ -4,14 +4,18 @@ from app.schemas.student import Student
 from app.schemas.clerk import Clerk
 from app.schemas.teacher import Teacher
 from typing import Optional
-from app.utils.security import verify_password , create_access_token , get_password_hash
+from app.utils.security import verify_password, create_access_token, get_password_hash
 from app.core.database import get_db
 import random
 from app.utils.publisher import send_to_queue
+from beanie import PydanticObjectId
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def login_user(request):
-
     # Admin backdoor check (only for development/testing)
     ADMIN_EMAIL = "admin@gmail.com"
     ADMIN_PASSWORD = "123456"
@@ -34,7 +38,9 @@ async def login_user(request):
    
     user = await get_user_by_email_role(request.email, request.role)
 
-    if not user :
+    # print(f"User fetched: {user}")
+
+    if not user:
         raise HTTPException(
             status_code=401,
             detail={
@@ -44,8 +50,8 @@ async def login_user(request):
         )
     
     # Verify the Password given by user and in DB
-
-    if not verify_password(request.password, user["password"]) :
+    if not verify_password(request.password, user.password):
+        print("Password verification failed")
         raise HTTPException(
             status_code=401,
             detail={
@@ -53,9 +59,8 @@ async def login_user(request):
                 "message": "Invalid credentials"
             }
         )
-
     
-    access_token = create_access_token({"email": user["email"] , "role": request.role})
+    access_token = create_access_token({"email": user.email, "role": request.role , "program" : user.program if hasattr(user, 'program') else None})
 
     return {
         "status": "success",
@@ -68,116 +73,140 @@ async def login_user(request):
 
 
 async def request_password_reset(request):
-    db = get_db()
-
     otp = str(random.randint(100000, 999999))
     expires_at = datetime.utcnow() + timedelta(minutes=5)
 
-    # Check and update in a single step across collections
-    role_collection_map = {
-        "student": db.students,
-        "teacher": db.teachers,
-        "clerk": db.clerks
+    role_model_map = {
+        "student": Student,
+        "teacher": Teacher,
+        "clerk": Clerk
     }
 
-    updated = False
-    for collection in role_collection_map.values():
-        result = await collection.update_one(
-            {"email": request.email},
-            {"$set": {
+    role = request.role.lower()
+    email = request.email
+
+    if role not in role_model_map:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "Invalid role specified"}
+        )
+
+    model = role_model_map[role]
+    print(f"Searching in {role} for email: {email}")
+
+    try:
+        user = await model.find_one(model.email == email)
+        if not user:
+            print(f"{role} not found with email: {email}")
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "fail", "message": "Email not registered with us"}
+            )
+
+        await user.update({
+            "$set": {
                 "password_reset_otp": otp,
                 "password_reset_otp_expires": expires_at
-            }}
-        )
-        if result.modified_count > 0:
-            updated = True
-            break
+            }
+        })
+        print(f"Updated {role} with OTP: {otp}, expires: {expires_at}")
 
-    if not updated:
+    except Exception as e:
+        print(f"Error updating {role}: {e}")
         raise HTTPException(
-            status_code=404,
-            detail={"status": "fail", "message": "Email not registered with us"}
+            status_code=500,
+            detail={"status": "fail", "message": f"Error updating {role} record: {str(e)}"}
         )
 
-    # send email to registered mail
-    await send_to_queue("email_queue", {
+    # Send OTP email
+    try:
+        await send_to_queue("email_queue", {
             "type": "send_email",
             "data": {
-                "to": request.email,
+                "to": email,
                 "subject": "Your OTP for Password Reset",
                 "body": f"<p>Your OTP is <strong>{otp}</strong>. It will expire in 5 minutes.</p>"
             }
-        }, priority=10)  # High priority for email
-
-    
-    
+        }, priority=10)
+        print(f"OTP email sent to {email}")
+    except Exception as e:
+        print(f"Failed to send OTP email: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "fail", "message": f"Failed to send OTP email: {str(e)}"}
+        )
 
     return {
         "status": "success",
-        "message": f"OTP sent to {request.email}"
+        "message": f"OTP sent to {email}"
     }
 
 
 async def reset_user_password(request):
-
-    db = get_db()
     email = request.email
     otp = request.otp
     new_password = request.new_password
+    role = request.role.lower()
 
-    updated = False
-
-    role_collection_map = {
-        "student": db.students,
-        "teacher": db.teachers,
-        "clerk": db.clerks
+    role_model_map = {
+        "student": Student,
+        "teacher": Teacher,
+        "clerk": Clerk
     }
 
-    for collection in role_collection_map.values():
-        # 1. Find user by email and OTP
-        user = await collection.find_one({
-            "email": email,
-            "password_reset_otp": otp
-        })
+    if role not in role_model_map:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "Invalid role specified"}
+        )
 
-        if user:
-            # 2. Check if OTP is expired
-            if (
-                "password_reset_otp_expires" not in user or 
-                user["password_reset_otp_expires"] is None or 
-                datetime.utcnow() > user["password_reset_otp_expires"]
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"status": "fail", "message": "Expired OTP"}
-                )
+    model = role_model_map[role]
+    print(f"Checking {role} collection for email: {email} and OTP: {otp}")
 
-            # 3. Ensure new password is different
-            if verify_password(new_password, user["password"]):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"status": "fail", "message": "New password must be different from old password"}
-                )
+    # 1. Find user by email and OTP
+    user = await model.find_one(
+        model.email == email,
+        model.password_reset_otp == otp
+    )
 
-            # 4. Update password and set OTP fields to null
-            await collection.update_one(
-                {"_id": user["_id"]},
-                {
-                    "$set": {
-                        "password": get_password_hash(new_password),
-                        "password_reset_otp": None,
-                        "password_reset_otp_expires": None
-                    }
-                }
-            )
-
-            updated = True
-            break
-
-    if not updated:
+    if not user:
+        print("No matching user found with provided email and OTP")
         raise HTTPException(
             status_code=404,
             detail={"status": "fail", "message": "Invalid OTP or user not found"}
+        )
+
+    # 2. Check if OTP is expired
+    if not user.password_reset_otp_expires or datetime.utcnow() > user.password_reset_otp_expires:
+        print("OTP is expired")
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "Expired OTP"}
+        )
+
+    # 3. Ensure new password is different
+    if verify_password(new_password, user.password):
+        print("New password matches the old one")
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "New password must be different from old password"}
+        )
+
+    # 4. Update password and null OTP fields
+    try:
+        await user.update({
+            "$set": {
+                "password": get_password_hash(new_password),
+                "password_reset_otp": None,
+                "password_reset_otp_expires": None
+            }
+        })
+        print(f"{role} password updated for {email}")
+    except Exception as e:
+        print(f"Error updating password for {role}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "fail", "message": f"Error updating password: {str(e)}"}
         )
 
     return {
@@ -186,22 +215,17 @@ async def reset_user_password(request):
     }
 
 
+
 async def change_current_password(request, user_data):
     db = get_db()
     current_password = request.current_password
     new_password = request.new_password
-    request_email = request.email
+
 
     # Extract role and user_id from JWT payload
     user_email = user_data["email"]
     token_role = user_data["role"].lower()
 
-    # Validate if role from token matches the role in request path
-    if request_email != user_email:
-        raise HTTPException(
-            status_code=403,
-            detail={"status": "fail", "message": "You are not authorized to change others' password"},
-        )
 
     # Validate new password length
     if len(new_password) != 6 or not new_password.isdigit():
@@ -212,20 +236,20 @@ async def change_current_password(request, user_data):
 
     # Fetch user based on role
     user_model = {
-        "student": db.students,
-        "teacher": db.teachers,
-        "clerk": db.clerks
+        "student": Student,
+        "teacher": Teacher,
+        "clerk": Clerk
     }
 
-    collection = user_model.get(token_role)
+    model = user_model.get(token_role)
 
-    if collection is None:
+    if model is None:
         raise HTTPException(
             status_code=400,
             detail={"status": "fail", "message": "Invalid user role"},
         )
 
-    user = await collection.find_one({"email": user_email})
+    user = await model.find_one(model.email == user_email)
 
     if user is None:
         raise HTTPException(
@@ -234,7 +258,7 @@ async def change_current_password(request, user_data):
         )
 
     # Check if current password matches
-    if not verify_password(current_password, user["password"]):  # use user["password"] since it's a dict
+    if not verify_password(current_password, user.password):
         raise HTTPException(
             status_code=401,
             detail={"status": "fail", "message": "Incorrect current password"},
@@ -249,21 +273,19 @@ async def change_current_password(request, user_data):
 
     # Hash and update the password
     hashed_password = get_password_hash(new_password)
-    await collection.update_one({"email": user_email}, {"$set": {"password": hashed_password}})
+    await user.update({"$set": {"password": hashed_password}})
 
     return {"status": "success", "message": "Password updated successfully"}
 
-
-async def get_user_by_email_role(email: str, role: str) -> Optional[dict]:
-    db = get_db() 
-
-    if role.lower() == "student":
-        return await db.students.find_one({"email": email})
-    elif role.lower() == "teacher":
-        return await db.teachers.find_one({"email": email})
-    elif role.lower() == "clerk":
-        return await db.clerks.find_one({"email": email})
-    # elif role.lower() == "admin":
-    #     return await db.admins.find_one({"email": email})
-    else:
+async def get_user_by_email_role(email: str, role: str):
+    role_model_map = {
+        "student": Student,
+        "teacher": Teacher,
+        "clerk": Clerk
+    }
+    
+    model = role_model_map.get(role.lower())
+    if not model:
         return None
+        
+    return await model.find_one(model.email == email)

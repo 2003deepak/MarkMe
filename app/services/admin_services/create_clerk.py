@@ -2,32 +2,27 @@ from fastapi import HTTPException, status
 from app.core.database import get_db
 from app.models.allModel import CreateClerkRequest
 from passlib.context import CryptContext
-from app.schemas.clerk import Clerk, ClerkRepository
+from app.utils.security import get_password_hash
+from app.schemas.clerk import Clerk
 from datetime import datetime
 import random
 from app.utils.send_email import send_email
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-async def create_clerk(request: CreateClerkRequest , user_data: dict):
-
-    if user_data["role"] != "admin" :
+async def create_clerk(request: CreateClerkRequest, user_data: dict):
+    if user_data["role"] != "admin":
         raise HTTPException(
-                status_code=400,
-                detail={
-                    "status": "fail",
-                    "message": "You Dont have right to create clerk"
-                }
-            )
-
+            status_code=400,
+            detail={
+                "status": "fail",
+                "message": "You don't have right to create clerk"
+            }
+        )
 
     try:
-        # Get database connection
-        db = get_db()
-        repo = ClerkRepository(db.client, db.name)
-
         # Check if clerk exists
-        if await db.clerks.find_one({"email": request.email}):
+        if await Clerk.find_one(Clerk.email == request.email):
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -40,9 +35,10 @@ async def create_clerk(request: CreateClerkRequest , user_data: dict):
         pin = str(random.randint(100000, 999999))
 
         # Hash the PIN
-        hashed_pin = pwd_context.hash(pin)
+        hashed_pin = get_password_hash(str(pin))
 
-        # Create Clerk Pydantic model
+
+        # Create Clerk Beanie model
         clerk = Clerk(
             first_name=request.first_name,
             middle_name=request.middle_name,
@@ -54,14 +50,8 @@ async def create_clerk(request: CreateClerkRequest , user_data: dict):
             phone=request.mobile_number,
         )
 
-        # Convert Clerk to dict before applying timestamps
-        clerk_dict = clerk.dict()
-
-        # Apply timestamps
-        clerk_dict = await repo._apply_timestamps(clerk_dict)
-
-        # Insert clerk into database
-        await db.clerks.insert_one(clerk_dict)
+        # Save clerk to database (timestamps are handled by Beanie's pre_save)
+        await clerk.save()
 
         # Send confirmation email
         try:

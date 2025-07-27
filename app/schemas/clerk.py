@@ -1,25 +1,25 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 import re
-from motor.motor_asyncio import AsyncIOMotorClient
+from beanie import Document, Indexed
 from datetime import datetime
 import random
 
-class Clerk(BaseModel):
-
+class Clerk(Document):
     first_name: str 
     middle_name: Optional[str]
     last_name: str 
-    email: EmailStr
+    email: Indexed(EmailStr, unique=True) # type: ignore
     password: Optional[str] = None  # 6-digit numeric PIN
     department: str
-    program:str
+    program: str
     phone: int = Field(..., alias="phone")
     profile_picture: Optional[str] = None
-    profile_picture_id : str = None 
+    profile_picture_id: Optional[str] = None 
     password_reset_otp: Optional[str] = None
     password_reset_otp_expires: Optional[datetime] = None
-    
+    created_at: Indexed(datetime) = datetime.utcnow() # type: ignore
+    updated_at: Indexed(datetime) = datetime.utcnow() # type: ignore
 
     @field_validator("phone")
     def validate_phone(cls, v):
@@ -44,21 +44,11 @@ class Clerk(BaseModel):
             raise ValueError("Department cannot be empty")
         return v
 
-class ClerkRepository:
-    def __init__(self, client: AsyncIOMotorClient, db_name: str):
-        self.db = client[db_name]
-        self.collection = self.db["clerks"]
-        self._ensure_indexes()
+    class Settings:
+        name = "clerks"
 
-    async def _ensure_indexes(self):
-
-        await self.collection.create_index("email", unique=True)
-        await self.collection.create_index("created_at")
-        await self.collection.create_index("updated_at")
-
-    async def _apply_timestamps(self, document: dict, is_update: bool = False) -> dict:
-        now = datetime.utcnow()
-        if not is_update and "created_at" not in document:
-            document["created_at"] = now
-        document["updated_at"] = now
-        return document
+        # Automatically update updated_at timestamp on save
+        async def pre_save(self) -> None:
+            self.updated_at = datetime.utcnow()
+            if not self.created_at:
+                self.created_at = self.updated_at

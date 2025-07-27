@@ -1,9 +1,9 @@
 from fastapi import HTTPException
 from app.core.database import get_db
-from app.schemas.subject import Subject, SubjectRepository, Component
+from app.schemas.subject import Subject
 from pydantic import ValidationError
 from bson.objectid import ObjectId
-
+from app.core.redis import redis_client
 
 async def create_subject(request, user_data):
     if user_data["role"] != "clerk":
@@ -16,13 +16,24 @@ async def create_subject(request, user_data):
         )
 
     try:
-        db = get_db()
-        repo = SubjectRepository(db.client, db.name)
-        await repo._ensure_indexes()
+        # Check if subject with same code AND component exists
+        existing_subject = await Subject.find_one({
+            "subject_code": request.subject_code,
+            "component": request.component
+        })
 
-        # Build Component list from request
-        components = [Component(type=comp.type) for comp in request.components]
+        print(f"Existing Subject: {existing_subject}")
+        
+        if existing_subject:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "fail",
+                    "message": f"Subject with code {request.subject_code} and component {request.component} already exists"
+                }
+            )
 
+        # Create Subject Beanie model
         subject_data = Subject(
             subject_code=request.subject_code,
             subject_name=request.subject_name,
@@ -30,35 +41,27 @@ async def create_subject(request, user_data):
             semester=request.semester,
             program=request.program,
             credit=request.credit,
-            components=components
+            component=request.component,  
         )
 
-        existing = await db.subjects.find_one({"subject_code": subject_data.subject_code.upper()})
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "status": "fail",
-                    "message": "Subject with this code already exists"
-                }
-            )
+        # Save subject to database
+        await subject_data.save()
 
-        subject_dict = subject_data.dict()
-        subject_dict = await repo._apply_timestamps(subject_dict)
-
-        await db.subjects.insert_one(subject_dict)
+        # Delete cache for subjects to ensure fresh data
+        cache_key_subject = f"subject:{user_data["program"]}"
+        await redis_client.delete(cache_key_subject)
 
         return {
             "status": "success",
             "message": "Subject created successfully",
             "data": {
-                "subject_code": subject_dict["subject_code"],
-                "subject_name": subject_dict["subject_name"],
-                "department": subject_dict["department"],
-                "semester": subject_dict["semester"],
-                "program": subject_dict["program"],
-                "credit": subject_dict["credit"],
-                "components": subject_dict["components"]
+                "subject_code": subject_data.subject_code,
+                "subject_name": subject_data.subject_name,
+                "department": subject_data.department,
+                "semester": subject_data.semester,
+                "program": subject_data.program,
+                "credit": subject_data.credit,
+                "component": subject_data.component
             }
         }
 
@@ -73,15 +76,7 @@ async def create_subject(request, user_data):
         )
 
     except HTTPException as he:
-        if isinstance(he.detail, dict) and "status" in he.detail and "message" in he.detail:
-            raise he
-        raise HTTPException(
-            status_code=he.status_code,
-            detail={
-                "status": "fail",
-                "message": he.detail
-            }
-        )
+        raise he
 
     except Exception as e:
         print(f"Subject Creation error: {str(e)}")

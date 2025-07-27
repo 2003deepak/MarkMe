@@ -1,17 +1,20 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 from typing import Optional
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson import ObjectId
+from beanie import Document, Indexed, Link
+from app.schemas.timetable import Timetable  
+from app.schemas.subject import Subject  
 
-class Attendance(BaseModel):
-    timetable_id: ObjectId
-    date: datetime
-    day: str
-    slot_index: int
-    subject: ObjectId
+class Attendance(Document):
+    timetable_id: Link[Timetable] 
+    date: Indexed(datetime)  # type: ignore
+    day: Indexed(str)  # type: ignore
+    slot_index: Indexed(int)  # type: ignore
+    subject: Link[Subject] 
     component_type: str
     students: Optional[str] = None
+    created_at: Indexed(datetime) = Field(default_factory=datetime.utcnow)  # type: ignore
+    updated_at: Indexed(datetime) = Field(default_factory=datetime.utcnow)  # type: ignore
 
     @field_validator("day")
     @classmethod
@@ -28,23 +31,16 @@ class Attendance(BaseModel):
             raise ValueError("slotIndex must be at least 0")
         return v
 
-    @field_validator("timetable_id", "subject")
-    @classmethod
-    def validate_object_id(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId format")
-        return ObjectId(v)  # Convert to ObjectId
+    class Settings:
+        name = "attendances"
+        indexes = [
+            [("timetable_id", 1), ("date", 1), ("day", 1), ("slot_index", 1)],
+        ]
+
+        async def pre_save(self) -> None:
+            self.updated_at = datetime.utcnow()
+            if not self.created_at:
+                self.created_at = self.updated_at
 
     class Config:
-        arbitrary_types_allowed = True  # Allow ObjectId type
-
-class AttendanceRepository:
-    def __init__(self, client: AsyncIOMotorClient, db_name: str):
-        self.db = client[db_name]
-        self.collection = self.db["attendances"]
-
-    async def ensure_indexes(self):
-        await self.collection.create_index(
-            [("timetable_id", 1), ("date", 1), ("day", 1), ("slot_index", 1)],
-            unique=True
-        )
+        arbitrary_types_allowed = True
