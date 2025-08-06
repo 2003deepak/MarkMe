@@ -54,10 +54,7 @@ async def get_subject_detail(user_data: dict):
 
     if not subjects:
         print("❌ No subjects found in DB")
-        raise HTTPException(
-            status_code=404,
-            detail={"status": "fail", "message": f"No subjects found for program {clerk_program}"}
-        )
+        return {"status": "success", "data": "No subjects found"}
 
     # Wrap in dict before saving to Redis
     subject_data = {

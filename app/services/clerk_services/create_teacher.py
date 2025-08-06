@@ -122,6 +122,8 @@ async def create_teacher(request, user_data):
             await redis_client.delete(key)
             print(f"Cleared Redis cache key: {key}")
 
+        await redis_client.delete(f"teacher:{request.department}")
+
 
         # Send confirmation email with generated password
         try:

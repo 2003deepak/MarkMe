@@ -4,14 +4,12 @@ from typing import Optional
 from decimal import Decimal
 from datetime import date
 from app.schemas.subject import Subject
-from app.schemas.timetable import Timetable
 from app.schemas.attendance import Attendance
 
 
 class SubjectSessionStats(Document):
     session_id: Link[Attendance]
     subject: Link[Subject]
-    timetable: Link[Timetable]
     date: date
     component_type: str
     present_count: int

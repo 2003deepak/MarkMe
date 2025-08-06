@@ -4,9 +4,14 @@ from pydantic import ValidationError, BaseModel
 from typing import List, Optional
 from datetime import date
 import json
+from datetime import datetime
+from fastapi import HTTPException
+# from pytz import timezone
+# import pytz
 from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
 from app.services.teacher_services.update_teacher_profile import update_teacher_profile
+from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
 from app.models.allModel import UpdateProfileRequest
 
 # -- Pydantic Model Import
@@ -64,13 +69,12 @@ async def update_teacher_profile_route(
 # 5. Return the session if found; otherwise []
 
 
-# @router.get("/session/current")
-# async def get_current_session():
-#     try:
-        
-        
-#     except ValidationError as e:
-#         raise HTTPException(status_code=422, detail=json.loads(e.json()))
+@router.get("/current-session")
+async def get_current_session(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await get_current_and_upcoming_sessions(user_data)
 
 
 

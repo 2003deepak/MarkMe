@@ -5,94 +5,92 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 from pymongo.errors import PyMongoError
+import logging
 
-from app.schemas.timetable import Timetable, Session
+from app.schemas.session import Session
 from app.schemas.subject import Subject
 from app.schemas.attendance import Attendance
 from app.schemas.exception_session import ExceptionSession
 from app.core.rabbitmq_config import settings
 from app.core.database import init_db
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def process_session(message: aio_pika.IncomingMessage):
-    print("⚙️ process_session triggered")
+    logger.info("⚙️ process_session triggered")
 
     async with message.process():
         try:
             payload = json.loads(message.body.decode())
-            print(f"📥 Received session payload:\n{json.dumps(payload, indent=2)}")
+            logger.info(f"📥 Received session payload:\n{json.dumps(payload, indent=2)}")
 
             # Validate required fields
             required_fields = [
-                "timetable_id", 
-                "day", 
-                "slot_index", 
-                "session", 
-                "date", 
+                "session_id",
+                "date",
                 "start_time_timestamp"
             ]
-            
+
             if not all(payload.get(field) is not None for field in required_fields):
-                print("❌ Invalid payload: Missing required fields.")
+                logger.error("❌ Invalid payload: Missing required fields.")
                 return
 
-            timetable_id = payload["timetable_id"]
-            day = payload["day"]
-            slot_index = payload["slot_index"]
-            session_data = payload["session"]
+            session_id = payload["session_id"]
             date = payload["date"]
             start_time_timestamp = payload["start_time_timestamp"]
 
-            # Validate ObjectId format for timetable_id and subject
+            # Validate IDs
             try:
-                timetable_id_obj = ObjectId(timetable_id)
-                subject_id_obj = ObjectId(session_data["subject"])
+                session_obj_id = ObjectId(session_id)
+                subject_id_obj = ObjectId(payload["subject"])
             except Exception as e:
-                print(f"❌ Invalid ID format: {e}")
+                logger.error(f"❌ Invalid ObjectId format: {e}")
                 return
-
-            # 🎯 Fetch linked Subject using direct ObjectId
-            subject = await Subject.get(subject_id_obj)
-            if not subject:
-                print(f"❌ Subject not found: {session_data['subject']}")
-                return
-
-            # Prepare session data with proper types
-            session_data["subject"] = subject
-            session_data["component"] = session_data.pop("component_type")
-            session = Session(**session_data)
 
             # ⏳ Check if session is within 15 mins
             session_start = datetime.fromtimestamp(start_time_timestamp, tz=ZoneInfo("Asia/Kolkata"))
             now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-            
+
             if (session_start - now) > timedelta(minutes=15):
-                print(f"⏳ Skipping session, starts later than 15 min: {session_start}")
+                logger.info(f"⏳ Skipping session, starts later than 15 min: {session_start}")
+                return
+
+            # 🎯 Fetch Session
+            session = await Session.get(session_obj_id)
+            if not session:
+                logger.error(f"❌ Session not found: {session_id}")
+                return
+
+            # 🎯 Fetch Subject
+            subject = await Subject.get(subject_id_obj)
+            if not subject:
+                logger.error(f"❌ Subject not found: {subject_id_obj}")
                 return
 
             # 🔁 Check for ExceptionSession
             try:
                 exception = await ExceptionSession.find_one(
-                    ExceptionSession.timetable_id == timetable_id_obj,
-                    ExceptionSession.date == datetime.strptime(date, "%Y-%m-%d"),
-                    ExceptionSession.slot_reference.slot_index == slot_index
+                    ExceptionSession.session == session_obj_id,
+                    ExceptionSession.date == datetime.strptime(date, "%Y-%m-%d")
                 )
             except PyMongoError as e:
-                print(f"❌ DB error during ExceptionSession lookup: {e}")
+                logger.error(f"❌ DB error during ExceptionSession lookup: {e}")
                 return
 
             if exception:
                 action = exception.action.lower()
-                print(f"⚠️ Exception found: {action}")
+                logger.info(f"⚠️ Exception found: {action}")
 
                 if action == "cancelled":
-                    print(f"🚫 Cancelled session for timetable {timetable_id}, slot {slot_index}")
+                    logger.info(f"🚫 Cancelled session {session_id} on {date}")
                     return
 
                 elif action == "rescheduled":
                     new_session_data = exception.new_slot.model_dump() if exception.new_slot else None
                     if not new_session_data:
-                        print("⚠️ Rescheduled session missing new data")
+                        logger.error("⚠️ Rescheduled session missing new_slot data")
                         return
 
                     new_start = datetime.strptime(
@@ -101,7 +99,6 @@ async def process_session(message: aio_pika.IncomingMessage):
 
                     new_payload = {
                         **payload,
-                        "session": new_session_data,
                         "start_time_timestamp": new_start.timestamp()
                     }
 
@@ -115,49 +112,43 @@ async def process_session(message: aio_pika.IncomingMessage):
                             ),
                             routing_key=settings.session_queue
                         )
-                    print(f"🔁 Rescheduled session re-queued for {new_start}")
+                    logger.info(f"🔁 Rescheduled session re-queued for {new_start}")
                     return
 
                 elif action == "add":
-                    print("📌 Exception 'add' — continuing to mark attendance.")
+                    logger.info("📌 Exception 'add' — proceeding to mark attendance.")
 
-            # 🗓️ Fetch linked Timetable using direct ObjectId
-            timetable = await Timetable.get(timetable_id_obj)
-            if not timetable:
-                print(f"❌ Timetable not found: {timetable_id}")
-                return
-
-            # ✅ Store Attendance with direct ObjectId references
+            # ✅ Store Attendance
             try:
                 attendance = Attendance(
-                    timetable_id=timetable_id_obj,  # Direct ObjectId
+                    session=session_obj_id,  # Fixed: Use 'session' instead of 'session_id'
                     date=datetime.strptime(date, "%Y-%m-%d"),
-                    day=day,
-                    slot_index=slot_index,
-                    subject=subject_id_obj,  # Direct ObjectId
-                    component_type=session.component,
+                    day=payload.get("day"),
+                    subject=subject_id_obj,
+                    program=payload.get("program"),
+                    department=payload.get("department"),
+                    semester=payload.get("semester"),
+                    academic_year=payload.get("academic_year"),
                     students=""
                 )
-                
                 await attendance.insert()
-                print(f"✅ Stored attendance for timetable {timetable_id}, slot {slot_index}")
-                print(f"📝 Attendance document: {attendance.model_dump_json(indent=2)}")
+                logger.info(f"✅ Stored attendance for session {session_id}")
+                logger.info(f"📝 Attendance document: {attendance.model_dump_json(indent=2)}")
 
             except (ValueError, PyMongoError) as e:
-                print(f"❌ Failed to store attendance: {e}")
+                logger.error(f"❌ Failed to store attendance: {e}")
 
         except json.JSONDecodeError as e:
-            print(f"❌ Failed to decode payload: {e}")
+            logger.error(f"❌ Failed to decode payload: {e}")
+        except ValueError as e:
+            logger.error(f"❌ Value error in processing: {e}")
         except Exception as e:
-            print(f"💥 Unexpected error: {e}")
-            import traceback
-            traceback.print_exc()
-
+            logger.error(f"💥 Unexpected error: {e}", exc_info=True)
 
 async def start_worker():
-    print("🚀 Initializing DB connection...")
+    logger.info("🚀 Initializing DB connection...")
     await init_db()
-    print("✅ Database connected.")
+    logger.info("✅ Database connected.")
 
     try:
         connection = await aio_pika.connect_robust(settings.rabbitmq_url)
@@ -169,16 +160,15 @@ async def start_worker():
                 arguments={"x-max-priority": 10}
             )
             await channel.set_qos(prefetch_count=1)
-            print(f"👷 Worker started on queue '{settings.session_queue}'")
+            logger.info(f"👷 Worker started on queue '{settings.session_queue}'")
             await queue.consume(process_session)
             await asyncio.Future()  # Keeps worker running
     except asyncio.CancelledError:
-        print("🚩 Worker shutting down...")
+        logger.info("🚩 Worker shutting down...")
     except Exception as e:
-        print(f"💥 Worker failed to start: {e}")
+        logger.error(f"💥 Worker failed to start: {e}", exc_info=True)
     finally:
         await connection.close()
-
 
 if __name__ == "__main__":
     asyncio.run(start_worker())

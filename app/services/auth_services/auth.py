@@ -60,7 +60,7 @@ async def login_user(request):
             }
         )
     
-    access_token = create_access_token({"email": user.email, "role": request.role , "program" : user.program if hasattr(user, 'program') else None})
+    access_token = create_access_token({"email": user.email, "role": request.role , "program" : user.program if hasattr(user, 'program') else None ,  "department" : user.department})
 
     return {
         "status": "success",

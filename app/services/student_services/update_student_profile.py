@@ -2,7 +2,7 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.redis import redis_client
 from datetime import datetime
-from app.utils.imagekit_uploader import upload_image_to_imagekit,delete_file
+from app.utils.imagekit_uploader import upload_image_to_imagekit, delete_file
 from typing import Optional
 from app.schemas.student import Student
 from pydantic import ValidationError
@@ -44,16 +44,11 @@ async def update_student_profile(request_data, user_data, profile_picture: Optio
                     detail={"status": "fail", "message": "File must be an image"}
                 )
 
-            # Check if file content is empty (e.g., if "Choose File" was clicked but no file selected)
-            # You might want to skip upload if the file is genuinely empty.
-            initial_pos = await profile_picture.tell() # Store current position
+            # Read the file content
             file_bytes = await profile_picture.read()
-            await profile_picture.seek(initial_pos) # Reset position for future reads if needed
+           
             if not file_bytes:
                 print("Profile picture input is empty (no bytes). Skipping upload.")
-                # If they passed an empty file, maybe they want to clear current pic?
-                # Your current logic will keep existing if no new one is uploaded
-                # and no specific instruction to delete.
                 profile_picture_to_upload = None
             else:
                 profile_picture_to_upload = profile_picture
@@ -82,23 +77,15 @@ async def update_student_profile(request_data, user_data, profile_picture: Optio
                     print(f"Profile picture uploaded: {update_data['profile_picture']}")
 
                 except Exception as e:
-                    print(f"Image upload error (file): {str(e)}", exc_info=True)
+                    print(f"Image upload error (file): {str(e)}")
                     raise HTTPException(
                         status_code=500,
                         detail={"status": "fail", "message": f"Profile picture upload failed: {str(e)}"}
                     )
-            else:
-                # If profile_picture was an empty UploadFile and we explicitly decided not to upload
-                # You might want to add logic here to explicitly remove the profile picture if desired.
-                # For example, if the user explicitly 'cleared' their picture without uploading a new one.
-                # Currently, if profile_picture_to_upload is None, update_data won't have 'profile_picture' fields.
-                # If you want to allow clearing the picture, you'd need an explicit flag or a magic value.
-                pass
-
 
         # Dynamically update fields if provided
         print("Processing other profile fields.")
-        if request_data.first_name is not None: # Check for None explicitly
+        if request_data.first_name is not None:
             update_data["first_name"] = request_data.first_name
         if request_data.middle_name is not None:
             update_data["middle_name"] = request_data.middle_name
@@ -136,15 +123,15 @@ async def update_student_profile(request_data, user_data, profile_picture: Optio
         loc = ".".join(str(x) for x in error["loc"])
         msg = error["msg"]
         error_msg = f"Invalid {loc}: {msg.lower()}"
-        print(f"Pydantic validation error: {error_msg}", exc_info=True)
+        print(f"Pydantic validation error: {error_msg}")
         raise HTTPException(status_code=422, detail={"status": "fail", "message": error_msg})
 
     except HTTPException:
-        print("HTTPException raised during student profile update.", exc_info=True)
+        print("HTTPException raised during student profile update.")
         raise
 
     except Exception as e:
-        print(f"Unhandled exception during student profile update: {str(e)}", exc_info=True)
+        print(f"Unhandled exception during student profile update: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail={"status": "fail", "message": f"Error updating student profile: {str(e)}"}

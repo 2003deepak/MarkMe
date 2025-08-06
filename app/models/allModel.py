@@ -1,12 +1,11 @@
-from pydantic import BaseModel, EmailStr,Field ,field_validator , HttpUrl
+from pydantic import BaseModel, EmailStr,Field ,field_validator , HttpUrl , validator
 from enum import Enum
-from app.schemas.timetable import Session,Timetable
 from typing import Optional, List , Dict
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form 
-from typing import Optional
+from typing import Optional,List, Literal
 import re
-from datetime import datetime , date
+from datetime import datetime , date , time
 from bson.objectid import ObjectId
+from beanie import PydanticObjectId
 
 class StudentRegisterRequest(BaseModel):
     first_name: str 
@@ -82,68 +81,90 @@ class UpdateProfileRequest(BaseModel):
 
 
 
-class SessionRequest(BaseModel):
-    start_time: str = Field(...)  # Format: "HH:MM"
-    end_time: str = Field(...)    # Format: "HH:MM"
-    subject: str = Field(...)     # ObjectId as string for subject reference
+# Day of week type
+DayOfWeek = Literal[
+    "Monday", "Tuesday", "Wednesday",
+    "Thursday", "Friday", "Saturday", "Sunday"
+]
 
-    @field_validator("start_time", "end_time")
-    @classmethod
-    def validate_time_format(cls, v):
-        if not isinstance(v, str) or v.count(":") != 1:
-            raise ValueError("Time must be in HH:MM format")
-        try:
-            hours, minutes = map(int, v.split(":"))
-            if not (0 <= hours <= 23 and 0 <= minutes <= 59):
-                raise ValueError("Invalid time value")
-        except ValueError:
-            raise ValueError("Invalid time format")
-        return v
+class ScheduleEntry(BaseModel):
+    start_time: str = Field(..., pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    end_time: str = Field(..., pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    subject: PydanticObjectId  # Only subject ID is passed
 
     @field_validator("end_time")
     @classmethod
-    def validate_time_order(cls, end_time, values):
-        if "start_time" in values.data:
-            start = datetime.strptime(values.data["start_time"], "%H:%M")
-            end = datetime.strptime(end_time, "%H:%M")
-            if end <= start:
-                raise ValueError("End time must be after start time")
-        return end_time
-
-    @field_validator("subject")
-    @classmethod
-    def validate_subject_id(cls, v):
-        try:
-            ObjectId(v)  # Validate that the subject is a valid ObjectId string
-        except Exception:
-            raise ValueError("Subject must be a valid ObjectId")
+    def validate_end_after_start(cls, v: str, info) -> str:
+        start = info.data.get("start_time")
+        if start and v <= start:
+            raise ValueError("end_time must be after start_time")
         return v
 
-    class Config:
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
 
-# Pydantic model for TimetableRequest
-class TimetableRequest(BaseModel):
-    academic_year: str = Field(...)
-    department: str = Field(...)
-    program: str = Field(...)
-    semester: str = Field(...)
-    schedule: Dict[str, List[SessionRequest]] = {
-        "Monday": [], "Tuesday": [], "Wednesday": [],
-        "Thursday": [], "Friday": [], "Saturday": [], "Sunday": []
+class TimeTableRequest(BaseModel):
+    academic_year: str = Field(..., pattern=r"^\d{4}$")
+    department: str = Field(..., min_length=2, max_length=50)
+    program: str = Field(..., min_length=2, max_length=50)
+    semester: str = Field(..., pattern=r"^(1|2|3|4|5|6|7|8)$")
+
+    schedule: Dict[DayOfWeek, List[ScheduleEntry]] = Field(
+        ..., description="Map of weekday to list of sessions"
+    )
+
+    @field_validator("schedule")
+    @classmethod
+    def validate_schedule_days(cls, v: Dict[str, List[ScheduleEntry]]) -> Dict[str, List[ScheduleEntry]]:
+        allowed = {
+            "Monday", "Tuesday", "Wednesday",
+            "Thursday", "Friday", "Saturday", "Sunday"
+        }
+        invalid = set(v.keys()) - allowed
+        if invalid:
+            raise ValueError(f"Invalid days: {invalid}")
+        return v
+
+    @field_validator("schedule")
+    @classmethod
+    def validate_no_overlap(cls, v: Dict[str, List[ScheduleEntry]]) -> Dict[str, List[ScheduleEntry]]:
+        def to_minutes(t: str) -> int:
+            h, m = map(int, t.split(":"))
+            return h * 60 + m
+
+        for day, sessions in v.items():
+            if len(sessions) < 2:
+                continue
+            sorted_sessions = sorted(sessions, key=lambda s: s.start_time)
+            for i in range(1, len(sorted_sessions)):
+                if to_minutes(sorted_sessions[i].start_time) < to_minutes(sorted_sessions[i-1].end_time):
+                    raise ValueError(f"Overlapping sessions on {day}")
+        return v
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "academic_year": "2025",
+                "department": "BTECH",
+                "program": "MCA",
+                "semester": "2",
+                "schedule": {
+                    "Monday": [
+                        {
+                            "start_time": "08:00",
+                            "end_time": "09:30",
+                            "subject": "688746daa94ba4fa2636105a"
+                        },
+                        {
+                            "start_time": "09:30",
+                            "end_time": "11:00",
+                            "subject": "688791f8692063b616d9cdcf"
+                        }
+                    ],
+                    "Tuesday": [],
+                    "Sunday": []
+                }
+            }
+        }
     }
-
-    @field_validator("academic_year")
-    @classmethod
-    def validate_academic_year(cls, v):
-        if not re.match(r"^\d{4}", v):
-            raise ValueError("Academic year must be in YYYY format")
-        return v
-
-    class Config:
-        arbitrary_types_allowed = True
-
 
 # Projection Models 
 

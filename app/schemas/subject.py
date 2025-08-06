@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 from beanie import Document, Link
+from app.schemas.teacher import Teacher
 
 class Component(BaseModel):
     type: str  # Lecture or Lab
@@ -74,5 +75,3 @@ class Subject(Document):
     class Config:
         arbitrary_types_allowed = True
 
-# Rebuild model to resolve forward references (if Teacher is defined later or in another file)
-# Subject.model_rebuild()

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, Body,Path
-from app.schemas.timetable import Timetable
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
@@ -11,7 +10,7 @@ from app.services.clerk_services.get_subject_detail import get_subject_detail,ge
 
 
 # --- Pydantic Imports
-from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest , TimetableRequest
+from app.models.allModel import CreateSubjectRequest, TeacherRegisterRequest , TimeTableRequest
 
 router = APIRouter()
 security = HTTPBearer()  # Define security scheme
@@ -38,7 +37,7 @@ async def create_teacher_route(
 
 @router.post("/timetable/create")
 async def create_timetable(
-    request: TimetableRequest,
+    request: TimeTableRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):

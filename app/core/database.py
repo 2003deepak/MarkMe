@@ -2,8 +2,7 @@ from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from app.core.config import settings
-from app.schemas.student import Student  
-from app.schemas.timetable import Timetable  
+from app.schemas.student import Student   
 from app.schemas.teacher import Teacher
 from app.schemas.clerk import Clerk
 from app.schemas.subject import Subject
@@ -16,6 +15,8 @@ from app.schemas.subject_attendance_roster import SubjectAttendanceRoster
 from app.schemas.teacher_subject_summary import TeacherSubjectSummary
 from app.schemas.subject_session_stats import SubjectSessionStats
 from app.schemas.student_risk_summary import StudentRiskSummary
+from app.schemas.session import Session
+
 
 
 # Global client and db
@@ -32,7 +33,6 @@ async def init_db():
 
     document_models = [
         Student,
-        Timetable,
         Teacher,
         Clerk,
         Subject,
@@ -44,7 +44,9 @@ async def init_db():
         SubjectAttendanceRoster, 
         TeacherSubjectSummary,
         SubjectSessionStats,  
-        StudentRiskSummary
+        StudentRiskSummary,
+        Session
+
 
 
     ]

@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from app.core.redis import redis_client
 import json
-from app.core.database import Clerk  # Beanie model
+from app.schemas.clerk import Clerk  
 from bson import ObjectId
 from datetime import datetime
 from fastapi.encoders import jsonable_encoder
