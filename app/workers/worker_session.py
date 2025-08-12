@@ -30,23 +30,25 @@ async def process_session(message: aio_pika.IncomingMessage):
             required_fields = [
                 "session_id",
                 "date",
-                "start_time_timestamp"
+                "start_time_timestamp",
+                "subject"  # Ensure subject is required
             ]
 
             if not all(payload.get(field) is not None for field in required_fields):
-                logger.error("❌ Invalid payload: Missing required fields.")
+                logger.error(f"❌ Invalid payload: Missing required fields: {required_fields}")
                 return
 
             session_id = payload["session_id"]
             date = payload["date"]
             start_time_timestamp = payload["start_time_timestamp"]
+            subject_id = payload["subject"]
 
             # Validate IDs
             try:
                 session_obj_id = ObjectId(session_id)
-                subject_id_obj = ObjectId(payload["subject"])
+                subject_id_obj = ObjectId(subject_id)
             except Exception as e:
-                logger.error(f"❌ Invalid ObjectId format: {e}")
+                logger.error(f"❌ Invalid ObjectId format for session_id or subject_id: {e}")
                 return
 
             # ⏳ Check if session is within 15 mins
@@ -66,7 +68,7 @@ async def process_session(message: aio_pika.IncomingMessage):
             # 🎯 Fetch Subject
             subject = await Subject.get(subject_id_obj)
             if not subject:
-                logger.error(f"❌ Subject not found: {subject_id_obj}")
+                logger.error(f"❌ Subject not found: {subject_id}")
                 return
 
             # 🔁 Check for ExceptionSession
@@ -121,7 +123,7 @@ async def process_session(message: aio_pika.IncomingMessage):
             # ✅ Store Attendance
             try:
                 attendance = Attendance(
-                    session=session_obj_id,  # Fixed: Use 'session' instead of 'session_id'
+                    session=session_obj_id,
                     date=datetime.strptime(date, "%Y-%m-%d"),
                     day=payload.get("day"),
                     subject=subject_id_obj,
@@ -144,6 +146,8 @@ async def process_session(message: aio_pika.IncomingMessage):
             logger.error(f"❌ Value error in processing: {e}")
         except Exception as e:
             logger.error(f"💥 Unexpected error: {e}", exc_info=True)
+        finally:
+            logger.info(f"✅ Message for session {payload.get('session_id', 'unknown')} processed and acknowledged")
 
 async def start_worker():
     logger.info("🚀 Initializing DB connection...")
@@ -169,6 +173,7 @@ async def start_worker():
         logger.error(f"💥 Worker failed to start: {e}", exc_info=True)
     finally:
         await connection.close()
+        logger.info("🔌 RabbitMQ connection closed")
 
 if __name__ == "__main__":
     asyncio.run(start_worker())

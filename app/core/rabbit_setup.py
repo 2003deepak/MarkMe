@@ -2,7 +2,7 @@ import aio_pika
 from app.core.rabbitmq_config import settings
 
 QUEUE_PRIORITY_CONFIG = {
-    settings.face_queue: 10,
+    settings.face_recog_queue: 10,
     settings.email_queue: 10,
     settings.embedding_queue: 10,
     settings.session_queue: 10

@@ -30,7 +30,7 @@ async def get_redis_client():
             db=0,
             decode_responses=True,
             max_connections=100,
-            socket_timeout=5,
+            socket_timeout=10,
             socket_connect_timeout=5,
             health_check_interval=30
         )

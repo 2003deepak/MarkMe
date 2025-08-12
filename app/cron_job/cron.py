@@ -12,13 +12,14 @@ async def generate_sessions_for_tomorrow():
     print("🔄 Starting session scheduler for tomorrow...")
 
     # Set tomorrow’s date and weekday
-    tomorrow = datetime.now(tz=ZoneInfo("Asia/Kolkata")) + timedelta(days=1)
+    tomorrow = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     tomorrow_date = tomorrow.date()
     weekday = tomorrow.strftime("%A")
     print(f"📆 Target: {tomorrow_date} ({weekday})")
 
     # Fetch sessions for that weekday
-    sessions = await Session.find(Session.day == weekday).to_list()
+    sessions = await Session.find(Session.day == weekday, fetch_links=True).to_list()
+    # print(sessions)
     print(f"📄 Sessions found for {weekday}: {len(sessions)}")
 
     final_sessions = []
@@ -29,11 +30,17 @@ async def generate_sessions_for_tomorrow():
                 f"{tomorrow_date} {session.start_time}", "%Y-%m-%d %H:%M"
             ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
+            # Handle subject_id extraction
             subject_id = None
             if isinstance(session.subject, DBRef):
                 subject_id = str(session.subject.id)
             elif isinstance(session.subject, str):
                 subject_id = session.subject
+            elif hasattr(session.subject, 'id'):  # Check if subject is a Subject object
+                subject_id = str(session.subject.id)
+            else:
+                print(f"❌ Invalid subject format for session {session.id}")
+                continue
 
             session_payload = {
                 "session_id": str(session.id),
@@ -70,6 +77,8 @@ async def generate_sessions_for_tomorrow():
             print(f"📤 Scheduled session {payload['session_id']} with delay {delay_ms // 1000}s")
         except Exception as e:
             print(f"🚫 Failed to schedule session {payload['session_id']}: {e}")
+
+
 
 async def main():
     print("🚀 Connecting to DB...")

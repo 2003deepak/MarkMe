@@ -1,9 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router , teacher_router
+from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router, teacher_router
 from app.core.database import init_db, close_db
 from app.core.config import settings
 from app.core.rabbit_setup import setup_rabbitmq
+from starlette.responses import JSONResponse
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -15,7 +16,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://127.0.0.1:5500"],  # Your frontend origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

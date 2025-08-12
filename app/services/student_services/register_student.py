@@ -57,6 +57,11 @@ async def register_student(student_data: Student, images: List[UploadFile]):
         # Save student to database (timestamps are handled by Beanie's pre_save)
         await student_doc.save()
 
+        # Deleting Caching from MCA Students 
+        cache_key = f"student:{student_data.department.upper()}:{student_data.program.upper()}:{student_data.semester}"
+        print(f"Deleting Redis cache for student: {cache_key}")
+
+
         # ✅ Send Welcome Email Task to Queue
         await send_to_queue("email_queue", {
             "type": "send_email",

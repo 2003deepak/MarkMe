@@ -7,7 +7,7 @@ from bson import DBRef
 from app.schemas.teacher import Teacher
 from app.schemas.session import Session
 
-async def get_current_and_upcoming_sessions(user_data: dict) -> List[Dict[str, Any]]:
+async def get_current_and_upcoming_sessions(user_data: dict) -> Dict[str, Any]:
     # 1. Check if user is a teacher
     print(f"User data: {user_data}")
     if user_data.get("role") != "teacher":
@@ -34,12 +34,15 @@ async def get_current_and_upcoming_sessions(user_data: dict) -> List[Dict[str, A
 
     # 4. Query sessions for today and this teacher
     try:
-        # Use raw dictionary-style query with DBRef
         session_list = await Session.find({
             "day": weekday_name,
             "teacher": DBRef("teachers", teacher.id),
         }).to_list()
-        print(f"Found {len(session_list)} sessions")
+
+        # Fetch linked teacher and subject data
+        for session in session_list:
+            await session.fetch_link("teacher")
+            await session.fetch_link("subject")
     except Exception as e:
         print(f"Error fetching sessions: {str(e)}")
         raise HTTPException(
@@ -47,40 +50,55 @@ async def get_current_and_upcoming_sessions(user_data: dict) -> List[Dict[str, A
             detail="Failed to fetch session records"
         )
 
-    # 5. Process each session to determine its status
-    result = []
+    # 5. Process sessions and categorize them
+    upcoming = []
+    current = []
+    past = []
+    
     for session in session_list:
         try:
             # Create timezone-aware datetime objects
             start_time = datetime.strptime(f"{today} {session.start_time}", "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Kolkata"))
             end_time = datetime.strptime(f"{today} {session.end_time}", "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-            status_label = (
-                "current" if start_time <= current_time <= end_time
-                else "upcoming" if start_time > current_time
-                else "past"
-            )
-
-            result.append({
+            # Prepare session data with fetched subject and teacher details
+            session_data = {
                 "session_id": str(session.id),
                 "date": str(today),
                 "day": session.day,
                 "start_time": session.start_time,
                 "end_time": session.end_time,
-                "subject_code": str(session.subject.subject_code) if hasattr(session.subject, "subject_code") else None,
-                "subject_name": session.subject.subject_name if hasattr(session.subject, "subject_name") else None,
+                "subject_code": str(session.subject.subject_code) if session.subject and hasattr(session.subject, "subject_code") else None,
+                "subject_name": session.subject.subject_name if session.subject and hasattr(session.subject, "subject_name") else None,
                 "program": session.program,
                 "department": session.department,
                 "semester": session.semester,
                 "academic_year": session.academic_year,
-                "status": status_label
-            })
+                "teacher_name": f"{session.teacher.first_name} {session.teacher.last_name}" if session.teacher and hasattr(session.teacher, "first_name") and hasattr(session.teacher, "last_name") else None
+            }
+
+            # Categorize session
+            if start_time <= current_time <= end_time:
+                current.append(session_data)
+            elif start_time > current_time:
+                upcoming.append(session_data)
+            else:
+                past.append(session_data)
 
         except Exception as e:
             print(f"Error processing session {session.id}: {str(e)}")
             continue
 
-    # 6. Sort result by start_time
-    result.sort(key=lambda x: datetime.strptime(f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"))
+    # 6. Sort each category by start_time
+    for session_list in [upcoming, current, past]:
+        session_list.sort(key=lambda x: datetime.strptime(f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"))
 
-    return result
+    # 7. Construct final response
+    return {
+        "status": "success",
+        "data": {
+            "upcoming": upcoming,
+            "current": current,
+            "past": past
+        }
+    }

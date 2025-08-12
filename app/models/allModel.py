@@ -166,6 +166,14 @@ class TimeTableRequest(BaseModel):
         }
     }
 
+
+class ClassSearchRequest(BaseModel):
+    department: str
+    program: str
+    semester: str
+
+
+
 # Projection Models 
 
 class ClerkShortView(BaseModel):
