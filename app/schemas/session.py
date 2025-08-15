@@ -1,16 +1,14 @@
 from beanie import Document, Link
 from datetime import datetime
 from pydantic import Field
-from app.schemas.teacher import Teacher
-from app.schemas.subject import Subject
 
 
 class Session(Document):
     day: str
     start_time: str
     end_time: str
-    subject: Link[Subject]
-    teacher: Link[Teacher]
+    subject: Link["Subject"]
+    teacher: Link["Teacher"]
 
     academic_year: str
     department: str

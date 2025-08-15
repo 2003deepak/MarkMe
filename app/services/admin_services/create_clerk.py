@@ -1,12 +1,12 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from app.core.database import get_db
 from app.models.allModel import CreateClerkRequest
 from passlib.context import CryptContext
 from app.utils.security import get_password_hash
+from app.core.redis import redis_client
 from app.schemas.clerk import Clerk
-from datetime import datetime
 import random
-from app.utils.send_email import send_email
+from app.utils.publisher import send_to_queue  
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -53,15 +53,25 @@ async def create_clerk(request: CreateClerkRequest, user_data: dict):
         # Save clerk to database (timestamps are handled by Beanie's pre_save)
         await clerk.save()
 
+        # Delete Redis Key
+        cache_key = f"clerks:{request.department}"
+        await redis_client.delete(cache_key)
+
+
         # Send confirmation email
-        try:
-            await send_email(
-                subject="Your Clerk Account PIN",
-                email_to=request.email,
-                body=f"<p>Welcome, {request.first_name}!<br>Your login PIN is <strong>{pin}</strong>.</p>"
-            )
-        except Exception as e:
-            print(f"Failed to send email to {request.email}: {str(e)}")
+
+        # ✅ Send Welcome Email Task to Queue
+        await send_to_queue("email_queue", {
+            "type": "send_email",
+            "data": {
+                "to": request.email,
+                "subject": "Welcome to MarkMe!",
+                "body": f"Hello {request.first_name}, your registration is successfull as role of Clerk Your login PIN is <strong>{pin}</strong>.</p>"
+            }
+        }, priority=5) # Medium priority for email
+
+
+       
 
         return {
             "status": "success",

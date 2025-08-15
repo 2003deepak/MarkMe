@@ -29,6 +29,7 @@
 <body class="bg-gray-100 p-8">
     <div class="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-md">
         <h1 class="text-2xl font-bold mb-4">Face Recognition</h1>
+
         <form id="recognition-form" enctype="multipart/form-data" class="mb-4">
             <div class="mb-4">
                 <label for="attendance_id" class="block text-sm font-medium text-gray-700">Attendance ID</label>
@@ -40,6 +41,7 @@
             </div>
             <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">Start Recognition</button>
         </form>
+
         <div id="results-container" class="mb-4 p-4 bg-gray-50 rounded-md">
             <h2 class="text-lg font-semibold">Recognition Results</h2>
             <table id="results-table">
@@ -52,172 +54,105 @@
                 <tbody id="results-body"></tbody>
             </table>
         </div>
+
         <div>
             <h2 class="text-lg font-semibold mb-2">Annotated Image</h2>
             <img id="annotated-image" alt="Annotated Image">
         </div>
     </div>
 
-    <script>
-        const form = document.getElementById('recognition-form');
-        const resultsBody = document.getElementById('results-body');
-        const annotatedImage = document.getElementById('annotated-image');
-        let eventSource = null;
+<script type="module">
+import { fetchEventSource } from 'https://cdn.jsdelivr.net/npm/@microsoft/fetch-event-source/+esm';
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            resultsBody.innerHTML = '';
-            annotatedImage.style.display = 'none';
+const form = document.getElementById('recognition-form');
+const resultsBody = document.getElementById('results-body');
+const annotatedImage = document.getElementById('annotated-image');
 
-            const attendanceId = document.getElementById('attendance_id').value;
-            const imageFile = document.getElementById('image').files[0];
-            if (!attendanceId || !imageFile) {
-                resultsBody.innerHTML = `
-                    <tr>
-                        <td colspan="2" class="text-red-600">Please provide both Attendance ID and an image.</td>
-                    </tr>
-                `;
-                return;
-            }
+const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImhhcnNoaWxAZ21haWwuY29tIiwicm9sZSI6InRlYWNoZXIiLCJwcm9ncmFtIjpudWxsLCJkZXBhcnRtZW50IjoiQlRFQ0giLCJleHAiOjE3NTUyNTkwNDh9.XuTP1qbvHpfQ-Eqh8XerUQiZFXmiDyXCICwEFdJb_ac"; // Your auth token
 
-            // Connect to SSE for real-time updates
-            const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImhhcnNoaWxAZ21haWwuY29tIiwicm9sZSI6InRlYWNoZXIiLCJwcm9ncmFtIjpudWxsLCJkZXBhcnRtZW50IjoiQlRFQ0giLCJleHAiOjE3NTQ5NzU5MDl9.xCeA9GprJFtYkfoRGosAEUzqTcOpABodcTA7zg5WzY4';
-            eventSource = new EventSource(`http://127.0.0.1:8000/api/v1/teacher/sse/face_progress/${attendanceId}?token=${encodeURIComponent(token)}`);
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    resultsBody.innerHTML = '';
+    annotatedImage.style.display = 'none';
+    annotatedImage.src = '';
+    resultsBody.innerHTML = '<tr><td colspan="2">Starting recognition...</td></tr>';
 
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.status === 'progress') {
-                    if (data.message) {
-                        resultsBody.innerHTML += `
-                            <tr>
-                                <td colspan="2">${data.message}</td>
-                            </tr>
-                        `;
-                    }
-                    if (data.recognized) {
-                        data.recognized.forEach(student => {
-                            resultsBody.innerHTML += `
-                                <tr>
-                                    <td>${student.name} recognized</td>
-                                    <td>Roll no as: ${student.roll}</td>
-                                </tr>
-                            `;
-                        });
-                    }
-                } else if (data.status === 'complete') {
-                    resultsBody.innerHTML += `
-                        <tr>
-                            <td colspan="2">Recognition complete</td>
-                        </tr>
-                    `;
-                    eventSource.close();
-                } else if (data.status === 'failed') {
-                    resultsBody.innerHTML += `
-                        <tr>
-                            <td colspan="2" class="text-red-600">Error: ${data.reason}</td>
-                        </tr>
-                    `;
-                    eventSource.close();
-                }
-            };
+    const attendanceId = document.getElementById('attendance_id').value;
+    const imageFile = document.getElementById('image').files[0];
 
-            eventSource.onerror = () => {
-                resultsBody.innerHTML += `
-                    <tr>
-                        <td colspan="2" class="text-red-600">SSE connection error. Retrying...</td>
-                    </tr>
-                `;
-                if (eventSource.readyState !== EventSource.CLOSED) {
-                    eventSource.close();
-                }
-                setTimeout(() => {
-                    eventSource = new EventSource(`http://127.0.0.1:8000/api/v1/teacher/sse/face_progress/${attendanceId}?token=${encodeURIComponent(token)}`);
-                    eventSource.onmessage = (event) => {
-                        const data = JSON.parse(event.data);
-                        if (data.status === 'progress') {
-                            if (data.message) {
-                                resultsBody.innerHTML += `
-                                    <tr>
-                                        <td colspan="2">${data.message}</td>
-                                    </tr>
-                                `;
-                            }
-                            if (data.recognized) {
-                                data.recognized.forEach(student => {
-                                    resultsBody.innerHTML += `
-                                        <tr>
-                                            <td>${student.name} recognized</td>
-                                            <td>Roll no as: ${student.roll}</td>
-                                        </tr>
-                                    `;
-                                });
-                            }
-                        } else if (data.status === 'complete') {
-                            resultsBody.innerHTML += `
-                                <tr>
-                                    <td colspan="2">Recognition complete</td>
-                                </tr>
-                            `;
-                            eventSource.close();
-                        } else if (data.status === 'failed') {
-                            resultsBody.innerHTML += `
-                                <tr>
-                                    <td colspan="2" class="text-red-600">Error: ${data.reason}</td>
-                                </tr>
-                            `;
-                            eventSource.close();
-                        }
-                    };
-                    eventSource.onerror = () => {
-                        resultsBody.innerHTML += `
-                            <tr>
-                                <td colspan="2" class="text-red-600">SSE connection failed after retry.</td>
-                            </tr>
-                        `;
-                        eventSource.close();
-                    };
-                }, 2000);
-            };
+    if (!attendanceId || !imageFile) {
+        resultsBody.innerHTML = `<tr><td colspan="2" class="text-red-600">Please provide both Attendance ID and an image.</td></tr>`;
+        return;
+    }
 
-            // Call the API to initiate recognition
-            const formData = new FormData();
-            formData.append('attendance_id', attendanceId);
-            formData.append('image', imageFile);
+    const url = `http://127.0.0.1:8000/api/v1/teacher/session/recognize/${attendanceId}`;
 
-            async function recognizeStudents(attendanceId, imageFile) {
+    // Build FormData for upload
     const formData = new FormData();
-    formData.append("image", imageFile);
+    formData.append('image', imageFile);
 
+    // Use Fetch EventSource for streaming with headers and POST request
     try {
-        const response = await fetch(`http://127.0.0.1:8000/api/v1/teacher/session/recognize/${attendanceId}`, {
-            method: "POST",
+        await fetchEventSource(url, {
+            method: 'POST',
             headers: {
-                "Authorization": `Bearer ${yourToken}`, // Replace with your auth token
+                'Authorization': `Bearer ${token}`
+                // Do not set Content-Type: Let fetch handle FormData!
             },
             body: formData,
+            async onmessage(event) {
+                const data = JSON.parse(event.data);
+                handleData(data);
+            },
+            onerror(err) {
+                resultsBody.innerHTML += `<tr><td colspan="2" class="text-red-600">Connection to server lost. Please try again.</td></tr>`;
+                throw err; // Stop retrying
+            }
         });
+    } catch (err) {
+        resultsBody.innerHTML = `<tr><td colspan="2" class="text-red-600">Error: ${err.message}</td></tr>`;
+    }
+});
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+
+function handleData(data) {
+    if (data.status === 'progress') {
+        if (data.message) {
+            resultsBody.innerHTML = `<tr><td colspan="2">${data.message}</td></tr>`;
+        } else if (data.recognized) {
+            if (resultsBody.querySelector('tr td').textContent === 'Starting recognition...') {
+                resultsBody.innerHTML = '';
+            }
+            data.recognized.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${student.name}</td><td>${student.roll}</td>`;
+                resultsBody.appendChild(row);
+            });
         }
-
-        // Get the results from the custom header
-        const results = JSON.parse(response.headers.get("X-Face-Recognition-Results"));
-        console.log("Recognition results:", results);
-
-        // Handle the image stream
-        const blob = await response.blob();
-        const imageUrl = URL.createObjectURL(blob);
-        
-        // Display the image in an <img> element
-        const imgElement = document.createElement("img");
-        imgElement.src = imageUrl;
-        document.body.appendChild(imgElement); // Append to DOM or your desired element
-    } catch (error) {
-        console.error("Error recognizing students:", error);
+    } else if (data.status === 'complete') {
+        resultsBody.innerHTML += `<tr><td colspan="2" class="text-green-600 font-semibold">Recognition complete</td></tr>`;
+        // The final 'complete' message contains all results
+        if (data.recognized) {
+            resultsBody.innerHTML = '';
+            data.recognized.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${student.name}</td><td>${student.roll}</td>`;
+                resultsBody.appendChild(row);
+            });
+        }
+        if (data.annotated_image_base64) {
+            annotatedImage.src = `data:image/jpeg;base64,${data.annotated_image_base64}`;
+            annotatedImage.style.display = 'block';
+        }
+    } else if (data.status === 'failed') {
+        resultsBody.innerHTML = `<tr><td colspan="2" class="text-red-600">Error: ${data.reason}</td></tr>`;
+    } else if (data.status === 'final_image') {
+        // Some backend configurations send the image separately
+        annotatedImage.src = `data:image/jpeg;base64,${data.image_base64}`;
+        annotatedImage.style.display = 'block';
     }
 }
-        });
-    </script>
+</script>
+
 </body>
 </html>

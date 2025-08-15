@@ -16,7 +16,7 @@ async def fetch_class(user_data: dict, request):
         )
 
     # Normalize input values
-    department = request.department.upper()
+    department = user_data["department"]
     program = request.program.upper()
     try:
         semester = int(request.semester)
@@ -27,7 +27,7 @@ async def fetch_class(user_data: dict, request):
         )
 
     # Create cache key
-    cache_key = f"students:{department}:{program}:{semester}"
+    cache_key = f"students:{program}:{department}:{semester}"
     
     try:
         # Check redis_client cache first
@@ -58,9 +58,7 @@ async def fetch_class(user_data: dict, request):
                 "program": student.program,
                 "semester": student.semester,
                 "batch_year": student.batch_year,
-                "profile_picture": str(student.profile_picture) if student.profile_picture else None,
-                "profile_picture_id": student.profile_picture_id,
-                "subjects_assigned": student.subjects_assigned
+                "profile_picture": str(student.profile_picture) if student.profile_picture else None
             }
             for student in students
         ]

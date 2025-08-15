@@ -8,6 +8,7 @@ from app.schemas.teacher import Teacher
 from app.schemas.session import Session
 
 async def get_current_and_upcoming_sessions(user_data: dict) -> Dict[str, Any]:
+    
     # 1. Check if user is a teacher
     print(f"User data: {user_data}")
     if user_data.get("role") != "teacher":

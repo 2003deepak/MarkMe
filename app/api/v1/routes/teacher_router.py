@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import ValidationError
 from typing import List, Optional
 import json
+import asyncio
 from fastapi.responses import StreamingResponse
 from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.recognize_students import recognize_students
@@ -68,6 +69,11 @@ async def initiate_recognition(
     user_data: dict = Depends(is_logged_in)
 ):
     return await recognize_students(attendance_id, user_data, image)
+
+
+
+
+
 
 @router.post("/student/search")
 async def get_class_list_for_group(

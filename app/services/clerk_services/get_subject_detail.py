@@ -34,7 +34,7 @@ async def get_subject_detail(user_data: dict):
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
     
     # Simplified Redis key naming
-    cache_key = f"subject:{clerk_program}"
+    cache_key = f"subjects:{clerk_program}"
     cached_subject = await redis_client.get(cache_key)
 
     if cached_subject:
@@ -89,7 +89,7 @@ async def get_subject_by_id(subject_id: str, user_data: dict):
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
 
     # Simplified Redis key naming
-    cache_key = f"subject:{subject_id}:{clerk_program}"
+    cache_key = f"subject:{subject_id}"
     cached_subject = await redis_client.get(cache_key)
 
     if cached_subject:

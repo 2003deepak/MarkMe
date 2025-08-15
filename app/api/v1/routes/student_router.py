@@ -149,3 +149,5 @@ async def update_profile(
         user_data=user_data,
         profile_picture=profile_picture
     )
+
+

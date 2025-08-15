@@ -168,7 +168,7 @@ class TimeTableRequest(BaseModel):
 
 
 class ClassSearchRequest(BaseModel):
-    department: str
+    # department: str
     program: str
     semester: str
 
@@ -260,8 +260,6 @@ class StudentShortView(BaseModel):
     batch_year: int
     roll_number: int
     profile_picture: Optional[HttpUrl] = None
-    profile_picture_id: Optional[str] = None
-    subjects_assigned: List[SubjectShortView] = []
 
     class Config:
         arbitrary_types_allowed = True

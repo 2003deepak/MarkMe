@@ -48,8 +48,13 @@ async def create_subject(request, user_data):
         await subject_data.save()
 
         # Delete cache for subjects to ensure fresh data
-        cache_key_subject = f'subject:{user_data["program"]}'
-        await redis_client.delete(cache_key_subject)
+        cache_key_subject = [
+            f"subjects:{user_data['program']}:{user_data['department']}:{request.semester}",
+            f"subject:{user_data['program']}"
+        ]
+
+        await redis_client.delete(*cache_key_subject)
+
 
         return {
             "status": "success",

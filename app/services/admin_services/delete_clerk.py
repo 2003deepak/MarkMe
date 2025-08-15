@@ -52,20 +52,14 @@ async def delete_clerk(email_id: str, user_data: dict):
         raise HTTPException(status_code=500, detail={"status": "fail", "message": "Error deleting clerk from database"})
 
     # 🔍 Clean up any related Redis cache 
-    try:
-        clerk_department = clerk.department or ''
-        async for key in redis_client.scan_iter("*"):
-            key_str = key.decode() if isinstance(key, bytes) else key
-            if f"clerk:{clerk_department}" in key_str:
-                await redis_client.delete(key)
-                print(f"🧹 Deleted Redis key: {key_str}")
-    except Exception as e:
-        # Rollback by re-inserting the clerk
-        await clerk.insert()
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "fail", "message": f"Error deleting clerk from Redis: {str(e)}"}
-        )
+    cache_keys = [
+        f"clerks:{clerk.department}",
+        f"clerk:{clerk.email}"
+    ]
+
+    await redis_client.delete(*cache_keys) 
+
+
         
     # Step 3: Try sending email – rollback if fails
     try:

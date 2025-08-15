@@ -109,7 +109,6 @@ async def update_student_profile(request_data, user_data, profile_picture: Optio
 
         # Remove the redis cache for the user to get the updated data
         cache_key_student = f"student:{student_email}"
-        print(f"Deleting Redis cache for student: {cache_key_student}")
         await redis_client.delete(cache_key_student)
         print("Redis cache deleted.")
 

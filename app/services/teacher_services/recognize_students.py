@@ -2,12 +2,12 @@ import asyncio
 import base64
 import io
 import json
+import logging
 from fastapi import HTTPException, status, UploadFile
-from starlette.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 from app.schemas.attendance import Attendance
 from app.utils.publisher import send_to_queue
 from app.utils.redis_pub_sub import subscribe_to_channel
-import logging
 from redis.exceptions import ConnectionError, TimeoutError
 
 # Configure logging
@@ -54,68 +54,60 @@ async def recognize_students(attendance_id: str, user_data: dict, image: UploadF
         priority=10  # High priority for recognition
     )
 
-    # 5️⃣ Subscribe to Redis channel to wait for the annotated image
-    channel_name = f"face_progress:{attendance_id}"
-    logger.info(f"[recognize_students] Subscribing to Redis channel: {channel_name}")
-
-    async def wait_for_annotated_image():
+    # 5️⃣ Define the generator to stream updates
+    async def event_generator():
+        channel_name = f"face_progress:{attendance_id}"
+        logger.info(f"[recognize_students] Subscribing to Redis channel for streaming: {channel_name}")
         try:
             async with subscribe_to_channel(channel_name) as pubsub:
-                async for message in pubsub.listen():
+                while True:
                     try:
-                        if message["type"] != "message":
-                            logger.debug(f"[wait_for_annotated_image] Skipping non-message event: {message}")
-                            continue
-                        message_data = message["data"]
-                        if isinstance(message_data, bytes):
-                            message_data = message_data.decode("utf-8")
-                        data = json.loads(message_data)
-                        logger.debug(f"[wait_for_annotated_image] Received message: {data}")
-                        if data.get("status") == "complete" and "annotated_image" in data:
-                            annotated_image_bytes = base64.b64decode(data["annotated_image"])
-                            return annotated_image_bytes, data.get("results", [])
-                        elif data.get("status") == "failed":
-                            raise HTTPException(
-                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail=f"Face recognition failed: {data.get('reason')}"
-                            )
+                        message = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True), timeout=300.0)
+                        if message:
+                            data = json.loads(message["data"])
+
+                            # logger.info(f"[event_generator] Received message: {data}")
+
+                            # SSE protocol: send a chunk of progress (or final image) to client
+                            if data.get("status") == "complete":
+                                # Send the final annotated image if included
+                                annotated_image = data.get("annotated_image_base64")
+                                if annotated_image:
+                                    yield json.dumps({
+                                        "status": "final_image",
+                                        "image_base64": annotated_image,
+                                        "message": data.get("message", "Recognition complete")
+                                    })
+                                else:
+                                    yield json.dumps({
+                                        "status": "complete",
+                                        "message": data.get("message", "Recognition complete")
+                                    })
+                                break
+
+                            elif data.get("status") == "failed":
+                                # Send failure info
+                                yield json.dumps({
+                                    "status": "failed",
+                                    "reason": data.get("reason", "Unknown error"),
+                                })
+                                break
+                            else:
+                                # Progress update (streamed chunk)
+                                yield json.dumps(data)
+
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[event_generator] Timeout waiting for Redis message on channel: {channel_name}. Closing connection.")
+                        yield json.dumps({"status": "failed", "reason": "Processing timed out."})
+                        break
                     except json.JSONDecodeError as e:
-                        logger.error(f"[wait_for_annotated_image] Invalid JSON in message: {message_data}, error: {str(e)}")
-                        raise HTTPException(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Invalid message format: {str(e)}"
-                        )
-                    except Exception as e:
-                        logger.error(f"[wait_for_annotated_image] Error processing Redis message: {str(e)}")
-                        raise HTTPException(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Error processing face recognition: {str(e)}"
-                        )
+                        logger.error(f"[event_generator] Invalid JSON in message: {message['data']}, error: {str(e)}")
+                        yield json.dumps({"status": "failed", "reason": f"Invalid message format: {str(e)}"})
+                        break
+
         except (ConnectionError, TimeoutError) as e:
-            logger.error(f"[wait_for_annotated_image] Redis connection error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Cannot connect to Redis: {str(e)}"
-            )
+            logger.error(f"[recognize_students] Redis connection error: {str(e)}")
+            yield json.dumps({"status": "failed", "reason": f"Cannot connect to Redis: {str(e)}"})
 
-    # 6️⃣ Wait for the result with a timeout
-    try:
-        annotated_image_bytes, results = await asyncio.wait_for(wait_for_annotated_image(), timeout=120.0)
-    except asyncio.TimeoutError:
-        logger.error(f"[recognize_students] Timeout waiting for face recognition result for attendance_id: {attendance_id}")
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Face recognition processing timed out."
-        )
-    except HTTPException as e:
-        raise e
-
-    # 7️⃣ Return the annotated image as a StreamingResponse
-    logger.info(f"[recognize_students] Returning annotated image for attendance_id: {attendance_id}")
-    return StreamingResponse(
-        io.BytesIO(annotated_image_bytes),
-        media_type="image/jpeg",
-        headers={
-            "X-Face-Recognition-Results": json.dumps(results)
-        }
-    )
+    # Return SSE, streaming updates and the final annotated image
+    return EventSourceResponse(event_generator())

@@ -5,23 +5,33 @@ import base64
 import numpy as np
 import cv2
 import faiss
-from pymongo import MongoClient
-from insightface.app import FaceAnalysis
-from app.core.database import init_db
 from app.schemas.student import Student
-import logging
+from app.core.database import init_db
+from insightface.app import FaceAnalysis
 from app.core.rabbitmq_config import settings
 from app.utils.redis_pub_sub import publish_to_channel
+import onnxruntime as ort
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Auto-select provider
+available_providers = ort.get_available_providers()
+if "CUDAExecutionProvider" in available_providers:
+    providers = ["CUDAExecutionProvider"]
+    ctx_id = 0
+    logger.info("✅ Using GPU for face recognition.")
+else:
+    providers = ["CPUExecutionProvider"]
+    ctx_id = -1
+    logger.warning("⚠️ CUDA not available. Falling back to CPU.")
 
 # Initialize ArcFace Model
-face_app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])  # use CUDAExecutionProvider for GPU
-face_app.prepare(ctx_id=0)  # set to -1 for CPU only
+face_app = FaceAnalysis(name='buffalo_l', providers=providers)
+face_app.prepare(ctx_id=ctx_id)
 
-EMBEDDING_DIM = 512  # Matches the 512-dimensional face_embedding
+EMBEDDING_DIM = 512
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 async def face_worker():
     logger.info("🚀 Initializing DB connection...")
@@ -32,7 +42,7 @@ async def face_worker():
     channel = await connection.channel()
 
     queue = await channel.declare_queue(
-        "face_recog_queue",  # The same name used in send_to_queue()
+        "face_recog_queue",
         durable=True,
         arguments={"x-max-priority": 10}
     )
@@ -45,13 +55,12 @@ async def face_worker():
                 try:
                     payload = json.loads(message.body)
                     data = payload.get("data", {})
-
                     attendance_id = data.get("attendance_id")
                     image_base64 = data.get("image_base64")
                     semester = data.get("semester")
                     department = data.get("department")
                     program = data.get("program")
-
+                    
                     if not all([image_base64, semester, department, program]):
                         logger.error(f"[face_worker] Missing required data: {data}")
                         await publish_to_channel(f"face_progress:{attendance_id}", {
@@ -62,11 +71,11 @@ async def face_worker():
 
                     logger.info(f"[face_worker] Processing recognition for semester: {semester}, department: {department}, program: {program}")
 
-                    # Convert semester to int if it's a string, to match DB
+                    # Convert semester
                     try:
                         semester = int(semester)
                     except (ValueError, TypeError):
-                        logger.warning(f"[face_worker] Invalid semester format: {semester}, keeping as is")
+                        logger.warning(f"[face_worker] Invalid semester format: {semester}")
 
                     # 1️⃣ Decode image
                     image_bytes = base64.b64decode(image_base64)
@@ -99,9 +108,8 @@ async def face_worker():
                         "department": department,
                         "program": program
                     })
-                    student_docs = [doc async for doc in student_query]  # Async iteration over FindMany
-
-                    logger.info(f"[face_worker] Fetched {len(student_docs)} students for filters: semester={semester}, department={department}, program={program}")
+                    student_docs = [doc async for doc in student_query]
+                    logger.info(f"[face_worker] Fetched {len(student_docs)} students for filters.")
 
                     if not student_docs:
                         await publish_to_channel(f"face_progress:{attendance_id}", {
@@ -110,12 +118,10 @@ async def face_worker():
                         })
                         continue
 
-                    # Extract embeddings, names, and roll numbers
                     student_embeddings = np.array([doc.face_embedding for doc in student_docs], dtype="float32")
                     student_names = [f"{doc.first_name} {doc.last_name}".strip() for doc in student_docs]
-                    student_rolls = [doc.roll_number for doc in student_docs]  # Assuming roll_number exists in Student schema
+                    student_rolls = [doc.roll_number for doc in student_docs]
 
-                    # Validate embeddings
                     if student_embeddings.shape[1] != EMBEDDING_DIM:
                         await publish_to_channel(f"face_progress:{attendance_id}", {
                             "status": "failed",
@@ -123,9 +129,6 @@ async def face_worker():
                         })
                         continue
 
-                    logger.info(f"[face_worker] Loaded {len(student_embeddings)} embeddings with shape {student_embeddings.shape}")
-
-                    # 4️⃣ Prepare FAISS index
                     faiss.normalize_L2(student_embeddings)
                     index = faiss.IndexFlatIP(EMBEDDING_DIM)
                     index.add(student_embeddings)
@@ -143,47 +146,44 @@ async def face_worker():
                         x1, y1, x2, y2 = bbox
                         confidence = round(sim_score * 100, 2)
 
-                        if sim_score > 0.65:
+                        if sim_score > 0.50:
                             name = student_names[match_idx]
                             roll = student_rolls[match_idx]
                             label = f"{name} ({confidence}%)"
-                            color = (0, 255, 0)  # Green for known
-                            logger.info(f"[face_worker] Found {name} with roll {roll} and confidence = {confidence:.2f}")
+                            color = (0, 255, 0)
+                            logger.info(f"[face_worker] Found {name} with roll {roll} and confidence={confidence:.2f}")
                         else:
                             name = "Unknown"
                             roll = "N/A"
                             label = "Unknown"
-                            color = (0, 0, 255)  # Red for unknown
-                            # logger.info(f"[face_worker] Unknown face detected")
+                            color = (0, 0, 255)
 
-                        # Annotate the image
                         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
                         cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                        # Collect result for publishing
-                        result = {
-                            "status": "progress",
-                            "recognized": [
-                                {
-                                    "roll": roll,
-                                    "name": name
-                                }
-                            ]
+                        res = {
+                            "roll": roll,
+                            "name": name,
+                            "confidence": confidence
                         }
-                        results.append(result)
+                        results.append(res)
+                        # Streaming progress per recognized face
+                        await publish_to_channel(f"face_progress:{attendance_id}", {
+                            "status": "progress",
+                            "recognized": [res],
+                            "current_idx": idx + 1,
+                            "total": len(faces)
+                        })
 
-                        # Publish result chunk
-                        await publish_to_channel(f"face_progress:{attendance_id}", result)
-
-                    # 6️⃣ Encode annotated image
+                    # 6️⃣ Encode the annotated image
                     _, buffer = cv2.imencode('.jpg', img)
                     annotated_image_base64 = base64.b64encode(buffer).decode('utf-8')
 
                     # 7️⃣ Completion with annotated image
                     await publish_to_channel(f"face_progress:{attendance_id}", {
                         "status": "complete",
-                        "results": results,
-                        "annotated_image": annotated_image_base64
+                        "recognized": results,
+                        "annotated_image_base64": annotated_image_base64
                     })
 
                 except Exception as e:
@@ -195,3 +195,4 @@ async def face_worker():
 
 if __name__ == "__main__":
     asyncio.run(face_worker())
+

@@ -10,7 +10,7 @@ router = APIRouter()
 security = HTTPBearer()  # Define security scheme
 
 @router.post("/clerk/create")
-async def create_clerk_route(
+async def create_clerk_route(   
     request: CreateClerkRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
@@ -29,7 +29,7 @@ async def get_subject(
 
 
 
-@router.get("/clerk/id/{email_id}")
+@router.get("/clerk/{email_id}")
 async def get_subject_by_id_route(
     email_id: str = Path(..., description="Email ID"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
