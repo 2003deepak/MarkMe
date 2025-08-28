@@ -172,6 +172,15 @@ class ClassSearchRequest(BaseModel):
     program: str
     semester: str
 
+class CreateExceptionSession(BaseModel):
+    session_id: Optional[str] = None
+    date: date
+    action: str
+
+    # Only needed for Add / Reschedule
+    new_start_time: Optional[str] = None
+    new_end_time: Optional[str] = None
+   
 
 
 # Projection Models 

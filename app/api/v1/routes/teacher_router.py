@@ -8,12 +8,12 @@ from fastapi.responses import StreamingResponse
 from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.recognize_students import recognize_students
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
+from app.services.teacher_services.create_session_exception import create_session_exception
 from app.services.teacher_services.update_teacher_profile import update_teacher_profile
 from app.services.teacher_services.mark_attendance import mark_student_attendance
 from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.models.allModel import UpdateProfileRequest, ClassSearchRequest
-from app.utils.redis_pub_sub import subscribe_to_channel
+from app.models.allModel import UpdateProfileRequest, ClassSearchRequest,CreateExceptionSession
 import logging
 from app.core.config import settings
 
@@ -71,10 +71,6 @@ async def initiate_recognition(
     return await recognize_students(attendance_id, user_data, image)
 
 
-
-
-
-
 @router.post("/student/search")
 async def get_class_list_for_group(
     request: ClassSearchRequest,
@@ -92,3 +88,12 @@ async def mark_attedance(
     user_data: dict = Depends(is_logged_in)
 ):
     return await mark_student_attendance(attendance_id, attendance_student, user_data)
+
+
+@router.post("/create-exception")
+async def create_exception(
+    request : CreateExceptionSession,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    return await create_session_exception(request,user_data)

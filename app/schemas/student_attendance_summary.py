@@ -8,8 +8,8 @@ from app.schemas.student import Student
 from app.schemas.attendance import Attendance
 
 class StudentAttendanceSummary(Document):
-    student_id: Link[Student]  # type: ignore  # Keeping as string for now, consider Link[Student] if needed
-    subject_id: Link[Subject]  # Changed to Link for subject reference
+    student: Link[Student] 
+    subject: Link[Subject] 
     total_classes: int
     attended: int
     percentage: float
@@ -36,7 +36,7 @@ class StudentAttendanceSummary(Document):
     class Settings:
         name = "student_attendance_summary"
         indexes = [
-            [("student_id", 1), ("subject_id", 1)],
+            [("student", 1), ("subject", 1)],
         ]
 
         # Automatically update updated_at timestamp on save
