@@ -41,11 +41,10 @@ async def generate_sessions_for_tomorrow():
     print("🔄 Starting session scheduler for tomorrow...")
 
     tomorrow = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-    # tomorrow_date = tomorrow.date()
-    tomorrow_date = tomorrow.date() + timedelta(days=1)
+    tomorrow_date = tomorrow.date()
     date_str = str(tomorrow_date)
-    # weekday = tomorrow.strftime("%A")
-    weekday = (tomorrow + timedelta(days=1)).strftime("%A")
+    # weekday = tomorrow.strftime("%A")  # ✅ Fixed weekday calc
+    weekday = "Monday"
     print(f"📆 Target date: {date_str} ({weekday})")
 
     sessions = await Session.find(Session.day == weekday, fetch_links=True).to_list()
@@ -69,7 +68,6 @@ async def generate_sessions_for_tomorrow():
 
                 if action == "cancel":
                     print(f"🚫 Skipping cancelled session {session_id}")
-                    # Remove any existing job id from Redis, if present
                     await delete_job_id_from_redis(session_id, date_str)
                     continue
 
@@ -90,7 +88,7 @@ async def generate_sessions_for_tomorrow():
             job_id = str(uuid.uuid4())
 
             # Store job ID in Redis with 2-day expiry (48 hours)
-            expiration_seconds = 24 * 3600
+            expiration_seconds = 2 * 24 * 3600
             await store_job_id_in_redis(session_id, date_str, job_id, expiration_seconds)
 
             subject_id = None
@@ -104,6 +102,7 @@ async def generate_sessions_for_tomorrow():
                 print(f"❌ Invalid subject format for session {session_id}")
                 continue
 
+            # ✅ Add exception_id + is_exception flag
             session_payload = {
                 "session_id": session_id,
                 "date": date_str,
@@ -117,6 +116,12 @@ async def generate_sessions_for_tomorrow():
                 "job_id": job_id,
             }
 
+            if exception:
+                session_payload["exception_id"] = str(exception.id)
+                session_payload["is_exception"] = True
+            else:
+                session_payload["is_exception"] = False
+
             final_sessions.append((start_time, session_payload))
         except Exception as e:
             print(f"❌ Error preparing session {session.id}: {e}")
@@ -128,14 +133,11 @@ async def generate_sessions_for_tomorrow():
 
     for i, (start_time, payload) in enumerate(final_sessions):
         try:
-            # Calculate delay = session start - 15 minutes - now
             delay_seconds = (start_time - timedelta(minutes=15) - now).total_seconds()
             delay_ms = delay_seconds * 1000
 
-            
-
             if settings.ENVIRONMENT == "development":
-                # For dev/testing: fake scheduling times to avoid wait
+                # For dev/testing: fake scheduling times
                 fake_start = now + timedelta(seconds=100 + i * 20)
                 payload["start_time_timestamp"] = fake_start.timestamp()
                 delay_ms = 10_000 + i * 2000
@@ -154,7 +156,7 @@ async def main():
 
     if settings.ENVIRONMENT == "production":
         # Schedule cron job daily at 00:05 IST
-        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour="11", minute="42")
+        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour="00", minute="16")
         scheduler.start()
     else:
         # For development/testing run immediately once

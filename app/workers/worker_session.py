@@ -51,13 +51,17 @@ async def process_session(message: aio_pika.IncomingMessage):
             start_time_timestamp = payload["start_time_timestamp"]
             subject_id = payload["subject"]
             message_job_id = payload["job_id"]
+            is_exception = payload.get("is_exception", False)
+            exception_id = payload.get("exception_id")
 
             # Validate IDs
             try:
                 session_obj_id = ObjectId(session_id)
                 subject_id_obj = ObjectId(subject_id)
+                if is_exception and exception_id:
+                    exception_id_obj = ObjectId(exception_id)
             except Exception as e:
-                logger.error(f"❌ Invalid ObjectId format for session_id or subject_id: {e}")
+                logger.error(f"❌ Invalid ObjectId format for session_id, subject_id, or exception_id: {e}")
                 return
 
             date_str = date  # Assuming ISO format 'YYYY-MM-DD'
@@ -90,43 +94,49 @@ async def process_session(message: aio_pika.IncomingMessage):
                 logger.error(f"❌ Subject not found: {subject_id}")
                 return
 
-            # Check for exceptions on this session + date
-            exception = await ExceptionSession.find_one(
-                ExceptionSession.session == session_obj_id,
-                ExceptionSession.date == datetime.strptime(date, "%Y-%m-%d")
-            )
+            # Check for exceptions if is_exception is true
+            exception = None
+            if is_exception and exception_id:
+                exception = await ExceptionSession.get(exception_id_obj)
+                if not exception:
+                    logger.error(f"❌ ExceptionSession not found for exception_id: {exception_id}")
+                    return
+
             if exception:
                 action = exception.action.lower()
                 logger.info(f"⚠️ Exception found: {action}")
 
                 if action == "cancel":
                     logger.info(f"🚫 Cancelled session {session_id} on {date}")
-                    # Since cancelled, remove job_id from Redis to prevent future processing
                     await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
                     return
 
                 elif action == "rescheduled":
-                    if exception.new_slot:
-                        new_start = datetime.strptime(
-                            f"{date} {exception.new_slot.start_time}", "%Y-%m-%d %H:%M"
-                        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+                    if hasattr(exception, "start_time") and exception.start_time:
+                        try:
+                            # Parse start_time in 'HH.MM' format
+                            new_start = datetime.strptime(
+                                f"{date} {exception.start_time}", "%Y-%m-%d %H.%M"
+                            ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-                        if new_start < now:
-                            logger.info(f"⏰ Rescheduled session {session_id} already passed at {new_start}")
-                            # Remove stale job_id from Redis
-                            await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
+                            if new_start < now:
+                                logger.info(f"⏰ Rescheduled session {session_id} already passed at {new_start}")
+                                await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
+                                return
+                            elif (new_start - now) > timedelta(minutes=15):
+                                logger.info(f"⏳ Rescheduled session occurs at {new_start}, skipping as it starts later than 15 minutes")
+                                return
+                            # If within 15 minutes, proceed to attendance insertion
+                            logger.info(f"🔄 Processing rescheduled session at {new_start}")
+                        except ValueError as e:
+                            logger.error(f"⚠️ Invalid start_time format in ExceptionSession: {exception.start_time}, error: {e}")
                             return
-
-                        # This situation ideally should never happen here, as new job should be enqueued at reschedule time
-                        logger.info(f"🔄 Rescheduled session occurs at {new_start}, skipping old job")
-                        return
                     else:
-                        logger.error("⚠️ Rescheduled session missing new_slot data")
+                        logger.error(f"⚠️ Rescheduled session missing start_time data for session {session_id}")
                         return
 
-            # Store attendance if no cancellation/rescheduling applies
-            attendance = Attendance(
-                session=session_obj_id,
+            # Store attendance
+            attendance_data = dict(
                 date=datetime.strptime(date, "%Y-%m-%d"),
                 day=payload.get("day"),
                 subject=subject_id_obj,
@@ -134,13 +144,23 @@ async def process_session(message: aio_pika.IncomingMessage):
                 department=payload.get("department"),
                 semester=payload.get("semester"),
                 academic_year=payload.get("academic_year"),
-                students=""  # Initial empty, can be updated later
+                students=""
             )
-            await attendance.insert()
-            logger.info(f"✅ Stored attendance for session {session_id}")
 
-            # After successful processing, delete job id from Redis to prevent accidental reprocessing
-            await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
+            try:
+                if exception:
+                    attendance = Attendance(exception_session=exception.id, **attendance_data)
+                else:
+                    attendance = Attendance(session=session_obj_id, **attendance_data)
+
+                await attendance.insert()
+                logger.info(f"✅ Stored attendance for session {session_id}")
+
+            except Exception as e:
+                logger.error(f"💥 Failed to insert attendance: {e}", exc_info=True)
+            finally:
+                # Always cleanup Redis job to avoid infinite retries
+                await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
 
         except json.JSONDecodeError as e:
             logger.error(f"❌ Failed to decode payload: {e}")

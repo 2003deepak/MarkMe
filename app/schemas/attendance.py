@@ -3,10 +3,12 @@ from typing import Optional
 from datetime import datetime
 from beanie import Document, Indexed, Link
 from app.schemas.session import Session
+from app.schemas.exception_session import ExceptionSession
 from app.schemas.subject import Subject  
 
 class Attendance(Document):
-    session: Link[Session]  # 🔄 Replace timetable_id + slot_index with this
+    session: Optional[Link[Session]] = None
+    exception_session: Optional[Link[ExceptionSession]] = None
     date: Indexed(datetime)
     students: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
