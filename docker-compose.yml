@@ -14,5 +14,15 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis_local
+    restart: unless-stopped
+    ports:
+      - "6379:6379"   # Redis default port
+    volumes:
+      - redis_data:/data
+
 volumes:
   rabbitmq_data:
+  redis_data:

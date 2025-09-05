@@ -7,9 +7,11 @@ from pydantic import ValidationError
 from app.utils.security import get_password_hash
 from typing import List
 from app.utils.publisher import send_to_queue  
+from app.models.allModel import StudentRegisterRequest
+from uuid import uuid4
 
 
-async def register_student(student_data: Student, images: List[UploadFile]):
+async def register_student(student_data: StudentRegisterRequest):
     try:
         
         print("Starting student registration...")
@@ -23,44 +25,39 @@ async def register_student(student_data: Student, images: List[UploadFile]):
     
 
         # Generate student ID
-        student_id = f"{student_data.program.upper()}-{student_data.department.upper()}-{student_data.batch_year}-{student_data.semester}-{student_data.roll_number}"
+        student_id = str(uuid4()).replace("-", "").upper()
 
         # Hash password
         hashed_password = get_password_hash(str(student_data.password))
 
         # Save images temporarily to disk
-        image_paths = []
-        for image in images:
-            path = f"/tmp/{student_id}_{image.filename}"
-            with open(path, "wb") as f:
-                f.write(await image.read())
-            image_paths.append(path)
+        # image_paths = []
+        # for image in images:
+        #     path = f"/tmp/{student_id}_{image.filename}"
+        #     with open(path, "wb") as f:
+        #         f.write(await image.read())
+        #     image_paths.append(path)
 
         # Create student record with empty embedding
         student_doc = Student(
             student_id=student_id,
             first_name=student_data.first_name,
-            middle_name=student_data.middle_name,
+            middle_name=None,
             last_name=student_data.last_name,
             email=student_data.email,
             password=hashed_password,
-            phone=student_data.phone,
-            dob=student_data.dob,
-            roll_number=student_data.roll_number,
-            program=student_data.program,
-            department=student_data.department,
-            semester=student_data.semester,
-            batch_year=student_data.batch_year,
+            phone=None,
+            dob=None,
+            roll_number=None,
+            program=None,
+            department=None,
+            semester=None,
+            batch_year=None,
             face_embedding=None  # initially None
         )
 
         # Save student to database (timestamps are handled by Beanie's pre_save)
         await student_doc.save()
-
-        # Deleting Caching from MCA Students 
-        cache_key = f"student:{student_data.department.upper()}:{student_data.program.upper()}:{student_data.semester}"
-        print(f"Deleting Redis cache for student: {cache_key}")
-
 
         # ✅ Send Welcome Email Task to Queue
         await send_to_queue("email_queue", {
@@ -72,21 +69,12 @@ async def register_student(student_data: Student, images: List[UploadFile]):
             }
         }, priority=5)  # Medium priority for email
 
-        # ✅ Send Embedding Generation Task to Queue
-        await send_to_queue("embedding_queue", {
-            "type": "generate_embedding",
-            "data": {
-                "student_id": student_id,
-                "image_paths": image_paths
-            }
-        }, priority=2)  # Low priority for embedding
-
         return {
             "status": "success",
             "message": "Student registered successfully",
             "data": {
                 "student_id": student_id,
-                "name": f"{student_data.first_name} {student_data.middle_name or ''} {student_data.last_name}".strip(),
+                "name": f"{student_data.first_name} {student_data.last_name}".strip(),
                 "email": student_data.email
             }
         }
