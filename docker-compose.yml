@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  rabbitmq_delayed:
+    build: ./rabbitmq
+    container_name: rabbitmq_delayed
+    restart: unless-stopped
+    ports:
+      - "5673:5672"   # RabbitMQ protocol (changed host port to avoid conflict)
+      - "15673:15672" # RabbitMQ management UI (changed host port to avoid conflict)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+volumes:
+  rabbitmq_data:
