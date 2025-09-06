@@ -68,8 +68,15 @@ class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
-    phone: Optional[str] = None 
-    dob: Optional[date] = None 
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    phone: Optional[str] = None
+    dob: Optional[date] = None
+    roll_number: Optional[int] = None
+    program: Optional[str] = None
+    department: Optional[str] = None
+    semester: Optional[int] = None
+    batch_year: Optional[int] = None
 
 
 
