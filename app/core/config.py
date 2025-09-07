@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Project settings
     PROJECT_NAME: str = "Your FastAPI Project"
     API_V1_STR: str = "/api/v1"
-    FRONTEND_URL: str
+    BACKEND_URL: str
 
     # Environment (development, production, testing)
     ENVIRONMENT: str 

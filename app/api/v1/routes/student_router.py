@@ -10,6 +10,7 @@ from typing import List, Optional, Union
 from datetime import datetime , date
 import json
 from app.middleware.is_logged_in import is_logged_in
+from app.models.allModel import VerifyEmailRequest
 
 # -- Pydantic Model Import
 from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest # Assuming UpdateProfileRequest is in allModel
@@ -62,7 +63,6 @@ async def update_profile(
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
     email: Optional[EmailStr] = Form(None),
-    password: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     dob: Optional[str] = Form(None, description="Date of birth in YYYY-MM-DD format"),
     roll_number: Optional[str] = Form(None),
@@ -86,11 +86,10 @@ async def update_profile(
     middle_name = clean(middle_name)
     last_name = clean(last_name)
     email = clean(email)
-    password = clean(password)
     phone = clean(phone)
     program = clean(program)
     department = clean(department)
-    dob = clean(dob)  # Explicitly clean dob to handle empty string
+    dob = clean(dob)
 
     # Parse integer fields manually
     def parse_int(value: Optional[str], field_name: str) -> Optional[int]:
@@ -110,7 +109,7 @@ async def update_profile(
 
     # Handle dob parsing
     parsed_dob: Optional[date] = None
-    if dob:  # Only attempt parsing if dob is not None or empty
+    if dob:
         try:
             parsed_dob = datetime.strptime(dob, "%Y-%m-%d").date()
         except ValueError:
@@ -127,7 +126,6 @@ async def update_profile(
         middle_name=middle_name,
         last_name=last_name,
         email=email,
-        password=password,
         phone=phone,
         dob=parsed_dob,
         roll_number=roll_number_int,
@@ -144,10 +142,11 @@ async def update_profile(
     )
     
     
-@router.get("/verify-email")
-async def verify_email(token: str = Query(..., description="JWT verification token")):
+@router.post("/verify-email")
+async def verify_email(request: VerifyEmailRequest):
     """
-    Endpoint to verify student email using token.
-    Example: GET /verify-email?token=XYZ
+    Endpoint to verify student email using a JWT token provided in the request body.
+    Example: POST /verify-email
+    Body: {"token": "XYZ"}
     """
-    return await verify_student_email(token)
+    return await verify_student_email(request.token)

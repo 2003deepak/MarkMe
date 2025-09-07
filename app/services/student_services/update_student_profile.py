@@ -50,10 +50,6 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         update_data = {}
         student_id_changed = False
     
-        # Handle password hashing
-        if request_data.password:
-            update_data["password"] = get_password_hash(str(request_data.password))
-
         # Handle images for face embedding
         image_paths = []
         if images:
@@ -124,7 +120,7 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             if email_changed:
                 print(f"Email changed to {request_data.email}. Sending verification email.")
                 token = create_verification_token(request_data.email)
-                verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+                verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
                 await send_to_queue("email_queue", {
                     "type": "send_email",
                     "data": {
@@ -160,10 +156,6 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         loc = ".".join(str(x) for x in error["loc"])
         msg = error["msg"]
         error_msg = f"Invalid {loc}: {msg.lower()}"
-        if loc == "password" and "string_too_long" in str(error["type"]):
-            error_msg = "Password must be exactly 6 characters"
-        elif loc == "password" and "string_too_short" in str(error["type"]):
-            error_msg = "Password must be at least 6 characters"
         print(f"Pydantic validation error: {error_msg}")
         raise HTTPException(status_code=422, detail={"status": "fail", "message": error_msg})
 
