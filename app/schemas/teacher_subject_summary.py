@@ -1,7 +1,8 @@
 from beanie import Document, Link, Indexed
+from bson import Decimal128
 from pydantic import BaseModel, field_validator
 from typing import Optional
-from decimal import Decimal
+from decimal import Decimal as PyDecimal
 from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
 
@@ -10,7 +11,7 @@ class TeacherSubjectSummary(Document):
     teacher: Link[Teacher]
     subject: Link[Subject]
     total_sessions_conducted: int
-    average_attendance_percentage: Decimal
+    average_attendance_percentage: PyDecimal  
     defaulter_count: int
     at_risk_count: int
     top_performer_count: int
@@ -21,11 +22,16 @@ class TeacherSubjectSummary(Document):
             raise ValueError("Total sessions conducted cannot be negative")
         return v
 
-    @field_validator("average_attendance_percentage")
-    def validate_attendance_percentage(cls, v):
-        if not (0 <= v <= 100):
-            raise ValueError("Average attendance percentage must be between 0 and 100")
-        return v
+    @field_validator("average_attendance_percentage", mode="before")
+    @classmethod
+    def convert_decimal128(cls, v):
+        if isinstance(v, Decimal128):
+            return PyDecimal(str(v))  # Convert Decimal128 → str → Decimal
+        if isinstance(v, (int, float, str)):
+            return PyDecimal(str(v))
+        if isinstance(v, PyDecimal):
+            return v
+        raise ValueError(f"Cannot convert {type(v)} to Decimal")
 
     @field_validator("defaulter_count")
     def validate_defaulter_count(cls, v):
