@@ -69,7 +69,6 @@ class UpdateProfileRequest(BaseModel):
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    password: Optional[str] = None
     phone: Optional[str] = None
     dob: Optional[date] = None
     roll_number: Optional[int] = None
@@ -262,11 +261,11 @@ class StudentShortView(BaseModel):
     last_name: Optional[str] = None
     email: EmailStr
     phone: Optional[str] = None
-    department: str
-    program: str
-    semester: int
-    batch_year: int
-    roll_number: int
+    department: Optional[str] = None
+    program: Optional[str] = None
+    semester: Optional[int] = None
+    batch_year: Optional[int] = None
+    roll_number: Optional[int] = None
     profile_picture: Optional[HttpUrl] = None
 
     class Config:
@@ -275,3 +274,6 @@ class StudentShortView(BaseModel):
             datetime: lambda dt: dt.isoformat(),
             ObjectId: str
         }
+        
+class VerifyEmailRequest(BaseModel):
+    token: str
