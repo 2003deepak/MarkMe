@@ -71,55 +71,22 @@ async def update_profile(
     semester: Optional[str] = Form(None),
     batch_year: Optional[str] = Form(None),
     images: List[UploadFile] = File(default_factory=list),
+    profile_picture: Optional[UploadFile] = File(None),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in),
 ):
-    # Debug logging to inspect incoming values
-    print(f"Received inputs: dob={dob}, roll_number={roll_number}, semester={semester}, batch_year={batch_year}, images={images}")
+    from datetime import datetime
 
-    # Convert empty strings to None
-    def clean(value: Optional[str]) -> Optional[str]:
-        return None if value is None or str(value).strip() == "" else value
-
-    # Clean string inputs
-    first_name = clean(first_name)
-    middle_name = clean(middle_name)
-    last_name = clean(last_name)
-    email = clean(email)
-    phone = clean(phone)
-    program = clean(program)
-    department = clean(department)
-    dob = clean(dob)
-
-    # Parse integer fields manually
-    def parse_int(value: Optional[str], field_name: str) -> Optional[int]:
-        if value is None or str(value).strip() == "":
-            return None
-        try:
-            return int(value.strip())
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail={"status": "fail", "message": f"Invalid integer value for {field_name}"}
-            )
-
-    roll_number_int = parse_int(roll_number, "roll_number")
-    semester_int = parse_int(semester, "semester")
-    batch_year_int = parse_int(batch_year, "batch_year")
-
-    # Handle dob parsing
-    parsed_dob: Optional[date] = None
+    # Parse dob string to date object if provided
+    dob_date = None
     if dob:
         try:
-            parsed_dob = datetime.strptime(dob, "%Y-%m-%d").date()
+            dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
         except ValueError:
             raise HTTPException(
                 status_code=422,
                 detail={"status": "fail", "message": "Invalid date format for dob. Use YYYY-MM-DD."}
             )
-
-    # Normalize images
-    images = images or []  # Ensure images is a list, default to empty list if None
 
     update_request_data = UpdateProfileRequest(
         first_name=first_name,
@@ -127,18 +94,19 @@ async def update_profile(
         last_name=last_name,
         email=email,
         phone=phone,
-        dob=parsed_dob,
-        roll_number=roll_number_int,
+        dob=dob_date,
+        roll_number=int(roll_number) if roll_number else None,
         program=program,
         department=department,
-        semester=semester_int,
-        batch_year=batch_year_int,
+        semester=int(semester) if semester else None,
+        batch_year=int(batch_year) if batch_year else None,
     )
 
     return await update_student_profile(
         request_data=update_request_data,
         user_data=user_data,
-        images=images
+        images=images,
+        profile_picture=profile_picture
     )
     
     

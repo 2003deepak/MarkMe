@@ -72,7 +72,7 @@ async def create_timetable(
 #          "semester": "2",
 #          "schedule": [
 #              {"day": "Monday", "sessions": [
-#                  {"start_time": "08:00", "end_time": "09:00", "subject": {"id": "688746daa94ba4fa2636105a", "name": "Subject Name"}, "teacher": {"id": "688749d5a94ba4fa2636105c", "name": "Teacher Name"}},
+#                  {session_id "start_time": "08:00", "end_time": "09:00", "subject_name": "Subject Name", "teacher_name": "Teacher Name"},
 #                  ...
 #              ]},
 #              {"day": "Tuesday", "sessions": [...]},

@@ -57,7 +57,7 @@ async def get_student_detail(user_data: dict):
         "middle_name": student.middle_name,
         "last_name": student.last_name,
         "email": student.email,
-        "phone": student.phone,
+        "phone": str(student.phone) if student.phone is not None else None,  # Convert phone to string
         "department": student.department,
         "program": student.program,
         "semester": student.semester,
