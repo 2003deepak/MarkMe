@@ -9,17 +9,9 @@ from beanie import PydanticObjectId
 
 class StudentRegisterRequest(BaseModel):
     first_name: str 
-    middle_name: Optional[str] = None
     last_name: str 
     email: EmailStr 
     password: str = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
-    phone: str= Field(..., min_length=10, max_length=10)
-    dob: date 
-    roll_number: int
-    program: str 
-    department: str
-    semester: int 
-    batch_year: int 
 
 class TeacherRegisterRequest(BaseModel):
     first_name: str
@@ -76,8 +68,15 @@ class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
-    phone: Optional[str] = None 
-    dob: Optional[date] = None 
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    phone: Optional[str] = None
+    dob: Optional[date] = None
+    roll_number: Optional[int] = None
+    program: Optional[str] = None
+    department: Optional[str] = None
+    semester: Optional[int] = None
+    batch_year: Optional[int] = None
 
 
 
