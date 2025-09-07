@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.student_services.register_student import register_student
 from app.services.student_services.get_student_detail import get_student_detail
 from app.services.student_services.update_student_profile import update_student_profile
+from app.services.student_services.verify_student import verify_student_email
 from app.schemas.student import Student
 from pydantic import ValidationError, BaseModel, EmailStr
 from typing import List, Optional, Union  
@@ -141,3 +142,12 @@ async def update_profile(
         user_data=user_data,
         images=images
     )
+    
+    
+@router.get("/verify-email")
+async def verify_email(token: str = Query(..., description="JWT verification token")):
+    """
+    Endpoint to verify student email using token.
+    Example: GET /verify-email?token=XYZ
+    """
+    return await verify_student_email(token)

@@ -15,7 +15,7 @@ class Student(Document):
     profile_picture: Optional[HttpUrl] = None
     profile_picture_id: Optional[str] = None
     dob: Optional[date] = None
-    roll_number: Optional[Indexed(int, unique=True)] = None  # type: ignore
+    roll_number: Optional[Indexed(int, unique=True, sparse=True)] = None  # type: ignore
     phone: Optional[int] = None
     program: Optional[str] = None
     department: Optional[Indexed(str)] = None  # type: ignore
@@ -24,6 +24,7 @@ class Student(Document):
     face_embedding: Optional[List[float]] = None
     password_reset_otp: Optional[str] = None
     password_reset_otp_expires: Optional[datetime] = None
+    is_verified: bool = False 
     created_at: datetime = datetime.utcnow()
     updated_at: datetime = datetime.utcnow()
 

@@ -8,6 +8,8 @@ from app.schemas.student import Student
 from pydantic import ValidationError
 from app.utils.security import get_password_hash
 from app.utils.publisher import send_to_queue 
+from app.utils.token_utils import create_verification_token
+from app.core.config import settings
 import httpx
 import base64
 
@@ -36,12 +38,14 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         print(f"Student found: {student.student_id}")
 
         # Check if email is being updated and already exists
+        email_changed = False
         if request_data.email and request_data.email != student_email:
             if await Student.find_one(Student.email == request_data.email):
                 raise HTTPException(
                     status_code=400,
                     detail={"status": "fail", "message": "Email already in use"}
                 )
+            email_changed = True
 
         update_data = {}
         student_id_changed = False
@@ -115,6 +119,26 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
                 cache_key = f"student:{student.department.upper()}:{student.program.upper()}:{student.semester}"
                 await redis_client.delete(cache_key)
                 print(f"Deleted program cache: {cache_key}")
+
+            # Send verification email if email was changed
+            if email_changed:
+                print(f"Email changed to {request_data.email}. Sending verification email.")
+                token = create_verification_token(request_data.email)
+                verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+                await send_to_queue("email_queue", {
+                    "type": "send_email",
+                    "data": {
+                        "to": request_data.email,
+                        "subject": "Verify your new email - MarkMe",
+                        "body": (
+                            f"Hello {request_data.first_name or student.first_name},\n\n"
+                            f"You've updated your email on MarkMe. Please verify your new email by clicking the link below:\n\n"
+                            f"{verification_link}\n\n"
+                            "This link will expire in 30 minutes.\n\n"
+                            "If you didn’t update your email, please contact support."
+                        )
+                    }
+                }, priority=5)
 
         else:
             print("No fields to update for student.")
