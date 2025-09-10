@@ -47,7 +47,7 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             email_changed = True
 
         update_data = {}
-    
+        image_paths = []
         # Handle images for face embedding
         if images:
             for image in images:

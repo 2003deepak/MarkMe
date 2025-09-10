@@ -166,9 +166,9 @@ class TimeTableRequest(BaseModel):
 
 
 class ClassSearchRequest(BaseModel):
-    # department: str
+    batch_year: int
     program: str
-    semester: str
+    semester: int
 
 class CreateExceptionSession(BaseModel):
     session_id: Optional[str] = None
@@ -267,6 +267,7 @@ class StudentShortView(BaseModel):
     batch_year: Optional[int] = None
     roll_number: Optional[int] = None
     profile_picture: Optional[HttpUrl] = None
+    is_verified: Optional[bool] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -277,3 +278,17 @@ class StudentShortView(BaseModel):
         
 class VerifyEmailRequest(BaseModel):
     token: str
+    
+class UpdateClerkRequest(BaseModel):
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[int] = None
+    department: Optional[str] = None
+    program: Optional[str] = None
+
+    @validator("department", "program")
+    def check_non_empty(cls, v):
+        if v is not None and v.strip() == "":
+            raise ValueError(f"{cls.__name__} cannot be empty")
+        return v
