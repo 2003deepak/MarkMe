@@ -17,7 +17,7 @@ This document describes all Redis cache keys used in the backend, including thei
 ## 1. Student Data Keys
 
 ### a) Student List by Department/Program/Semester
-**student:{program}:{department}:{semester}**  
+**student:{program}:{department}:{semester}:{batch_year}**  
 - **Stores:** List of all students in a specific department, program, and semester.  
 - **Use case:** Used by teachers to search for students when manually adding students during attendance.  
 - **Invalidate when:**  
