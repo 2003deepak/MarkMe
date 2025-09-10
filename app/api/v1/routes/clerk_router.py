@@ -168,37 +168,6 @@ async def get_students(
     )
 
 
-# This Route is used to fetch all students for dept same as clerk dept 
-# Clerk Dept is stored in the jwt token :- user_data["department"]
-# Req body :- program , semester , batch_year will be passed by the clerk to the function 
-# Call the function :- fetch_class(user_data, request) {services/teachers/}
-# student:{program}:{department}:{semester}:{batch_year} ( This redis key , might have all data of students)
-# If not save to this 
-# Just return array of :- 
-
-# {
-#       "student_id": "1FE27D332D414E72854A3F40C7F9CCBF",
-#       "name": "Deepak Kumar Yadav",
-#       "roll_number": 69,
-#       "email": "deepak.yadav24@spit.ac.in",
-#       "phone": "9821293538",
-#       "department": "BTECH",
-#       "program": "MCA",
-#       "semester": 6,
-#       "batch_year": 2024,
-#       "profile_picture": "https://ik.imagekit.io/v4ughtdwn/profile_image/266cd98ac05c40c8b6959464d7aaea8a_zd8KCMK5A.jpg"
-#       "is_verified": true
-# }
-
-
-# @router.get("/students")
-# async def update_profile(
-#    request: ClassSearchRequest,
-#     credentials: HTTPAuthorizationCredentials = Depends(security),
-#     user_data: dict = Depends(is_logged_in)
-# ):
-
-
 
 
 
