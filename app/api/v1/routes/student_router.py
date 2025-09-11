@@ -75,7 +75,6 @@ async def update_profile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in),
 ):
-    from datetime import datetime
 
     # Parse dob string to date object if provided
     dob_date = None

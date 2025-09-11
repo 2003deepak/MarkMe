@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr,Field ,field_validator , HttpUrl , validator
+from pydantic import BaseModel, EmailStr,Field ,field_validator , HttpUrl , validator, ValidationInfo
 from enum import Enum
 from typing import Optional, List , Dict
 from typing import Optional,List, Literal
@@ -166,9 +166,9 @@ class TimeTableRequest(BaseModel):
 
 
 class ClassSearchRequest(BaseModel):
-    # department: str
+    batch_year: int
     program: str
-    semester: str
+    semester: int
 
 class CreateExceptionSession(BaseModel):
     session_id: Optional[str] = None
@@ -267,6 +267,7 @@ class StudentShortView(BaseModel):
     batch_year: Optional[int] = None
     roll_number: Optional[int] = None
     profile_picture: Optional[HttpUrl] = None
+    is_verified: Optional[bool] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -277,3 +278,76 @@ class StudentShortView(BaseModel):
         
 class VerifyEmailRequest(BaseModel):
     token: str
+    
+class UpdateClerkRequest(BaseModel):
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[int] = None
+    department: Optional[str] = None
+    program: Optional[str] = None
+
+    @validator("department", "program")
+    def check_non_empty(cls, v):
+        if v is not None and v.strip() == "":
+            raise ValueError(f"{cls.__name__} cannot be empty")
+        return v
+    
+
+class SessionShortView(BaseModel):
+    session_id: str
+    start_time: str
+    end_time: str
+    subject_name: str
+    teacher_name: str
+
+    @field_validator("start_time", "end_time")
+    def validate_time_format(cls, v, info: ValidationInfo):
+        if not re.match(r"^\d{2}:\d{2}$", v):
+            raise ValueError(f"{info.field_name} must be in HH:MM format")
+        return v
+
+class DaySchedule(BaseModel):
+    day: str
+    sessions: List[SessionShortView]
+
+    @field_validator("day")
+    def validate_day(cls, v, info: ValidationInfo):
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        if v not in days:
+            raise ValueError(f"{info.field_name} must be one of: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday")
+        return v
+
+class TimeTableResponse(BaseModel):
+    program: str
+    department: str
+    semester: str
+    academic_year: str
+    schedule: List[DaySchedule]
+
+    @field_validator("program", "department")
+    def check_non_empty(cls, v, info: ValidationInfo):
+        if not v.strip():
+            raise ValueError(f"{info.field_name} cannot be empty")
+        return v
+
+    @field_validator("semester")
+    def check_semester_range(cls, v, info: ValidationInfo):
+        try:
+            semester = int(v)
+            if not (1 <= semester <= 8):
+                raise ValueError(f"{info.field_name} must be between 1 and 8")
+        except ValueError:
+            raise ValueError(f"{info.field_name} must be a valid integer")
+        return v
+
+    @field_validator("academic_year")
+    def check_academic_year(cls, v, info: ValidationInfo):
+        try:
+            year = int(v)
+            current_year = datetime.utcnow().year
+            if not (2000 <= year <= current_year + 1):
+                raise ValueError(f"{info.field_name} must be between 2000 and {current_year + 1}")
+        except ValueError:
+            raise ValueError(f"{info.field_name} must be a valid integer")
+        return v
