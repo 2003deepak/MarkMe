@@ -1,4 +1,4 @@
-from fastapi import HTTPException, UploadFile, File
+from fastapi import HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.redis import redis_client
 from datetime import datetime
@@ -13,8 +13,7 @@ from app.core.config import settings
 import httpx
 import base64
 
-
-async def update_student_profile(request_data, user_data, images: List[UploadFile] = None):
+async def update_student_profile(request_data, user_data, images: List[UploadFile] = None, profile_picture: Optional[UploadFile] = None):
     print(f"Starting update_student_profile for email: {user_data['email']}")
 
     # Validate user role
@@ -48,14 +47,8 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             email_changed = True
 
         update_data = {}
-        student_id_changed = False
-    
-        # Handle password hashing
-        if request_data.password:
-            update_data["password"] = get_password_hash(str(request_data.password))
-
-        # Handle images for face embedding
         image_paths = []
+        # Handle images for face embedding
         if images:
             for image in images:
                 if not image.content_type.startswith("image/"):
@@ -73,10 +66,44 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             await send_to_queue("embedding_queue", {
                 "type": "generate_embedding",
                 "data": {
-                    "student_id": update_data.get("student_id", student.student_id),
+                    "student_id": student.student_id,
                     "image_paths": image_paths
                 }
             }, priority=2)
+
+        # Handle profile picture
+        if profile_picture:
+            if not profile_picture.content_type.startswith("image/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"status": "fail", "message": "File must be an image"}
+                )
+            
+            # Delete existing profile picture if it exists
+            if student.profile_picture_id:
+                try:
+                    await delete_file(student.profile_picture_id)
+                except Exception as e:
+                    print(f"Failed to delete existing profile picture: {str(e)}")
+                
+            file_bytes = await profile_picture.read()
+            encoded = base64.b64encode(file_bytes).decode("utf-8")
+            
+            try:
+                profile_picture_result = await upload_image_to_imagekit(
+                    file=encoded,
+                    folder="profile_image",
+                )
+                if "url" not in profile_picture_result or "fileId" not in profile_picture_result:
+                    raise ValueError("Invalid response from image upload service")
+                update_data["profile_picture"] = profile_picture_result["url"]
+                update_data["profile_picture_id"] = profile_picture_result["fileId"]
+            except Exception as e:
+                print(f"Image upload error: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail={"status": "fail", "message": f"Profile picture upload failed: {str(e)}"}
+                )
 
         # Dynamically update fields if provided
         if request_data.first_name is not None:
@@ -113,18 +140,12 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             # Clear relevant caches
             cache_key_student = f"student:{student_email}"
             await redis_client.delete(cache_key_student)
-            
-            # Clear program-specific cache if student ID changed
-            if student_id_changed:
-                cache_key = f"student:{student.department.upper()}:{student.program.upper()}:{student.semester}"
-                await redis_client.delete(cache_key)
-                print(f"Deleted program cache: {cache_key}")
 
             # Send verification email if email was changed
             if email_changed:
                 print(f"Email changed to {request_data.email}. Sending verification email.")
                 token = create_verification_token(request_data.email)
-                verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+                verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
                 await send_to_queue("email_queue", {
                     "type": "send_email",
                     "data": {
@@ -147,7 +168,7 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             "status": "success",
             "message": "Student profile updated successfully",
             "data": {
-                "student_id": update_data.get("student_id", student.student_id),
+                "student_id": student.student_id,
                 "name": f"{update_data.get('first_name', student.first_name)} "
                         f"{update_data.get('middle_name', student.middle_name) or ''} "
                         f"{update_data.get('last_name', student.last_name)}".strip(),
@@ -160,10 +181,6 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         loc = ".".join(str(x) for x in error["loc"])
         msg = error["msg"]
         error_msg = f"Invalid {loc}: {msg.lower()}"
-        if loc == "password" and "string_too_long" in str(error["type"]):
-            error_msg = "Password must be exactly 6 characters"
-        elif loc == "password" and "string_too_short" in str(error["type"]):
-            error_msg = "Password must be at least 6 characters"
         print(f"Pydantic validation error: {error_msg}")
         raise HTTPException(status_code=422, detail={"status": "fail", "message": error_msg})
 

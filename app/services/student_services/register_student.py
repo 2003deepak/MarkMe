@@ -53,7 +53,7 @@ async def register_student(student_data: StudentRegisterRequest):
 
         # ✅ Generate JWT verification token
         token = create_verification_token(student_data.email)
-        verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+        verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
 
         # ✅ Send Verification Email via Queue
         await send_to_queue("email_queue", {

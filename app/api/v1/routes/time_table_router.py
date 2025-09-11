@@ -4,7 +4,8 @@ from app.services.student_services.get_student_detail import get_student_detail
 from app.services.clerk_services.add_timetable import add_timetable
 from pydantic import ValidationError, BaseModel
 from app.middleware.is_logged_in import is_logged_in
-from app.models.allModel import TimeTableRequest
+from app.models.allModel import TimeTableRequest, TimeTableResponse
+from app.services.common_services.get_timetable_data import get_timetable_data
 
 router = APIRouter()
 security = HTTPBearer()
@@ -19,9 +20,22 @@ async def create_timetable(
     return await add_timetable(request, user_data)
 
 
+@router.get("/{program}/{department}/{semester}/{academic_year}", response_model=TimeTableResponse)
+async def get_timetable(
+    program: str,
+    department: str,
+    semester: str,
+    academic_year: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_data: dict = Depends(is_logged_in)
+):
+    print(f"Received request for /{program}/{department}/{semester}/{academic_year}")
+    return await get_timetable_data(department, program, semester, academic_year, user_data)
+
+
 # We need to implement the get_timetable_data function to retrieve timetable data for the MarkMeTest application.
 # The function will be called by a GET endpoint and must be accessible to all logged-in users (teachers, admins, clerks, students).
-# It should fetch sessions based on department, program, and semester, and return a JSON response with sessions grouped by day.
+# It should fetch sessions based on department, program, semester and academic_year, and return a JSON response with sessions grouped by day.
 # Below are the detailed requirements for implementation.
 
 
@@ -31,7 +45,7 @@ async def create_timetable(
 #    - The user_data parameter, provided by the is_logged_in middleware, contains user information to verify authentication.
 
 # 2. Input Parameters:
-#    - The function accepts three parameters: department (e.g., "BTECH"), program (e.g., "MCA"), and semester (e.g., "2").
+#    - The function accepts three parameters: department (e.g., "BTECH"), program (e.g., "MCA"), and semester (e.g., "2"), academic_year.
 #    - These parameters are used to filter sessions from the Session collection in the database.
 
 # 3. Database Schema Reference:
@@ -54,10 +68,10 @@ async def create_timetable(
 #    - Note: The subject and teacher fields are DBRef objects referencing the subjects and teachers collections.
 
 # 4. Data Fetching:
-#    - Use Beanie's ORM to query the Session collection based on department, program, and semester.
+#    - Use Beanie's ORM to query the Session collection based on department, program, semester and batch_year.
 #    - Utilize fetch_links() to resolve the DBRef fields (subject and teacher) and retrieve the linked data (e.g., subject name, teacher name).
 #    - Refer to the Beanie documentation for proper usage of fetch_links().
-#    - Use a projection model (e.g., SessionShortView from app.models.allModel) to shape the fetched data, similar to:
+#    - Use a projection model (e.g., SessionShortView) to shape the fetched data, similar to:
 #      ```python
 #      student_dict = await Session.find_one()
 #      student_out_data = SessionShortView.model_validate(student_dict)
@@ -72,7 +86,7 @@ async def create_timetable(
 #          "semester": "2",
 #          "schedule": [
 #              {"day": "Monday", "sessions": [
-#                  {"start_time": "08:00", "end_time": "09:00", "subject": {"id": "688746daa94ba4fa2636105a", "name": "Subject Name"}, "teacher": {"id": "688749d5a94ba4fa2636105c", "name": "Teacher Name"}},
+#                  {session_id "start_time": "08:00", "end_time": "09:00", "subject_name": "Subject Name", "teacher_name": "Teacher Name"},
 #                  ...
 #              ]},
 #              {"day": "Tuesday", "sessions": [...]},
@@ -86,7 +100,7 @@ async def create_timetable(
 
 # 6. Implementation Notes:
 #    - Instead of storing sessions in a nested timetable format, sessions are stored per day with start_time and end_time.
-#    - Ensure the response adheres to the TimeTableResponse Pydantic model for validation.
+#    - Ensure the response adheres to the TimeTableResponse Pydantic model for validation. (you will have to create this)
 #    - Handle errors appropriately (e.g., invalid department, program, or semester) by raising HTTPException with a 400 or 500 status code.
 #    - Refer to the SubjectShortView in app.models.allModel for guidance on using projection models with Beanie.
 

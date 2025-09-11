@@ -1,31 +1,31 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
-import re
 from beanie import Document, Indexed
 from datetime import datetime
-import random
+import re
 
 class Clerk(Document):
     first_name: str 
-    middle_name: Optional[str]
+    middle_name: Optional[str] = None
     last_name: str 
-    email: Indexed(EmailStr, unique=True) # type: ignore
+    email: Indexed(EmailStr, unique=True)  # type: ignore
     password: Optional[str] = None  # 6-digit numeric PIN
-    department: str
-    program: str
-    phone: int = Field(..., alias="phone")
+    department: Optional[str] = None
+    program: Optional[str] = None
+    phone: Optional[int] = Field(None, alias="phone")
     profile_picture: Optional[str] = None
     profile_picture_id: Optional[str] = None 
     password_reset_otp: Optional[str] = None
     password_reset_otp_expires: Optional[datetime] = None
-    created_at: Indexed(datetime) = datetime.utcnow() # type: ignore
-    updated_at: Indexed(datetime) = datetime.utcnow() # type: ignore
+    created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
+    updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 
     @field_validator("phone")
     def validate_phone(cls, v):
-        v_str = str(v)
-        if not re.match(r"^\d{10}$", v_str):
-            raise ValueError("Phone number must be a 10-digit number")
+        if v is not None:
+            v_str = str(v)
+            if not re.match(r"^\d{10}$", v_str):
+                raise ValueError("Phone number must be a 10-digit number")
         return v
 
     @field_validator("password")
@@ -40,14 +40,19 @@ class Clerk(Document):
 
     @field_validator("department")
     def validate_department(cls, v):
-        if not v.strip():
+        if v is not None and not v.strip():
             raise ValueError("Department cannot be empty")
+        return v
+
+    @field_validator("program")
+    def validate_program(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError("Program cannot be empty")
         return v
 
     class Settings:
         name = "clerks"
 
-        # Automatically update updated_at timestamp on save
         async def pre_save(self) -> None:
             self.updated_at = datetime.utcnow()
             if not self.created_at:

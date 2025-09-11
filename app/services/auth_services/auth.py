@@ -38,9 +38,8 @@ async def login_user(request):
    
     user = await get_user_by_email_role(request.email, request.role)
 
-    # print(f"User fetched: {user}")
-
     if not user:
+        print(f"User not found for email: {request.email}, role: {request.role}")
         raise HTTPException(
             status_code=401,
             detail={
@@ -51,7 +50,7 @@ async def login_user(request):
     
     # Verify the Password given by user and in DB
     if not verify_password(request.password, user.password):
-        print("Password verification failed")
+        print(f"Password verification failed for email: {request.email}")
         raise HTTPException(
             status_code=401,
             detail={
@@ -60,7 +59,24 @@ async def login_user(request):
             }
         )
     
-    access_token = create_access_token({"email": user.email, "role": request.role , "program" : user.program if hasattr(user, 'program') else None ,  "department" : user.department})
+    # Check if user is a student and if their email is verified
+    if request.role == "student":
+        if not hasattr(user, "is_verified") or user.is_verified is None or not user.is_verified:
+            print(f"Login attempt failed for unverified student: {user.email}, isVerified: {getattr(user, 'isVerified', None)}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "status": "fail",
+                    "message": "Email not verified. Please verify your email to log in."
+                }
+            )
+    
+    access_token = create_access_token({
+        "email": user.email,
+        "role": request.role,
+        "program": getattr(user, 'program', None),
+        "department": getattr(user, 'department', None)
+    })
 
     return {
         "status": "success",

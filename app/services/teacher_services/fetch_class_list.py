@@ -9,15 +9,17 @@ from app.core.redis import redis_client
 import json
 
 async def fetch_class(user_data: dict, request):
-    if user_data.get("role") not in {"teacher", "admin", "clerk"}:
+    print(f"🧾 user_data = {user_data}")
+    if user_data.get("role") not in {"teacher", "clerk"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only teachers, admins, or clerks can use this endpoint."
+            detail="Access denied. Only teachers, clerks can use this endpoint."
         )
 
     # Normalize input values
     department = user_data["department"]
     program = request.program.upper()
+    batch_year = request.batch_year
     try:
         semester = int(request.semester)
     except ValueError:
@@ -27,7 +29,7 @@ async def fetch_class(user_data: dict, request):
         )
 
     # Create cache key
-    cache_key = f"students:{program}:{department}:{semester}"
+    cache_key = f"students:{program}:{department}:{semester}:{batch_year}"
     
     try:
         # Check redis_client cache first
@@ -41,7 +43,8 @@ async def fetch_class(user_data: dict, request):
             {
                 "program": program,
                 "department": department,
-                "semester": semester
+                "semester": semester,
+                "batch_year": batch_year
             }
         ).project(StudentShortView).to_list()
 
@@ -58,7 +61,8 @@ async def fetch_class(user_data: dict, request):
                 "program": student.program,
                 "semester": student.semester,
                 "batch_year": student.batch_year,
-                "profile_picture": str(student.profile_picture) if student.profile_picture else None
+                "profile_picture": str(student.profile_picture) if student.profile_picture else None,
+                "is_verified": student.is_verified
             }
             for student in students
         ]
