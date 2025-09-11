@@ -61,6 +61,19 @@ async def get_current_session(
 ):
     return await get_current_and_upcoming_sessions(user_data)
 
+
+# This route for face recognition 
+# Currently it works only for a single image upload , but it can expect or teacher can upload
+# Multiple images of the class :- 
+
+# 1) Properly enqueue the job with multiple images 
+# 2) Worker :- worker_face_recognition is responsible for image recogniton 
+# 3) Make it work with multiple images also 
+# 4) Save the recognized students in the set , to prevent identity repetition 
+# 5) I have used redis pub sub :- when ever a face is recognized , i publish a msg to f"face_progress:{attendance_id}"
+# 6) So when update is recived i send it to SSE to frontend 
+# 7) There is a index.html file inside utils ( that connects to sse )
+# 8) As data is recieved , the card should be populated 
 @router.post("/session/recognize/{attendance_id}")
 async def initiate_recognition(
     attendance_id: str,

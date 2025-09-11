@@ -1,5 +1,3 @@
-Attendance_Stream 
-
 import asyncio
 import logging
 from typing import List, Tuple
