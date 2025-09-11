@@ -35,17 +35,6 @@ async def create_teacher_route(
     return await create_teacher(request,user_data)
 
 
-@router.post("/timetable/create")
-async def create_timetable(
-    request: TimeTableRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
-    
-    return await add_timetable(request,user_data)
-
-
-
 @router.get("/teacher")
 async def get_all_teachers_route(
     credentials: HTTPAuthorizationCredentials = Depends(security),
