@@ -10,10 +10,11 @@
             max-height: 300px;
             overflow-y: auto;
         }
-        #annotated-image {
+        .annotated-image {
             max-width: 100%;
             height: auto;
             display: none;
+            margin-top: 10px;
         }
         #results-table {
             width: 100%;
@@ -23,6 +24,15 @@
             border: 1px solid #e5e7eb;
             padding: 8px;
             text-align: left;
+        }
+        #progress-message {
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+        #annotated-images-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
         }
     </style>
 </head>
@@ -36,19 +46,21 @@
                 <input type="text" id="attendance_id" name="attendance_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
             </div>
             <div class="mb-4">
-                <label for="image" class="block text-sm font-medium text-gray-700">Upload Image</label>
-                <input type="file" id="image" name="image" accept="image/*" class="mt-1 block w-full" required>
+                <label for="images" class="block text-sm font-medium text-gray-700">Upload Images (Multiple Allowed)</label>
+                <input type="file" id="images" name="images" accept="image/*" multiple class="mt-1 block w-full" required>
             </div>
             <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">Start Recognition</button>
         </form>
 
         <div id="results-container" class="mb-4 p-4 bg-gray-50 rounded-md">
             <h2 class="text-lg font-semibold">Recognition Results</h2>
+            <div id="progress-message"></div>
             <table id="results-table">
                 <thead>
                     <tr>
                         <th>Student Name</th>
                         <th>Roll Number</th>
+                        <th>Confidence</th>
                     </tr>
                 </thead>
                 <tbody id="results-body"></tbody>
@@ -56,8 +68,8 @@
         </div>
 
         <div>
-            <h2 class="text-lg font-semibold mb-2">Annotated Image</h2>
-            <img id="annotated-image" alt="Annotated Image">
+            <h2 class="text-lg font-semibold mb-2">Annotated Images</h2>
+            <div id="annotated-images-container"></div>
         </div>
     </div>
 
@@ -66,93 +78,107 @@ import { fetchEventSource } from 'https://cdn.jsdelivr.net/npm/@microsoft/fetch-
 
 const form = document.getElementById('recognition-form');
 const resultsBody = document.getElementById('results-body');
-const annotatedImage = document.getElementById('annotated-image');
+const annotatedImagesContainer = document.getElementById('annotated-images-container');
+const progressMessage = document.getElementById('progress-message');
 
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImhhcnNoaWxAZ21haWwuY29tIiwicm9sZSI6InRlYWNoZXIiLCJwcm9ncmFtIjpudWxsLCJkZXBhcnRtZW50IjoiQlRFQ0giLCJleHAiOjE3NTUyNTkwNDh9.XuTP1qbvHpfQ-Eqh8XerUQiZFXmiDyXCICwEFdJb_ac"; // Your auth token
+// Hardcoded token (replace with secure auth in production)
+const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImhhcnNoaWxAZ21haWwuY29tIiwicm9sZSI6InRlYWNoZXIiLCJwcm9ncmFtIjpudWxsLCJkZXBhcnRtZW50IjoiQlRFQ0giLCJleHAiOjE3NTc3NjY5NDN9._UwweR66uZTz-in3oILnxAIhPXXSLdgDfaWPQjiK3qE";
 
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     resultsBody.innerHTML = '';
-    annotatedImage.style.display = 'none';
-    annotatedImage.src = '';
-    resultsBody.innerHTML = '<tr><td colspan="2">Starting recognition...</td></tr>';
+    annotatedImagesContainer.innerHTML = '';
+    progressMessage.textContent = 'Starting recognition...';
 
     const attendanceId = document.getElementById('attendance_id').value;
-    const imageFile = document.getElementById('image').files[0];
+    const imageFiles = document.getElementById('images').files;
 
-    if (!attendanceId || !imageFile) {
-        resultsBody.innerHTML = `<tr><td colspan="2" class="text-red-600">Please provide both Attendance ID and an image.</td></tr>`;
+    if (!attendanceId || imageFiles.length === 0) {
+        progressMessage.textContent = '';
+        resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Please provide both Attendance ID and at least one image.</td></tr>`;
         return;
     }
 
     const url = `http://127.0.0.1:8000/api/v1/teacher/session/recognize/${attendanceId}`;
 
-    // Build FormData for upload
+    // Build FormData for multiple images
     const formData = new FormData();
-    formData.append('image', imageFile);
+    for (const file of imageFiles) {
+        formData.append('images', file); // Use 'images' key to match List[UploadFile]
+    }
 
-    // Use Fetch EventSource for streaming with headers and POST request
+    // Track unique students to avoid duplicates in the UI
+    const uniqueStudents = new Set();
+
     try {
         await fetchEventSource(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
-                // Do not set Content-Type: Let fetch handle FormData!
+                // Content-Type is auto-set by FormData
             },
             body: formData,
             async onmessage(event) {
-                const data = JSON.parse(event.data);
-                handleData(data);
+                const eventData = event.data.trim(); // Trim whitespace
+                if (!eventData) {
+                    console.log('Empty SSE event, skipping...');
+                    return; // Skip empty events (common SSE heartbeats)
+                }
+                try {
+                    const data = JSON.parse(eventData);
+                    handleData(data, uniqueStudents);
+                } catch (parseError) {
+                    console.error('Failed to parse SSE data:', eventData, parseError);
+                    // Don't re-throw; continue streaming
+                }
             },
             onerror(err) {
-                resultsBody.innerHTML += `<tr><td colspan="2" class="text-red-600">Connection to server lost. Please try again.</td></tr>`;
+                progressMessage.textContent = '';
+                resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Connection to server lost. Please try again.</td></tr>`;
                 throw err; // Stop retrying
             }
         });
     } catch (err) {
-        resultsBody.innerHTML = `<tr><td colspan="2" class="text-red-600">Error: ${err.message}</td></tr>`;
+        progressMessage.textContent = '';
+        resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Error: ${err.message}</td></tr>`;
     }
 });
 
+function handleData(data, uniqueStudents) {
+    console.log('Received SSE data:', data);
 
-function handleData(data) {
+    if (data.student_id && data.name) {
+        // This is a per-student recognition event
+        const key = `${data.roll_number}:${data.name}`;
+        if (!uniqueStudents.has(key)) {
+            uniqueStudents.add(key);
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${data.name}</td><td>${data.roll_number}</td><td>${data.confidence}%</td>`;
+            resultsBody.appendChild(row);
+            progressMessage.textContent = `✅ New student recognized: ${data.name}`;
+        }
+        return; // stop here so we don’t misclassify as progress
+    }
+
     if (data.status === 'progress') {
-        if (data.message) {
-            resultsBody.innerHTML = `<tr><td colspan="2">${data.message}</td></tr>`;
-        } else if (data.recognized) {
-            if (resultsBody.querySelector('tr td').textContent === 'Starting recognition...') {
-                resultsBody.innerHTML = '';
-            }
-            data.recognized.forEach(student => {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${student.name}</td><td>${student.roll}</td>`;
-                resultsBody.appendChild(row);
-            });
-        }
+        progressMessage.textContent = data.message || '';
+    } else if (data.status === 'image_processed') {
+        // per-image annotated updates
+        const img = document.createElement('img');
+        img.src = `data:image/jpeg;base64,${data.annotated_image_base64}`;
+        img.className = 'annotated-image';
+        img.alt = `Image ${data.current_image}`;
+        img.style.display = 'block';
+        annotatedImagesContainer.appendChild(img);
+        progressMessage.textContent = `Processed ${data.current_image}/${data.total_images}`;
     } else if (data.status === 'complete') {
-        resultsBody.innerHTML += `<tr><td colspan="2" class="text-green-600 font-semibold">Recognition complete</td></tr>`;
-        // The final 'complete' message contains all results
-        if (data.recognized) {
-            resultsBody.innerHTML = '';
-            data.recognized.forEach(student => {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${student.name}</td><td>${student.roll}</td>`;
-                resultsBody.appendChild(row);
-            });
-        }
-        if (data.annotated_image_base64) {
-            annotatedImage.src = `data:image/jpeg;base64,${data.annotated_image_base64}`;
-            annotatedImage.style.display = 'block';
-        }
+        progressMessage.textContent = data.message || 'Recognition complete';
+        // final summary table can be built here if needed
     } else if (data.status === 'failed') {
-        resultsBody.innerHTML = `<tr><td colspan="2" class="text-red-600">Error: ${data.reason}</td></tr>`;
-    } else if (data.status === 'final_image') {
-        // Some backend configurations send the image separately
-        annotatedImage.src = `data:image/jpeg;base64,${data.image_base64}`;
-        annotatedImage.style.display = 'block';
+        progressMessage.textContent = '';
+        resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Error: ${data.reason}</td></tr>`;
     }
 }
 </script>
-
 </body>
 </html>
