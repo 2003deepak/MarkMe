@@ -77,11 +77,11 @@ async def get_current_session(
 @router.post("/session/recognize/{attendance_id}")
 async def initiate_recognition(
     attendance_id: str,
-    image: UploadFile = File(...),
+    images: List[UploadFile] = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     user_data: dict = Depends(is_logged_in)
 ):
-    return await recognize_students(attendance_id, user_data, image)
+    return await recognize_students(attendance_id, user_data, images)
 
 
 @router.post("/student/search")
