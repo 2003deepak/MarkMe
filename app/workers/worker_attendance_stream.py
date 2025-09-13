@@ -1,7 +1,9 @@
-Attendance_Stream 
+# Attendance_Stream 
 
 import asyncio
 import logging
+from datetime import date
+from decimal import Decimal
 from typing import List, Tuple
 from decimal import Decimal as PyDecimal
 from beanie import Link
@@ -12,6 +14,7 @@ from decimal import Decimal
 from app.schemas.attendance import Attendance
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.schemas.teacher_subject_summary import TeacherSubjectSummary
+from app.schemas.subject_session_stats import SubjectSessionStats
 from app.schemas.student import Student
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
@@ -156,11 +159,19 @@ async def update_teacher_subject_summary(
     Always recalculates category counts and rolling average.
     """
     try:
+        print("\n🛠️ Starting update_teacher_subject_summary()")
+        print(f"👉 Attendance ID: {attendance.id}")
+        print(f"👉 Teacher ID: {teacher.id}")
+        print(f"👉 Subject ID: {subject.id}")
+        print(f"👉 Is initial record: {is_initial_record}")
+
         # Find existing summary
+        print("\n🔍 Searching for existing TeacherSubjectSummary...")
         summary = await TeacherSubjectSummary.find_one(
             TeacherSubjectSummary.teacher == DBRef("teachers", teacher.id),
             TeacherSubjectSummary.subject == DBRef("subjects", subject.id)
         )
+        print(f"🔔 Found summary: {summary}")
 
         # Calculate today’s attendance percentage
         bitstr = attendance.students or ""
@@ -168,15 +179,23 @@ async def update_teacher_subject_summary(
         present_count = bitstr.count("1")
         today_percentage = (present_count / total_students * 100) if total_students > 0 else 0.0
 
+        print(f"\n📊 Attendance calculation:")
+        print(f" - Attendance bit string: {bitstr}")
+        print(f" - Total students: {total_students}")
+        print(f" - Present count: {present_count}")
+        print(f" - Today’s attendance %: {today_percentage:.2f}")
 
-        # Initialize or update
         if not summary:
-            # Create new summary
+            print("\n⚡ No existing summary found → Creating a new TeacherSubjectSummary")
+
             new_total_sessions = 1
             new_avg_attendance = Decimal(str(today_percentage))
 
-            # Fetch category counts
+            print("\n🔄 Fetching attendance category counts...")
             defaulter_count, at_risk_count, top_performer_count = await get_attendance_category_counts(subject.id)
+            print(f" - Defaulters: {defaulter_count}")
+            print(f" - At Risk: {at_risk_count}")
+            print(f" - Top Performers: {top_performer_count}")
 
             summary = TeacherSubjectSummary(
                 teacher=teacher,
@@ -187,37 +206,47 @@ async def update_teacher_subject_summary(
                 at_risk_count=at_risk_count,
                 top_performer_count=top_performer_count
             )
+
+            print(f"\n💾 Inserting new summary: {summary}")
             await summary.insert()
             logger.info(f"📝 Created TeacherSubjectSummary for teacher {teacher.id}, subject {subject.id}")
 
         else:
-            # Update existing — session count only if initial
-            new_total_sessions = summary.total_sessions_conducted + (1 if is_initial_record else 0)
+            print("\n📝 Existing summary found → Updating it")
 
-         
+            old_total = summary.total_sessions_conducted
+            old_avg = summary.average_attendance_percentage
+            print(f" - Old total sessions: {old_total}")
+            print(f" - Old average attendance %: {old_avg}")
+
             if is_initial_record:
-                # New session → bump count
-                old_total = summary.total_sessions_conducted
-                old_avg = summary.average_attendance_percentage  # already Decimal
+                print("\n📈 Initial record → Incrementing session count and updating average")
 
                 new_avg_attendance = ((old_avg * old_total) + Decimal(str(today_percentage))) / (old_total + 1)
                 new_total_sessions = old_total + 1
 
-            else:
-                # Existing session updated → replace old % with new %
-                old_total = summary.total_sessions_conducted
-                old_avg = summary.average_attendance_percentage  # Decimal
+                print(f" - New average attendance %: {new_avg_attendance:.2f}")
+                print(f" - New total sessions: {new_total_sessions}")
 
-                # You MUST fetch the actual old session percentage (not overall avg!)
-                old_session_percentage = Decimal(str(attendance.average_attendance_percentage))  
+            else:
+                print("\n🔄 Update existing session → Adjusting average with new attendance %")
+
+                old_session_percentage = Decimal(str(old_avg))
+                print(f" - Old session attendance % (from record): {old_session_percentage}")
 
                 new_avg_attendance = ((old_avg * old_total) - old_session_percentage + Decimal(str(today_percentage))) / old_total
                 new_total_sessions = old_total
 
-            # ALWAYS recalculate category counts — student % may have changed!
-            defaulter_count, at_risk_count, top_performer_count = await get_attendance_category_counts(subject.id)
+                print(f" - New average attendance %: {new_avg_attendance:.2f}")
+                print(f" - Total sessions (unchanged): {new_total_sessions}")
 
-            # Update all fields
+            print("\n🔄 Recalculating category counts...")
+            defaulter_count, at_risk_count, top_performer_count = await get_attendance_category_counts(subject.id)
+            print(f" - Defaulters: {defaulter_count}")
+            print(f" - At Risk: {at_risk_count}")
+            print(f" - Top Performers: {top_performer_count}")
+
+            print("\n💾 Updating summary in DB...")
             await summary.set({
                 TeacherSubjectSummary.total_sessions_conducted: new_total_sessions,
                 TeacherSubjectSummary.average_attendance_percentage: PyDecimal(str(round(new_avg_attendance, 2))),
@@ -225,44 +254,79 @@ async def update_teacher_subject_summary(
                 TeacherSubjectSummary.at_risk_count: at_risk_count,
                 TeacherSubjectSummary.top_performer_count: top_performer_count
             })
+
             logger.info(f"✅ Updated TeacherSubjectSummary for teacher {teacher.id}, subject {subject.id}")
+
+        print("\n✅ update_teacher_subject_summary() completed successfully\n")
 
     except Exception as e:
         logger.error(f"🚨 Error in update_teacher_subject_summary for attendance {attendance.id}: {e}")
+        print(f"\n🚨 Exception occurred: {e}\n")
 
 
-async def get_attendance_category_counts(subject_id: ObjectId) -> tuple[int, int, int]:
-    """
-    Returns (defaulter_count, at_risk_count, top_performer_count) for given subject.
-    Based on StudentAttendanceSummary.percentage:
-        - Defaulter: < 75%
-        - At Risk: 75% <= x < 85%
-        - Top Performer: >= 85%
-    """
-    try:
-        summaries = await StudentAttendanceSummary.find(
-            StudentAttendanceSummary.subject == DBRef("subjects", subject_id)
-        ).to_list()
+async def update_subject_session_stats(
+    attendance: Attendance,
+    teacher: Link,
+    subject: Link,
+    is_initial_record: bool
+):
+    print("\n🛠️ Starting update_subject_session_stats()")
+    print(f"👉 Attendance ID: {attendance.id}")
+    print(f"👉 Teacher ID: {teacher.id}")
+    print(f"👉 Subject ID: {subject.id}")
+    print(f"👉 Is initial record: {is_initial_record}")
 
-        defaulter = 0
-        at_risk = 0
-        top_performer = 0
+    session = await SubjectSessionStats.find_one(
+        SubjectSessionStats.session_id == DBRef("attendance", attendance.id),
+    )
+    print(f"\n🔍 Found existing SubjectSessionStats: {session}")
 
-        for s in summaries:
-            pct = s.percentage
-            if pct < 75.0:
-                defaulter += 1
-            elif 75.0 <= pct < 85.0:
-                at_risk += 1
-            elif pct >= 85.0:
-                top_performer += 1
+    # Calculate today’s attendance percentage
+    bitstr = attendance.students or ""
+    total_students = len(bitstr)
+    present_count = bitstr.count("1")
+    absent_count = total_students - present_count
+    today_percentage = (present_count / total_students * 100) if total_students > 0 else 0.0
 
-        return defaulter, at_risk, top_performer
+    print(f"\n📊 Attendance Calculation Details:")
+    print(f" - Attendance bit string: {bitstr}")
+    print(f" - Total students: {total_students}")
+    print(f" - Present count: {present_count}")
+    print(f" - Absent count: {absent_count}")
+    print(f" - Today’s attendance %: {today_percentage:.2f}")
 
-    except Exception as e:
-        logger.error(f"🚨 Error calculating category counts for subject {subject_id}: {e}")
-        return 0, 0, 0
+    # Ensure percentage_present is a Decimal
+    percentage_present = round(today_percentage, 2)
 
+    if session:
+        print("\n🔄 Updating existing SubjectSessionStats record")
+
+        await session.set({
+            SubjectSessionStats.subject: subject,
+            SubjectSessionStats.present_count: present_count,
+            SubjectSessionStats.absent_count: absent_count,
+            SubjectSessionStats.percentage_present: percentage_present,
+        })
+
+        print(f"✅ Updated SubjectSessionStats for session_id: {attendance.id}")
+
+    else:
+        print("\n✨ Creating new SubjectSessionStats record")
+
+        new_session = SubjectSessionStats(
+            session_id=DBRef("attendances", attendance.id),
+            subject=subject,
+            date=date.today(),
+            component_type=attendance.component_type if hasattr(attendance, "component_type") else "Lecture",
+            present_count=present_count,
+            absent_count=absent_count,
+            percentage_present=percentage_present,
+        )
+
+        await new_session.insert()
+        print(f"✅ Created new SubjectSessionStats for session_id: {attendance.id}")
+
+    print("\n✅ update_subject_session_stats() completed successfully\n")
 
 #############################################
 # 🚦 Main Handler — Manual Ordered Execution
@@ -362,21 +426,30 @@ async def handle_attendance_update(attendance: Attendance, old_bitstr: str, new_
             logger.error(f"⚠️ Invalid student at index {index}")
             continue
 
-        try:
-            await update_student_attendance_summary(
-                attendance, student, subject, was_present, is_now_present, is_initial_record
-            )
-        except Exception as e:
-            logger.error(f"🚨 Error in update_student_attendance_summary for student {student.id}: {e}")
-            continue  # Don't block others
+        # try:
+        #     await update_student_attendance_summary(
+        #         attendance, student, subject, was_present, is_now_present, is_initial_record
+        #     )
+        # except Exception as e:
+        #     logger.error(f"🚨 Error in update_student_attendance_summary for student {student.id}: {e}")
+        #     continue  # Don't block others
 
     # ✅ STEP 2: Update Teacher Subject Summary — ALWAYS, on every change
+    # try:
+    #     await update_teacher_subject_summary(
+    #         attendance, teacher, subject, is_initial_record
+    #     )
+    # except Exception as e:
+    #     logger.error(f"🚨 Error in update_teacher_subject_summary for attendance {attendance.id}: {e}")
+
+
+    # ✅ STEP 3: Update Subject Session Stats — ALWAYS, on every change
     try:
-        await update_teacher_subject_summary(
+        await update_subject_session_stats(
             attendance, teacher, subject, is_initial_record
         )
     except Exception as e:
-        logger.error(f"🚨 Error in update_teacher_subject_summary for attendance {attendance.id}: {e}")
+        logger.error(f"🚨 Error in update_subject_session_stats for attendance {attendance.id}: {e}")
 
     logger.info(f"✅ Processed {len(changes)} student(s) for Attendance {attendance.id}")
 
