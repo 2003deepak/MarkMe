@@ -20,6 +20,8 @@ from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
+from app.schemas.student_risk_summary import DefaulterSubject
+from app.schemas.student_risk_summary import StudentRiskSummary
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -207,7 +209,7 @@ async def update_teacher_subject_summary(
                 top_performer_count=top_performer_count
             )
 
-            print(f"\n💾 Inserting new summary: {summary}")
+            # print(f"\n💾 Inserting new summary: {summary}")
             await summary.insert()
             logger.info(f"📝 Created TeacherSubjectSummary for teacher {teacher.id}, subject {subject.id}")
 
@@ -328,6 +330,141 @@ async def update_subject_session_stats(
 
     print("\n✅ update_subject_session_stats() completed successfully\n")
 
+
+
+
+#############################################
+# 🧩 Updater: Student Risk Summary
+#############################################
+
+# async def update_student_risk_summary(
+#     attendance: Attendance,
+#     teacher: Link,
+#     subject: Link,
+#     is_initial_record: bool,
+#     changes: List[Tuple[int, bool, bool]],  # ← Pass changes from handle_attendance_update
+#     student_list: List[Student]             # ← Pass full list of students in this session
+# ):
+#     """
+#     Updates StudentRiskSummary for each student whose attendance changed.
+#     Recalculates average percentage and defaulter status across ALL subjects for each student.
+    
+#     This should be called AFTER StudentAttendanceSummary has been updated for all changed students.
+#     """
+#     try:
+#         # Extract the set of student IDs that changed in this attendance update
+#         changed_student_ids = {student_list[index].id for index, _, _ in changes}
+        
+#         if not changed_student_ids:
+#             logger.info("ℹ️ No student changes detected → Skipping StudentRiskSummary update")
+#             return
+
+#         logger.info(f"🔄 Updating StudentRiskSummary for {len(changed_student_ids)} changed students: {changed_student_ids}")
+
+#         for student_id in changed_student_ids:
+#             # Fetch ALL attendance summaries for this student across ALL subjects
+#             attendance_summaries = await StudentAttendanceSummary.find(
+#                 StudentAttendanceSummary.student.id == student_id
+#             ).to_list()
+
+#             if not attendance_summaries:
+#                 logger.warning(f"⚠️ No attendance summaries found for student {student_id}")
+#                 continue
+
+#             defaulter_subjects = []
+#             total_percentage = 0
+
+#             for summary in attendance_summaries:
+#                 # Ensure subject and percentage are valid
+#                 if summary.percentage is None:
+#                     continue
+#                 total_percentage += summary.percentage
+#                 if summary.percentage < 75:
+#                     defaulter_subjects.append(
+#                         DefaulterSubject(
+#                             subject=summary.subject,
+#                             percentage=summary.percentage
+#                         )
+#                     )
+
+#             total_subjects = len(attendance_summaries)
+#             average_percentage = round(total_percentage / total_subjects, 2) if total_subjects > 0 else Decimal('0.0')
+#             defaulter_count = len(defaulter_subjects)
+
+#             # Get student details (for department and semester)
+#             student = await Student.get(student_id)
+#             if not student:
+#                 logger.error(f"❌ Student with ID {student_id} not found")
+#                 continue
+
+#             # Prepare upsert data
+#             risk_summary = await StudentRiskSummary.find_one(
+#                 StudentRiskSummary.student.id == student_id
+#             )
+
+#             if not risk_summary:
+#                 # Create new record
+#                 risk_summary = StudentRiskSummary(
+#                     student=student,
+#                     department=student.department,
+#                     sem=student.semester,
+#                     total_subjects=total_subjects,
+#                     defaulter_subjects=defaulter_subjects,
+#                     defaulter_count=defaulter_count,
+#                     average_percentage=average_percentage
+#                 )
+#                 await risk_summary.insert()
+#                 logger.info(f"📝 Created StudentRiskSummary for student {student_id}")
+
+#             else:
+#                 # Update existing record
+#                 await risk_summary.set({
+#                     StudentRiskSummary.total_subjects: total_subjects,
+#                     StudentRiskSummary.defaulter_subjects: defaulter_subjects,
+#                     StudentRiskSummary.defaulter_count: defaulter_count,
+#                     StudentRiskSummary.average_percentage: average_percentage,
+#                     StudentRiskSummary.department: student.department,
+#                     StudentRiskSummary.sem: student.semester
+#                 })
+#                 logger.info(f"✅ Updated StudentRiskSummary for student {student_id}")
+
+#     except Exception as e:
+#         logger.error(f"🚨 Error updating StudentRiskSummary: {e}", exc_info=True)
+
+
+async def get_attendance_category_counts(subject_id: ObjectId) -> tuple[int, int, int]:
+    """
+    Returns (defaulter_count, at_risk_count, top_performer_count) for given subject.
+    Based on StudentAttendanceSummary.percentage:
+        - Defaulter: < 75%
+        - At Risk: 75% <= x < 85%
+        - Top Performer: >= 85%
+    """
+    try:
+        summaries = await StudentAttendanceSummary.find(
+            StudentAttendanceSummary.subject == DBRef("subjects", subject_id)
+        ).to_list()
+
+        defaulter = 0
+        at_risk = 0
+        top_performer = 0
+
+        for s in summaries:
+            pct = s.percentage
+            if pct < 75.0:
+                defaulter += 1
+            elif 75.0 <= pct < 85.0:
+                at_risk += 1
+            elif pct >= 85.0:
+                top_performer += 1
+
+        return defaulter, at_risk, top_performer
+
+    except Exception as e:
+        logger.error(f"🚨 Error calculating category counts for subject {subject_id}: {e}")
+        return 0, 0, 0
+    
+
 #############################################
 # 🚦 Main Handler — Manual Ordered Execution
 #############################################
@@ -426,21 +563,21 @@ async def handle_attendance_update(attendance: Attendance, old_bitstr: str, new_
             logger.error(f"⚠️ Invalid student at index {index}")
             continue
 
-        # try:
-        #     await update_student_attendance_summary(
-        #         attendance, student, subject, was_present, is_now_present, is_initial_record
-        #     )
-        # except Exception as e:
-        #     logger.error(f"🚨 Error in update_student_attendance_summary for student {student.id}: {e}")
-        #     continue  # Don't block others
+        try:
+            await update_student_attendance_summary(
+                attendance, student, subject, was_present, is_now_present, is_initial_record
+            )
+        except Exception as e:
+            logger.error(f"🚨 Error in update_student_attendance_summary for student {student.id}: {e}")
+            continue  # Don't block others
 
     # ✅ STEP 2: Update Teacher Subject Summary — ALWAYS, on every change
-    # try:
-    #     await update_teacher_subject_summary(
-    #         attendance, teacher, subject, is_initial_record
-    #     )
-    # except Exception as e:
-    #     logger.error(f"🚨 Error in update_teacher_subject_summary for attendance {attendance.id}: {e}")
+    try:
+        await update_teacher_subject_summary(
+            attendance, teacher, subject, is_initial_record
+        )
+    except Exception as e:
+        logger.error(f"🚨 Error in update_teacher_subject_summary for attendance {attendance.id}: {e}")
 
 
     # ✅ STEP 3: Update Subject Session Stats — ALWAYS, on every change

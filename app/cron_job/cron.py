@@ -43,7 +43,8 @@ async def generate_sessions_for_tomorrow():
     tomorrow = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     tomorrow_date = tomorrow.date()
     date_str = str(tomorrow_date)
-    weekday = tomorrow.strftime("%A")  # ✅ Fixed weekday calc
+    # weekday = tomorrow.strftime("%A")  # ✅ Fixed weekday calc
+    weekday = "Friday"
     print(f"📆 Target date: {date_str} ({weekday})")
 
     sessions = await Session.find(Session.day == weekday, fetch_links=True).to_list()
