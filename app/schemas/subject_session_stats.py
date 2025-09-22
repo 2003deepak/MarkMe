@@ -1,11 +1,10 @@
 from beanie import Document, Link, Indexed
 from pydantic import BaseModel, field_validator
-from typing import Optional
 from decimal import Decimal
 from datetime import date
+from bson import Decimal128
 from app.schemas.subject import Subject
 from app.schemas.attendance import Attendance
-
 
 class SubjectSessionStats(Document):
     session_id: Link[Attendance]
@@ -14,7 +13,7 @@ class SubjectSessionStats(Document):
     component_type: str
     present_count: int
     absent_count: int
-    percentage_present: Decimal
+    percentage_present: float
 
     @field_validator("component_type")
     def validate_component_type(cls, v):
@@ -35,8 +34,9 @@ class SubjectSessionStats(Document):
             raise ValueError("Absent count cannot be negative")
         return v
 
-    @field_validator("percentage_present")
+    @field_validator("percentage_present", mode="before")
     def validate_percentage_present(cls, v):
+        # Validate the range
         if not (0 <= v <= 100):
             raise ValueError("Percentage present must be between 0 and 100")
         return v
@@ -44,7 +44,10 @@ class SubjectSessionStats(Document):
     class Settings:
         name = "subject_session_stats"
         indexes = [
-            [("subject", 1), ("date", 1)],  # Compound index for queries by subject and date
-            "session_id",                   # Unique index for session_id
-            "percentage_present"           # Index for sorting/filtering by attendance percentage
+            [("subject", 1), ("date", 1)],
+            "session_id",
+            "percentage_present"
         ]
+        bson_encoders = {
+            Decimal: lambda x: Decimal128(str(x))  # Convert Decimal to Decimal128 for MongoDB
+        }
