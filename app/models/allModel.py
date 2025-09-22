@@ -37,6 +37,9 @@ class OtpRequest(BaseModel):
     email: EmailStr
     role: Literal["student", "teacher", "clerk"]
     otp: str
+    
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 class ResetPasswordRequest(BaseModel):
     email: str

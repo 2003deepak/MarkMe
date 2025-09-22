@@ -80,7 +80,9 @@ async def login_user(request):
 
     refresh_token = create_refresh_token({
     "email": user.email,
-    "role": request.role
+    "role": request.role,
+    "program": getattr(user, 'program', None),
+    "department": getattr(user, 'department', None)
     })
 
 
@@ -95,16 +97,28 @@ async def login_user(request):
     }
 
 async def refresh_access_token(request):
+   
+    refresh_token = request.refresh_token
     payload = decode_token(refresh_token)
-
-    if not payload or payload.get("type") != "refresh":
+    
+    if not payload :
         raise HTTPException(status_code=401, detail={"status": "fail", "message": "Invalid refresh token"})
+    
+    if payload.get("role") in ['teacher','student','clerk']:
 
-    # generate new access token
-    new_access_token = create_access_token({
-        "email": payload.get("email"),
-        "role": payload.get("role")
-    })
+            new_access_token = create_access_token({
+            "email": payload.get("email"),
+            "role": payload.get("role"),
+            "program": payload.get('program'),
+            "department": payload.get('department')
+        })
+    else:
+        
+        # generate new access token
+        new_access_token = create_access_token({
+            "email": payload.get("email"),
+            "role": payload.get("role")
+        })
 
     return {
         "status": "success",
