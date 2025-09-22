@@ -4,7 +4,7 @@ from app.schemas.student import Student
 from app.schemas.clerk import Clerk
 from app.schemas.teacher import Teacher
 from typing import Optional
-from app.utils.security import verify_password, create_access_token, get_password_hash
+from app.utils.security import verify_password, create_access_token, get_password_hash , create_refresh_token , decode_token
 from app.core.database import get_db
 import random
 from app.utils.publisher import send_to_queue
@@ -78,15 +78,42 @@ async def login_user(request):
         "department": getattr(user, 'department', None)
     })
 
+    refresh_token = create_refresh_token({
+    "email": user.email,
+    "role": request.role
+    })
+
+
     return {
         "status": "success",
         "message": "User logged in successfully",
         "data": {
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer"
         }
     }
 
+async def refresh_access_token(request):
+    payload = decode_token(refresh_token)
+
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail={"status": "fail", "message": "Invalid refresh token"})
+
+    # generate new access token
+    new_access_token = create_access_token({
+        "email": payload.get("email"),
+        "role": payload.get("role")
+    })
+
+    return {
+        "status": "success",
+        "message": "Access token refreshed",
+        "data": {
+            "access_token": new_access_token,
+            "token_type": "bearer"
+        }
+    }
 
 async def request_password_reset(request):
     otp = str(random.randint(100000, 999999))
@@ -114,10 +141,10 @@ async def request_password_reset(request):
         user = await model.find_one(model.email == email)
         if not user:
             print(f"{role} not found with email: {email}")
-            raise HTTPException(
-                status_code=404,
-                detail={"status": "fail", "message": "Email not registered with us"}
-            )
+            return {
+                "status": "fail",
+                "message": f"Email Not found"
+            }
 
         await user.update({
             "$set": {
@@ -129,10 +156,10 @@ async def request_password_reset(request):
 
     except Exception as e:
         print(f"Error updating {role}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "fail", "message": f"Error updating {role} record: {str(e)}"}
-        )
+        return {
+            "status": "fail",
+            "message": f"Error updating {role} record: {str(e)}"
+        }
 
     # Send OTP email
     try:
@@ -158,9 +185,57 @@ async def request_password_reset(request):
     }
 
 
-async def reset_user_password(request):
+
+# 2. Verify OTP (separate endpoint for step 2)
+async def verify_reset_otp(request):
     email = request.email
     otp = request.otp
+    role = request.role.lower()
+
+    role_model_map = {
+        "student": Student,
+        "teacher": Teacher,
+        "clerk": Clerk
+    }
+
+    if role not in role_model_map:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "Invalid role specified"}
+        )
+
+    model = role_model_map[role]
+    user = await model.find_one(
+        model.email == email,
+        model.password_reset_otp == otp
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "fail", "message": "Invalid OTP or user not found"}
+        )
+
+    if not user.password_reset_otp_expires or datetime.utcnow() > user.password_reset_otp_expires:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "fail", "message": "Expired OTP"}
+        )
+
+    # If OTP is correct, you may "flag" OTP as verified instead of deleting it immediately
+    await user.update({
+        "$set": {
+                "password_reset_otp": None,
+                "password_reset_otp_expires": None
+            }
+    })
+
+    return {"status": "success", "message": "OTP verified successfully"}
+
+
+# 3. Reset password (after OTP verified)
+async def reset_user_password(request):
+    email = request.email
     new_password = request.new_password
     role = request.role.lower()
 
@@ -177,59 +252,29 @@ async def reset_user_password(request):
         )
 
     model = role_model_map[role]
-    print(f"Checking {role} collection for email: {email} and OTP: {otp}")
-
-    # 1. Find user by email and OTP
-    user = await model.find_one(
-        model.email == email,
-        model.password_reset_otp == otp
-    )
+    user = await model.find_one(model.email == email)
 
     if not user:
-        print("No matching user found with provided email and OTP")
         raise HTTPException(
             status_code=404,
-            detail={"status": "fail", "message": "Invalid OTP or user not found"}
+            detail={"status": "fail", "message": "User not found"}
         )
 
-    # 2. Check if OTP is expired
-    if not user.password_reset_otp_expires or datetime.utcnow() > user.password_reset_otp_expires:
-        print("OTP is expired")
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "fail", "message": "Expired OTP"}
-        )
-
-    # 3. Ensure new password is different
+    # Ensure new password is different
     if verify_password(new_password, user.password):
-        print("New password matches the old one")
         raise HTTPException(
             status_code=400,
             detail={"status": "fail", "message": "New password must be different from old password"}
         )
 
-    # 4. Update password and null OTP fields
-    try:
-        await user.update({
-            "$set": {
-                "password": get_password_hash(new_password),
-                "password_reset_otp": None,
-                "password_reset_otp_expires": None
-            }
-        })
-        print(f"{role} password updated for {email}")
-    except Exception as e:
-        print(f"Error updating password for {role}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "fail", "message": f"Error updating password: {str(e)}"}
-        )
+    # Update password
+    await user.update({
+        "$set": {
+            "password": get_password_hash(new_password),
+        }
+    })
 
-    return {
-        "status": "success",
-        "message": "Password reset successfully"
-    }
-
+    return {"status": "success", "message": "Password reset successfully"}
 
 
 async def change_current_password(request, user_data):
