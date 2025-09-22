@@ -33,10 +33,14 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
     role: str
 
+class OtpRequest(BaseModel):
+    email: EmailStr
+    role: Literal["student", "teacher", "clerk"]
+    otp: str
+
 class ResetPasswordRequest(BaseModel):
     email: str
-    role : str
-    otp: str
+    role : Literal["student", "teacher", "clerk"]
     new_password: str = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
 
 class CreateClerkRequest(BaseModel):

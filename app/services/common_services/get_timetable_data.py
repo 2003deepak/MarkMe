@@ -9,10 +9,6 @@ from datetime import datetime
 
 
 async def get_timetable_data(department: str, program: str, semester: str, academic_year: str, user_data: dict) -> TimeTableResponse:
-<<<<<<< HEAD
-    
-=======
->>>>>>> 88aa3ea43198ec465a43e1cc5393a6cf37a25d5d
     print(
         f"Starting get_timetable_data with department={department}, program={program}, semester={semester}, academic_year={academic_year}")
 
