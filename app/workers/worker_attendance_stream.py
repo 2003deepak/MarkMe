@@ -1,5 +1,3 @@
-# Attendance_Stream 
-
 import asyncio
 import logging
 from datetime import date
@@ -20,8 +18,6 @@ from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
-from app.schemas.student_risk_summary import DefaulterSubject
-from app.schemas.student_risk_summary import StudentRiskSummary
 
 # Logger
 logger = logging.getLogger(__name__)
