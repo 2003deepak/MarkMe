@@ -1,4 +1,5 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from typing import Dict, Any
 from bson import DBRef, ObjectId
 from app.schemas.teacher import Teacher
@@ -8,24 +9,31 @@ from app.models.allModel import StudentShortView
 from app.core.redis import redis_client
 import json
 
-async def fetch_class(user_data: dict, request):
-    print(f"🧾 user_data = {user_data}")
-    if user_data.get("role") not in {"teacher", "clerk"}:
-        raise HTTPException(
+async def fetch_class(request: Request, request_model):
+    
+    user_role = request.state.user.get("role")
+    if user_role not in {"teacher", "clerk"}:
+        return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only teachers, clerks can use this endpoint."
+            content={
+                "status": "fail",
+                "message": "Access denied. Only teachers and clerks can use this endpoint."
+            }
         )
 
     # Normalize input values
-    department = user_data["department"]
-    program = request.program.upper()
-    batch_year = request.batch_year
+    department = request.state.user.get("department")
+    program = request_model.program.upper()
+    batch_year = request_model.batch_year
     try:
-        semester = int(request.semester)
+        semester = int(request_model.semester)
     except ValueError:
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Semester must be an integer"
+            content={
+                "status": "fail",
+                "message": "Semester must be an integer"
+            }
         )
 
     # Create cache key
@@ -36,7 +44,10 @@ async def fetch_class(user_data: dict, request):
         cached_data = await redis_client.get(cache_key)
         if cached_data:
             print(f"Cache hit for {cache_key}")
-            return json.loads(cached_data)
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=json.loads(cached_data)
+            )
 
         # Cache miss - fetch from database
         students = await Student.find(
@@ -80,11 +91,17 @@ async def fetch_class(user_data: dict, request):
         )
         print(f"Cached data for {cache_key}")
 
-        return response
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=response
+        )
 
     except Exception as e:
         print(f"Error fetching students: {str(e)}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch student records"
+            content={
+                "status": "fail",
+                "message": "Failed to fetch student records"
+            }
         )

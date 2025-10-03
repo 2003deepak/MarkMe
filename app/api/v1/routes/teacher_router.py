@@ -1,11 +1,7 @@
 from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import ValidationError
 from typing import List, Optional
 import json
-import asyncio
-from fastapi.responses import StreamingResponse
-from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.recognize_students import recognize_students
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
 from app.services.teacher_services.create_session_exception import create_session_exception
@@ -22,16 +18,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-security = HTTPBearer()  # Define security scheme
+
 
 
 
 @router.get("/me")
-async def get_teacher_me_route(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
-    return await get_teacher_me(user_data)
+async def get_teacher_me_route():
+    return await get_teacher_me()
 
 @router.put("/me/update-profile")
 async def update_teacher_profile_route(
@@ -40,8 +33,7 @@ async def update_teacher_profile_route(
     last_name: Optional[str] = Form(None),
     mobile_number: Optional[str] = Form(None),
     profile_picture: Optional[UploadFile] = File(None),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+
 ):
     try:
         request_data = UpdateProfileRequest(
@@ -50,16 +42,13 @@ async def update_teacher_profile_route(
             last_name=last_name,
             phone=mobile_number,
         )
-        return await update_teacher_profile(request_data, user_data, profile_picture)
+        return await update_teacher_profile(request_data,profile_picture)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=json.loads(e.json()))
 
 @router.get("/current-session")
-async def get_current_session(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
-    return await get_current_and_upcoming_sessions(user_data)
+async def get_current_session():
+    return await get_current_and_upcoming_sessions()
 
 
 # This route for face recognition 
@@ -78,35 +67,30 @@ async def get_current_session(
 async def initiate_recognition(
     attendance_id: str,
     images: List[UploadFile] = File(...),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
 ):
-    return await recognize_students(attendance_id, user_data, images)
+    return await recognize_students(attendance_id,images)
 
 
 @router.post("/student/search")
 async def get_class_list_for_group(
     request: ClassSearchRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in),
+   
 ):
-    return await fetch_class(user_data, request)
+    return await fetch_class(request)
 
 
 @router.post("/attendance/mark-attendance")
 async def mark_attedance(
     attendance_id: str,
     attendance_student : str ,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    
 ):
-    return await mark_student_attendance(attendance_id, attendance_student, user_data)
+    return await mark_student_attendance(attendance_id, attendance_student)
 
 
 @router.post("/create-exception")
 async def create_exception(
     request : CreateExceptionSession,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    
 ):
-    return await create_session_exception(request,user_data)
+    return await create_session_exception(request)

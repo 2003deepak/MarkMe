@@ -1,23 +1,19 @@
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter
 from app.services.student_services.get_student_detail import get_student_detail
 from app.services.clerk_services.add_timetable import add_timetable
-from pydantic import ValidationError, BaseModel
-from app.middleware.is_logged_in import is_logged_in
 from app.models.allModel import TimeTableRequest, TimeTableResponse
 from app.services.common_services.get_timetable_data import get_timetable_data
 
 router = APIRouter()
-security = HTTPBearer()
+
 
 @router.post("/create")
 async def create_timetable(
     request: TimeTableRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    
 ):
 
-    return await add_timetable(request, user_data)
+    return await add_timetable(request)
 
 
 @router.get("/{program}/{department}/{semester}/{academic_year}", response_model=TimeTableResponse)
@@ -26,8 +22,7 @@ async def get_timetable(
     department: str,
     semester: str,
     academic_year: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+   
 ):
     print(f"Received request for /{program}/{department}/{semester}/{academic_year}")
     return await get_timetable_data(department, program, semester, academic_year, user_data)

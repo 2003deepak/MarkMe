@@ -1,4 +1,5 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from app.core.redis import redis_client
 import json
 from app.schemas.clerk import Clerk  
@@ -18,29 +19,35 @@ class MongoJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-async def delete_clerk(email_id: str, user_data: dict):
-    print(f"🧾 user_data = {user_data}")  # 🔍 Inspect structure
-    
-    user_email = user_data["email"]
-    user_role = user_data["role"]
+async def delete_clerk(request : Request , email_id: str):
+  
+    user_email = request.state.user.get("email")
+    user_role = request.state.user.get("role")
     email_id = email_id.lower()
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Clerk Email: {email_id})")
 
     if user_role != "admin":
         print("❌ Access denied: Not an Admin")
-        raise HTTPException(
+        
+        return JSONResponse(
             status_code=403,
-            detail={"status": "fail", "message": "Only Admin can access this route"}
+            content={
+                "status": "fail",
+                "message": "Only Admin can access this route"
+            }
         )
         
     # Fetch the clerk by email using Beanie
     clerk = await Clerk.find_one(Clerk.email == email_id)
 
     if not clerk:
-        print(f"❌ Clerk with email '{email_id}' not found")
-        raise HTTPException(
+
+        return JSONResponse(
             status_code=404,
-            detail={"status": "fail", "message": f"Clerk with email '{email_id}' not found"}
+            content={
+                "status": "fail",
+                "message": f"Clerk with email '{email_id}' not found"
+            }
         )
     
     # Step 2: Delete the clerk
@@ -49,7 +56,15 @@ async def delete_clerk(email_id: str, user_data: dict):
         print(f"🗑️ Clerk with email '{email_id}' deleted from database")
     except Exception as e:
         print("❌ Database error:", str(e))
-        raise HTTPException(status_code=500, detail={"status": "fail", "message": "Error deleting clerk from database"})
+        
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "fail",
+                "message": f"Error deleting clerk from database"
+            }
+        )
+
 
     # 🔍 Clean up any related Redis cache 
     cache_keys = [
@@ -83,7 +98,13 @@ async def delete_clerk(email_id: str, user_data: dict):
         print("❌ Failed to send email")
 
     # ✅ If everything succeeds
-    return {
-        "status": "success",
-        "message": f"Clerk with email '{email_id}' deleted successfully"
-    }
+    
+    return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": f"Clerk with email '{email_id}' deleted successfully"
+            }
+        )
+    
+    

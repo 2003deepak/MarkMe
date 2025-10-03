@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from app.core.database import get_db
 from app.models.allModel import CreateClerkRequest
 from passlib.context import CryptContext
@@ -10,11 +11,14 @@ from app.utils.publisher import send_to_queue
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-async def create_clerk(request: CreateClerkRequest, user_data: dict):
-    if user_data["role"] != "admin":
-        raise HTTPException(
-            status_code=400,
-            detail={
+async def create_clerk(request,request_model: CreateClerkRequest):
+    
+    
+    if request.state.user.get("role") != "admin":
+        
+        return JSONResponse(
+            status_code=401,
+            content={
                 "status": "fail",
                 "message": "You don't have right to create clerk"
             }
@@ -22,14 +26,17 @@ async def create_clerk(request: CreateClerkRequest, user_data: dict):
 
     try:
         # Check if clerk exists
-        if await Clerk.find_one(Clerk.email == request.email):
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "status": "fail",
-                    "message": "Clerk already exists"
-                }
-            )
+        if await Clerk.find_one(Clerk.email == request_model.email):
+          
+            return JSONResponse(
+            status_code=400,
+            content={
+                "status": "fail",
+                "message": "Clerk already exists"
+            }
+        )
+            
+            
 
         # Generate random 6-digit PIN
         pin = str(random.randint(100000, 999999))
@@ -40,21 +47,21 @@ async def create_clerk(request: CreateClerkRequest, user_data: dict):
 
         # Create Clerk Beanie model
         clerk = Clerk(
-            first_name=request.first_name,
-            middle_name=request.middle_name,
-            last_name=request.last_name,
-            email=request.email,
+            first_name=request_model.first_name,
+            middle_name=request_model.middle_name,
+            last_name=request_model.last_name,
+            email=request_model.email,
             password=hashed_pin,
-            department=request.department,
-            program=request.program,
-            phone=request.mobile_number,
+            department=request_model.department,
+            program=request_model.program,
+            phone=request_model.mobile_number,
         )
 
         # Save clerk to database (timestamps are handled by Beanie's pre_save)
         await clerk.save()
 
         # Delete Redis Key
-        cache_key = f"clerks:{request.department}"
+        cache_key = f"clerks:{request_model.department}"
         await redis_client.delete(cache_key)
 
 
@@ -64,33 +71,35 @@ async def create_clerk(request: CreateClerkRequest, user_data: dict):
         await send_to_queue("email_queue", {
             "type": "send_email",
             "data": {
-                "to": request.email,
+                "to": request_model.email,
                 "subject": "Welcome to MarkMe!",
-                "body": f"Hello {request.first_name}, your registration is successfull as role of Clerk Your login PIN is <strong>{pin}</strong>.</p>"
+                "body": f"Hello {request_model.first_name}, your registration is successfull as role of Clerk Your login PIN is <strong>{pin}</strong>.</p>"
             }
         }, priority=5) # Medium priority for email
-
-
-       
-
-        return {
+        
+        return JSONResponse(
+        status_code=200,
+        content={
             "status": "success",
             "message": "Clerk created successfully",
             "data": {
-                "name": f"{request.first_name} {request.last_name}",
-                "email": request.email,
-                "department": request.department
+                "name": f"{request_model.first_name} {request_model.last_name}",
+                "email": request_model.email,
+                "department": request_model.department
             }
         }
-
+    )
+    
     except HTTPException:
         raise
     except Exception as e:
         print(f"Clerk creation error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "status": "fail",
-                "message": f"Error creating clerk: {str(e)}"
-            }
+        
+        return JSONResponse(
+        status_code=500,
+        content={
+            "status": "fail",
+            "message": f"Error creating clerk: {str(e)}"
+           
+        }
         )

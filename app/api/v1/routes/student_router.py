@@ -9,34 +9,19 @@ from pydantic import ValidationError, BaseModel, EmailStr
 from typing import List, Optional, Union  
 from datetime import datetime , date
 import json
-from app.middleware.is_logged_in import is_logged_in
 from app.models.allModel import VerifyEmailRequest
 
 # -- Pydantic Model Import
 from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest # Assuming UpdateProfileRequest is in allModel
 
 router = APIRouter()
-security = HTTPBearer()  # Define security scheme
 
 
-@router.post("/register")
-async def register_student_route(
-    first_name: str = Form(...),
-    last_name: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(..., min_length=6, max_length=6),    
-):
+@router.post("/")
+async def register_student_route(request : StudentRegisterRequest):
     try:
-        # Create StudentRegisterRequest object for validation
-        student_request = StudentRegisterRequest(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            password=password,
-        )
-        
         return await register_student(
-            student_data=student_request,
+            student_data=request,
         )
 
     except ValidationError as e:
@@ -49,12 +34,9 @@ async def register_student_route(
 
 
 @router.get("/me")
-async def get_me(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
+async def get_me():
     
-    return await get_student_detail(user_data)
+    return await get_student_detail()
 
 
 @router.put("/me/update-profile")
@@ -72,8 +54,6 @@ async def update_profile(
     batch_year: Optional[str] = Form(None),
     images: List[UploadFile] = File(default_factory=list),
     profile_picture: Optional[UploadFile] = File(None),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in),
 ):
 
     # Parse dob string to date object if provided
@@ -103,7 +83,6 @@ async def update_profile(
 
     return await update_student_profile(
         request_data=update_request_data,
-        user_data=user_data,
         images=images,
         profile_picture=profile_picture
     )

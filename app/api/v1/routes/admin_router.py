@@ -1,52 +1,42 @@
-from fastapi import APIRouter, Depends, Body,Path
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Request, Path
 from app.services.admin_services.create_clerk import create_clerk
-from app.services.admin_services.get_clerk import get_clerk,get_clerk_by_id
+from app.services.admin_services.get_clerk import get_clerk, get_clerk_by_id
 from app.services.admin_services.delete_clerk import delete_clerk
-from app.middleware.is_logged_in import is_logged_in
 from app.models.allModel import CreateClerkRequest
 
 router = APIRouter()
-security = HTTPBearer()  # Define security scheme
 
-@router.post("/clerk/create")
-async def create_clerk_route(   
-    request: CreateClerkRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+# Create Clerk
+@router.post("/clerk")
+async def create_clerk_route(
+    request_model: CreateClerkRequest,
+    request: Request
 ):
-    
-    return await create_clerk(request,user_data)
+    return await create_clerk(request, request_model)
 
 
+# Get clerks by department
 @router.get("/clerk/department/{department}")
-async def get_subject(
-    department: str = Path(..., description="Departement to fetch clerks for"),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+async def get_clerk_by_department_route(
+    request: Request = None,
+    department: str = Path(..., description="Department to fetch clerks for"),
 ):
-    return await get_clerk(department,user_data)
+    return await get_clerk(request, department)
 
 
-
+# Get clerk by email
 @router.get("/clerk/{email_id}")
-async def get_subject_by_id_route(
+async def get_clerk_by_id_route(
+    request: Request ,
     email_id: str = Path(..., description="Email ID"),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
 ):
-    return await get_clerk_by_id(email_id, user_data)
+    return await get_clerk_by_id(request,email_id)
 
 
-
-@router.put("/clerk/delete/{email_id}")
+# Delete clerk by email
+@router.delete("/clerk/{email_id}")
 async def delete_clerk_route(
     email_id: str = Path(..., description="Email ID"),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    request: Request = None
 ):
-    return await delete_clerk(email_id, user_data)
-
-
-
-
+    return await delete_clerk(request,email_id)
