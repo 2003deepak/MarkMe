@@ -1,4 +1,5 @@
-from fastapi import HTTPException
+from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, HttpUrl
 from typing import List, Optional
 from app.core.redis import redis_client
@@ -20,15 +21,27 @@ class MongoJSONEncoder(json.JSONEncoder):
             return str(obj)  # Convert HttpUrl to string
         return super().default(obj)
 
-async def get_student_detail(user_data: dict):
-    user_email = user_data["email"]
-    user_role = user_data["role"]
+async def get_student_detail(request: Request):
+    user_email = request.state.user.get("email")
+    user_role = request.state.user.get("role")
+
+    if not user_email:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status": "fail", 
+                "message": "User email not found in request"
+            }
+        )
 
     if user_role != "student":
         logging.info(f"Unauthorized access attempt by role: {user_role}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=403,
-            detail={"status": "fail", "message": "Only students can access this route"}
+            content={
+                "status": "fail", 
+                "message": "Only students can access this route"
+            }
         )
 
     cache_key_student = f"student:{user_email}"
@@ -39,16 +52,25 @@ async def get_student_detail(user_data: dict):
         student_data = json.loads(cached_student)
         try:
             validated_student_data = StudentShortView.model_validate(student_data)
-            return {"status": "success", "data": validated_student_data.model_dump(exclude_none=True)}
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "success", 
+                    "data": validated_student_data.model_dump(exclude_none=True)
+                }
+            )
         except Exception as e:
             logging.warning(f"Cached student data for {user_email} is invalid: {e}. Refetching.")
 
     student = await Student.find_one(Student.email == user_email)
     if not student:
         logging.error(f"Student with email {user_email} not found.")
-        raise HTTPException(
+        return JSONResponse(
             status_code=404,
-            detail={"status": "fail", "message": "Student not found"}
+            content={
+                "status": "fail", 
+                "message": "Student not found"
+            }
         )
 
     student_dict = {
@@ -74,9 +96,12 @@ async def get_student_detail(user_data: dict):
        
     except Exception as e:
         logging.error(f"Pydantic validation error for student {user_email}: {e}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail={"status": "fail", "message": f"Data validation error: {e}"}
+            content={
+                "status": "fail", 
+                "message": f"Data validation error: {e}"
+            }
         )
 
     await redis_client.setex(
@@ -86,4 +111,10 @@ async def get_student_detail(user_data: dict):
     )
     logging.info(f"Student data for {user_email} cached.")
 
-    return {"status": "success", "data": student_dict_for_response}
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success", 
+            "data": student_dict_for_response
+        }
+    )

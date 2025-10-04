@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.middleware.is_logged_in import is_logged_in
+
 from app.services.common_services.get_student_attendance_summary import get_student_attendance_summary
 
 
 router = APIRouter()
-security = HTTPBearer()  # Define security scheme
 
 
 # 👨‍🎓 Student APIs
@@ -14,31 +12,21 @@ security = HTTPBearer()  # Define security scheme
 @router.get("/student/{student_id}/summary")
 async def get_student_summary(
     student_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+
 ):
-    """
-    Get current attendance percentage for all enrolled subjects of a student.
-    Includes overall summary, best attended subject, and worst attended subject.
-    """
-    return await get_student_attendance_summary(student_id, user_data)
+   
+    return await get_student_attendance_summary(student_id)
 
 
 @router.get("/student/{student_id}/subject/{subject_id}")
 async def get_student_subject_attendance(student_id: str, subject_id: str):
-    """
-    Get attendance percentage for a specific subject of a student.
-    Returns total classes, attended classes, and percentage.
-    """
+
     return {"message": f"Attendance for student {student_id} in subject {subject_id}"}
 
 
 @router.get("/student/{student_id}/subject/{subject_id}/history")
 async def get_student_subject_history(student_id: str, subject_id: str):
-    """
-    Get full attendance history for a subject.
-    Returns a list of session dates with ✅ Present / ❌ Absent status.
-    """
+
     return {"message": f"History for student {student_id} in subject {subject_id}"}
 
 

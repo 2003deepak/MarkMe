@@ -1,4 +1,5 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.core.redis import redis_client
 import json
@@ -21,21 +22,24 @@ class MongoJSONEncoder(json.JSONEncoder):
 
 
 
-async def get_clerk(department: str, user_data: dict):
-    print(f"🧾 user_data = {user_data}")  # 🔍 Inspect structure
+async def get_clerk(request : Request , department: str):
     
-    user_email = user_data["email"]
-    user_role = user_data["role"]
+    user_email = request.state.user.get("email")
+    user_role = request.state.user.get("role")
     department = department.upper()
 
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Department: {department})")
 
     if user_role != "admin":
-        print("❌ Access denied: Not an Admin")
-        raise HTTPException(
-            status_code=403,
-            detail={"status": "fail", "message": "Only Admin can access this route"}
-        )
+
+        return JSONResponse(
+        status_code=403,
+        content={
+            "status": "fail",
+            "message": "Only Admin can access this route",
+            
+        }
+    )
     
     # Improved Redis key naming
     cache_key = f"clerks:{department}"
@@ -55,10 +59,16 @@ async def get_clerk(department: str, user_data: dict):
     
     if not clerks:
         print("❌ No clerks found in DB")
-        raise HTTPException(
-            status_code=404,
-            detail={"status": "fail", "message": f"Clerk not found in department {department}"}
-        )
+
+        return JSONResponse(
+        status_code=404,
+        content={
+            "status": "fail",
+            "message": f"Clerk not found in department {department}",
+            
+        })
+        
+        
         
     # Wrap in dict before saving to Redis
     clerk_data = {
@@ -72,25 +82,33 @@ async def get_clerk(department: str, user_data: dict):
     print(f"📥 Saved clerks for {department} to Redis (TTL 24h)")
 
     # Use jsonable_encoder to ensure proper serialization for response
-    return {
-        "status": "success",
-        "data": jsonable_encoder(
-            clerk_data,
-            custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
-        )
-    }
 
-async def get_clerk_by_id(email_id: str, user_data: dict):
-    print(f"🧾 user_data = {user_data}, Clerk id = {email_id}")  # 🔍 Inspect structure
-    email_id = email_id.lower()
-    user_email = user_data["email"]
-    user_role = user_data["role"]
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success",
+            "message": "Clerk fetched successfully",
+            "data": jsonable_encoder(
+                clerk_data,
+                custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
+            )
+            
+        })
+
+async def get_clerk_by_id(request : Request ,email_id: str):
+    
+    user_email = request.state.user.get("email")
+    user_role = request.state.user.get("role")
     
     if user_role != "admin":
         print("❌ Access denied: Not an Admin")
-        raise HTTPException(
+        
+        return JSONResponse(
             status_code=403,
-            detail={"status": "fail", "message": "Only Admin can access this route"}
+            content={
+                "status": "fail",
+                "message": "Only Admin can access this route"
+            }
         )
     
     # Improved Redis key naming
@@ -106,9 +124,13 @@ async def get_clerk_by_id(email_id: str, user_data: dict):
     
     if not clerk:
         print(f"❌ Clerk {email_id} not found in DB")
-        raise HTTPException(
+
+        return JSONResponse(
             status_code=404,
-            detail={"status": "fail", "message": "Clerk not found"}
+            content={
+                "status": "fail",
+                "message": "Clerk not found"
+            }
         )
 
     # Convert to dict for Redis
@@ -119,11 +141,15 @@ async def get_clerk_by_id(email_id: str, user_data: dict):
     await redis_client.setex(cache_key, 3600, clerk_json)  # Cache for 1 hour
     print(f"📥 Saved clerk {email_id} to Redis (TTL 1h)")
 
-    # Use jsonable_encoder to ensure proper serialization for response
-    return {
-        "status": "success",
-        "data": jsonable_encoder(
-            clerk_dict,
-            custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
+    
+    return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": "Clerk Fetched Successfully",
+                "data": jsonable_encoder(
+                        clerk_dict,
+                        custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
+                    )
+            }
         )
-    }

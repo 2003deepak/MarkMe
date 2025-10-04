@@ -1,16 +1,52 @@
-from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router, teacher_router , time_table_router
+from app.api.v1.routes import (
+    auth_router,
+    student_router,
+    admin_router,
+    clerk_router,
+    system_router,
+    teacher_router,
+    time_table_router
+)
 from app.core.database import init_db, close_db
 from app.core.config import settings
 from app.core.rabbit_setup import setup_rabbitmq
-from starlette.responses import JSONResponse
+from app.middleware.auth_middleware import AuthMiddleware  # Make sure you import your middleware
 
-# Initialize FastAPI app
+# Routes that do NOT require authentication
+WHITELIST = [
+    "/docs",
+    "/openapi.json",  
+    "/api/v1/auth/login",
+    "/api/v1/auth/refresh-token",
+    "/api/v1/auth/forgot-password"
+    "/api/v1/auth/verify-otp",
+    "/api/v1/reset-password",
+    "/api/v1/student/",
+    "/api/v1/student/verify-email"
+]
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("📦 Connecting to DB...")
+    await init_db()
+
+    print("🔄 Initializing RabbitMQ...")
+    await setup_rabbitmq()
+
+    yield  # Application runs here
+
+    print("🧹 Closing DB connection...")
+    await close_db()
+
+# Initialize FastAPI app with lifespan
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="A FastAPI project",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -22,6 +58,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Auth middleware (token validation)
+app.add_middleware(AuthMiddleware, whitelist=WHITELIST)
+
 # Include routers
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(system_router.router, prefix="/api/v1/system", tags=["System Check"])
@@ -30,20 +69,6 @@ app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(clerk_router.router, prefix="/api/v1/clerk", tags=["Clerk"])
 app.include_router(teacher_router.router, prefix="/api/v1/teacher", tags=["Teacher"])
 app.include_router(time_table_router.router, prefix="/api/v1/timetable", tags=["Timetable"])
-
-# Startup event to initialize database
-@app.on_event("startup")
-async def startup_event():
-    print("📦 Connecting to DB...")
-    print("🔄 Initializing Rabbit MQ...")
-    await init_db()
-    await setup_rabbitmq()
-
-# Shutdown event to close database connection
-@app.on_event("shutdown")
-async def shutdown_event():
-    print("🧹 Closing DB connection...")
-    await close_db()
 
 # Root endpoint
 @app.get("/")

@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from app.core.database import get_db # This might not be needed if Beanie is initialized globally
 from passlib.context import CryptContext
 from app.schemas.teacher import Teacher
@@ -12,18 +13,16 @@ import random
 from beanie.operators import In
 from beanie import Link # Import Link
 
-
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-async def create_teacher(request, user_data):
+async def create_teacher(request, request_model):
    
-
-    if user_data["role"] != "clerk":
-        print(f"Unauthorized teacher creation attempt by user role: {user_data['role']}")
-        raise HTTPException(
-            status_code=403, # Changed to 403 Forbidden for unauthorized access
-            detail={
+    user_role = request.state.user.get("role")
+    if user_role != "clerk":
+        print(f"Unauthorized teacher creation attempt by user role: {user_role}")
+        return JSONResponse(
+            status_code=403,
+            content={
                 "status": "fail",
                 "message": "You don't have the right to create a teacher"
             }
@@ -31,11 +30,11 @@ async def create_teacher(request, user_data):
 
     try:
         # Check if teacher exists
-        if await Teacher.find_one(Teacher.email == request.email):
-            print(f"Teacher with email {request.email} already exists.")
-            raise HTTPException(
-                status_code=409, # Use 409 Conflict for resource already exists
-                detail={
+        if await Teacher.find_one(Teacher.email == request_model.email):
+            print(f"Teacher with email {request_model.email} already exists.")
+            return JSONResponse(
+                status_code=409,
+                content={
                     "status": "fail",
                     "message": "Teacher already exists"
                 }
@@ -43,21 +42,21 @@ async def create_teacher(request, user_data):
 
         # List to hold actual Subject document instances for linking
         subjects_to_assign_to_teacher = []
-        if request.subjects_assigned:
+        if request_model.subjects_assigned:
             # Query for actual Subject documents based on codes
             
             existing_subjects_docs = await Subject.find(
-                In(Subject.subject_code, request.subjects_assigned)
+                In(Subject.subject_code, request_model.subjects_assigned)
             ).to_list()
 
             # Verify that all requested subject codes exist in the database
             found_subject_codes = {subject.subject_code for subject in existing_subjects_docs}
-            invalid_subjects = set(request.subjects_assigned) - found_subject_codes
+            invalid_subjects = set(request_model.subjects_assigned) - found_subject_codes
             if invalid_subjects:
                 print(f"Invalid subject codes provided: {', '.join(invalid_subjects)}")
-                raise HTTPException(
+                return JSONResponse(
                     status_code=400,
-                    detail={
+                    content={
                         "status": "fail",
                         "message": f"Invalid subject codes: {', '.join(invalid_subjects)}"
                     }
@@ -80,7 +79,7 @@ async def create_teacher(request, user_data):
 
         # Generate 6-digit PIN
         raw_password = str(random.randint(100000, 999999))
-        print(f"Generated raw password for {request.email}.")
+        print(f"Generated raw password for {request_model.email}.")
 
         # Hash the password
         hashed_password = get_password_hash(str(raw_password))
@@ -88,13 +87,13 @@ async def create_teacher(request, user_data):
         # Create Teacher Beanie model instance
         teacher_data = Teacher(
             teacher_id=teacher_id,
-            first_name=request.first_name,
-            middle_name=request.middle_name,
-            last_name=request.last_name,
-            email=request.email,
+            first_name=request_model.first_name,
+            middle_name=request_model.middle_name,
+            last_name=request_model.last_name,
+            email=request_model.email,
             password=hashed_password,
-            mobile_number=request.mobile_number,
-            department=request.department,
+            mobile_number=request_model.mobile_number,
+            department=request_model.department,
             # Assign actual Subject Document instances. Beanie will convert them to Links.
             subjects_assigned=subjects_to_assign_to_teacher
         )
@@ -122,53 +121,52 @@ async def create_teacher(request, user_data):
             await redis_client.delete(key)
             print(f"Cleared Redis cache key: {key}")
 
-        await redis_client.delete(f"teacher:{request.department}")
+        await redis_client.delete(f"teacher:{request_model.department}")
 
 
         # Send confirmation email with generated password
         try:
             await send_email(
                 subject="Your Teacher Account Password",
-                email_to=request.email,
-                body=f"<p>Welcome, {request.first_name}!<br>Your password is <strong>{raw_password}</strong>.<br>Your Teacher ID is <strong>{teacher_id}</strong>.</p>"
+                email_to=request_model.email,
+                body=f"<p>Welcome, {request_model.first_name}!<br>Your password is <strong>{raw_password}</strong>.<br>Your Teacher ID is <strong>{teacher_id}</strong>.</p>"
             )
-            print(f"Email sent successfully to {request.email}.")
+            print(f"Email sent successfully to {request_model.email}.")
         except Exception as e:
-            print(f"Failed to send email to {request.email}: {str(e)}")
+            print(f"Failed to send email to {request_model.email}: {str(e)}")
             # Continue without raising, as email failure shouldn't block registration
             # You might want to log this or add it to a delayed retry queue
 
-        return {
-            "status": "success",
-            "message": "Teacher created successfully",
-            "data": {
-                "teacher_id": teacher_id,
-                "name": f"{request.first_name} {request.middle_name or ''} {request.last_name}".strip(),
-                "email": request.email,
-                "generated_password": raw_password # Only return if strictly necessary for the client to display once
+        return JSONResponse(
+            status_code=201,
+            content={
+                "status": "success",
+                "message": "Teacher created successfully",
+                "data": {
+                    "teacher_id": teacher_id,
+                    "name": f"{request_model.first_name} {request_model.middle_name or ''} {request_model.last_name}".strip(),
+                    "email": request_model.email,
+                    "generated_password": raw_password # Only return if strictly necessary for the client to display once
+                }
             }
-        }
+        )
 
     except ValidationError as e:
         error_details = e.errors()
         error_msg = error_details[0]["msg"] if error_details else "Unknown validation error"
         print(f"Pydantic validation error during teacher creation: {error_msg}, Details: {error_details}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=422,
-            detail={
+            content={
                 "status": "fail",
                 "message": f"Validation error: {error_msg}"
             }
         )
-    except HTTPException as he:
-        print(f"HTTPException during teacher creation: {he.detail}")
-        # Re-raise HTTPExceptions raised intentionally within the function
-        raise he
     except Exception as e:
-        print(f"Unexpected error during teacher creation for {request.email}: {str(e)}")
-        raise HTTPException(
+        print(f"Unexpected error during teacher creation for {request_model.email}: {str(e)}")
+        return JSONResponse(
             status_code=500,
-            detail={
+            content={
                 "status": "fail",
                 "message": f"An unexpected error occurred: {str(e)}"
             }

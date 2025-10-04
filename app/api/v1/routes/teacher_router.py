@@ -1,11 +1,8 @@
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Form, Request, UploadFile, File, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from typing import List, Optional
 import json
-import asyncio
-from fastapi.responses import StreamingResponse
-from app.middleware.is_logged_in import is_logged_in
 from app.services.teacher_services.recognize_students import recognize_students
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
 from app.services.teacher_services.create_session_exception import create_session_exception
@@ -13,7 +10,7 @@ from app.services.teacher_services.update_teacher_profile import update_teacher_
 from app.services.teacher_services.mark_attendance import mark_student_attendance
 from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.models.allModel import UpdateProfileRequest, ClassSearchRequest,CreateExceptionSession
+from app.models.allModel import UpdateProfileRequest, CreateExceptionSession
 import logging
 from app.core.config import settings
 
@@ -22,91 +19,80 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-security = HTTPBearer()  # Define security scheme
+
 
 
 
 @router.get("/me")
-async def get_teacher_me_route(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
-    return await get_teacher_me(user_data)
+async def get_teacher_me_route(request : Request):
+    return await get_teacher_me(request)
+
 
 @router.put("/me/update-profile")
 async def update_teacher_profile_route(
+    request: Request,
     first_name: Optional[str] = Form(None),
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
-    mobile_number: Optional[str] = Form(None),
+    mobile_number: Optional[str] = Form(None),  
     profile_picture: Optional[UploadFile] = File(None),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
 ):
     try:
         request_data = UpdateProfileRequest(
             first_name=first_name,
             middle_name=middle_name,
             last_name=last_name,
-            phone=mobile_number,
+            mobile_number=mobile_number,  
         )
-        return await update_teacher_profile(request_data, user_data, profile_picture)
+        return await update_teacher_profile(request, request_data, profile_picture)
     except ValidationError as e:
-        raise HTTPException(status_code=422, detail=json.loads(e.json()))
-
+        error_details = e.errors()
+        error_msg = error_details[0]["msg"] if error_details else "Validation error"
+        return JSONResponse(
+            status_code=422,
+            content={
+                "status": "fail",
+                "message": f"Validation error: {error_msg}"
+            }
+        )
+        
 @router.get("/current-session")
-async def get_current_session(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
-    return await get_current_and_upcoming_sessions(user_data)
+async def get_current_session(request: Request):
+    return await get_current_and_upcoming_sessions(request)
 
 
-# This route for face recognition 
-# Currently it works only for a single image upload , but it can expect or teacher can upload
-# Multiple images of the class :- 
 
-# 1) Properly enqueue the job with multiple images 
-# 2) Worker :- worker_face_recognition is responsible for image recogniton 
-# 3) Make it work with multiple images also 
-# 4) Save the recognized students in the set , to prevent identity repetition 
-# 5) I have used redis pub sub :- when ever a face is recognized , i publish a msg to f"face_progress:{attendance_id}"
-# 6) So when update is recived i send it to SSE to frontend 
-# 7) There is a index.html file inside utils ( that connects to sse )
-# 8) As data is recieved , the card should be populated 
 @router.post("/session/recognize/{attendance_id}")
 async def initiate_recognition(
+    request : Request,
     attendance_id: str,
     images: List[UploadFile] = File(...),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
 ):
-    return await recognize_students(attendance_id, user_data, images)
+    return await recognize_students(request,attendance_id,images)
 
 
-@router.post("/student/search")
+@router.get("/student")
 async def get_class_list_for_group(
-    request: ClassSearchRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in),
+    request: Request,
+    batch_year: int,
+    program: str,
+    semester: int
 ):
-    return await fetch_class(user_data, request)
+    return await fetch_class(request, batch_year, program, semester)
 
 
 @router.post("/attendance/mark-attendance")
-async def mark_attedance(
+async def mark_attendance(
+    request: Request,
     attendance_id: str,
-    attendance_student : str ,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    attendance_student: str
 ):
-    return await mark_student_attendance(attendance_id, attendance_student, user_data)
+    return await mark_student_attendance(request, attendance_id, attendance_student)
 
 
 @router.post("/create-exception")
 async def create_exception(
-    request : CreateExceptionSession,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    request: Request,
+    exception_request: CreateExceptionSession
 ):
-    return await create_session_exception(request,user_data)
+    return await create_session_exception(request, exception_request)

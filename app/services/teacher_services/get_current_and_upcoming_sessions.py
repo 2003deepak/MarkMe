@@ -1,4 +1,5 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Any
@@ -7,24 +8,34 @@ from bson import DBRef
 from app.schemas.teacher import Teacher
 from app.schemas.session import Session
 
-async def get_current_and_upcoming_sessions(user_data: dict) -> Dict[str, Any]:
+async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
     
     # 1. Check if user is a teacher
-    print(f"User data: {user_data}")
-    if user_data.get("role") != "teacher":
-        raise HTTPException(
+    user_role = request.state.user.get("role")
+    user_email = request.state.user.get("email")
+    
+    print(f"User role: {user_role}, email: {user_email}")
+    
+    if user_role != "teacher":
+        return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can access this endpoint"
+            content={
+                "status": "fail",
+                "message": "Only teachers can access this endpoint"
+            }
         )
 
     # 2. Fetch the teacher by email
-    teacher_email = user_data.get("email")
+    teacher_email = user_email
     print(f"Teacher email: {teacher_email}")
     teacher = await Teacher.find_one(Teacher.email == teacher_email)
     if not teacher:
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Teacher not found"
+            content={
+                "status": "fail",
+                "message": "Teacher not found"
+            }
         )
 
     # 3. Get current date and weekday name in IST
@@ -46,9 +57,12 @@ async def get_current_and_upcoming_sessions(user_data: dict) -> Dict[str, Any]:
             await session.fetch_link("subject")
     except Exception as e:
         print(f"Error fetching sessions: {str(e)}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch session records"
+            content={
+                "status": "fail",
+                "message": "Failed to fetch session records"
+            }
         )
 
     # 5. Process sessions and categorize them
@@ -95,11 +109,14 @@ async def get_current_and_upcoming_sessions(user_data: dict) -> Dict[str, Any]:
         session_list.sort(key=lambda x: datetime.strptime(f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"))
 
     # 7. Construct final response
-    return {
-        "status": "success",
-        "data": {
-            "upcoming": upcoming,
-            "current": current,
-            "past": past
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "status": "success",
+            "data": {
+                "upcoming": upcoming,
+                "current": current,
+                "past": past
+            }
         }
-    }
+    )
