@@ -24,7 +24,8 @@ WHITELIST = [
     "/api/v1/auth/forgot-password"
     "/api/v1/auth/verify-otp",
     "/api/v1/reset-password",
-    "/api/v1/student/"
+    "/api/v1/student/",
+    "/api/v1/student/verify-email"
 ]
 
 @asynccontextmanager

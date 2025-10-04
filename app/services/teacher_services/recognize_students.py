@@ -2,7 +2,7 @@ import asyncio
 import base64
 import json
 import logging
-from fastapi import HTTPException, status, UploadFile
+from fastapi import HTTPException, Request, status, UploadFile
 from sse_starlette.sse import EventSourceResponse
 from app.schemas.attendance import Attendance
 from app.utils.publisher import send_to_queue
@@ -15,12 +15,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def recognize_students(attendance_id: str, user_data: dict, images: List[UploadFile]):
-    logger.info(f"[recognize_students] Starting face recognition for attendance_id: {attendance_id}")
-    logger.debug(f"[recognize_students] User data: {user_data}")
+async def recognize_students(request: Request, attendance_id: str,images: List[UploadFile]):
+    
 
     # 1️⃣ Verify role
-    if user_data.get("role") != "teacher":
+    if request.state.user.get("role") != "teacher":
         logger.error(f"[recognize_students] Unauthorized access attempt for attendance_id: {attendance_id}, role: {user_data.get('role')}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

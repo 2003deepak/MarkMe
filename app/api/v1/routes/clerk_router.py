@@ -9,7 +9,10 @@ from fastapi import (
 )
 from typing import Optional
 
+from fastapi.responses import JSONResponse
+
 # --- Service Imports
+from app.services.clerk_services.get_clerk_profile import get_clerk_profile
 from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
 from app.services.clerk_services.update_clerk import update_clerk
@@ -21,7 +24,6 @@ from app.services.clerk_services.get_subject_detail import get_subject_detail, g
 
 # --- Pydantic Imports
 from app.models.allModel import (
-    ClassSearchRequest,
     UpdateClerkRequest,
     CreateSubjectRequest,
     TeacherRegisterRequest,
@@ -79,20 +81,27 @@ async def get_teacher_route(
 
 # ------------------- Clerk Routes -------------------
 
-@router.put("/me/update-profile")
+
+@router.get("/me")
+async def get_clerk_profile_route(request: Request):
+    return await get_clerk_profile(request)
+
+    
+# ------------------- Student Routes -------------------
+
+
+@router.put("/me")
 async def update_clerk_route(
     request: Request,
     first_name: Optional[str] = Form(None),
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),  # accept as string, cast later
-    department: Optional[str] = Form(None),
-    program: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None), 
     profile_picture: Optional[UploadFile] = File(None),
 ):
     # Debug logging
     print(f"Received inputs: first_name={first_name}, middle_name={middle_name}, last_name={last_name}, "
-          f"phone={phone}, department={department}, program={program}, profile_picture={profile_picture}")
+          f"phone={phone}, profile_picture={profile_picture}")
 
     # Utility: clean empty strings
     def clean(value: Optional[str]) -> Optional[str]:
@@ -102,8 +111,7 @@ async def update_clerk_route(
     first_name = clean(first_name)
     middle_name = clean(middle_name)
     last_name = clean(last_name)
-    department = clean(department)
-    program = clean(program)
+   
 
     # Parse phone
     phone_int: Optional[int] = None
@@ -111,9 +119,12 @@ async def update_clerk_route(
         try:
             phone_int = int(phone.strip())
         except ValueError:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=422,
-                detail={"status": "fail", "message": "Invalid integer value for phone"}
+                content={
+                    "status": "fail", 
+                    "message": "Invalid integer value for phone"
+                }
             )
 
     update_request_data = UpdateClerkRequest(
@@ -121,8 +132,6 @@ async def update_clerk_route(
         middle_name=middle_name,
         last_name=last_name,
         phone=phone_int,
-        department=department,
-        program=program,
     )
 
     return await update_clerk(
@@ -130,24 +139,17 @@ async def update_clerk_route(
         request_data=update_request_data,
         profile_picture=profile_picture
     )
-
-
 # ------------------- Student Routes -------------------
 
-@router.get("/students/")
+@router.get("/students")
 async def get_students_route(
-    request_model: ClassSearchRequest,
+    batch_year: int,
+    program: str,
+    semester: int,
     request: Request
 ):
-    print(f"Received request for /students with data: {request_model.dict()}")
-    return await fetch_class(request, request_model)
+    print(f"Received request for /students with params: batch_year={batch_year}, program={program}, semester={semester}")
+    return await fetch_class(request, batch_year, program, semester)
 
 
-# ------------------- Timetable Routes -------------------
 
-@router.post("/timetable/create")
-async def create_timetable_route(
-    request_model: TimeTableRequest,
-    request: Request
-):
-    return await add_timetable(request, request_model)

@@ -9,7 +9,7 @@ from app.models.allModel import StudentShortView
 from app.core.redis import redis_client
 import json
 
-async def fetch_class(request: Request, request_model):
+async def fetch_class(request: Request, batch_year: int, program: str, semester: int):
     
     user_role = request.state.user.get("role")
     if user_role not in {"teacher", "clerk"}:
@@ -23,21 +23,12 @@ async def fetch_class(request: Request, request_model):
 
     # Normalize input values
     department = request.state.user.get("department")
-    program = request_model.program.upper()
-    batch_year = request_model.batch_year
-    try:
-        semester = int(request_model.semester)
-    except ValueError:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "status": "fail",
-                "message": "Semester must be an integer"
-            }
-        )
-
+    program = program.upper()
+    
     # Create cache key
     cache_key = f"students:{program}:{department}:{semester}:{batch_year}"
+    
+    print(f"Cache key: {cache_key}")
     
     try:
         # Check redis_client cache first

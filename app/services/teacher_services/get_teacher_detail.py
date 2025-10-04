@@ -9,8 +9,7 @@ from pydantic import HttpUrl
 from app.schemas.teacher import Teacher
 from app.models.allModel import TeacherShortView
 
-# Helper class to encode ObjectId for JSON
-# JSON encoder to handle ObjectId, datetime, and HttpUrl
+
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):

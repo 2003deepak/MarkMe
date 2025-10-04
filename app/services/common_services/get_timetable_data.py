@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from app.schemas.session import Session
 from app.models.allModel import TimeTableResponse, SessionShortView, DaySchedule
 from app.core.redis import redis_client
@@ -8,25 +9,30 @@ import logging
 from datetime import datetime
 
 
-async def get_timetable_data(department: str, program: str, semester: str, academic_year: str, user_data: dict) -> TimeTableResponse:
+async def get_timetable_data(request: Request, department: str, program: str, semester: str, academic_year: str) -> JSONResponse:
     print(
         f"Starting get_timetable_data with department={department}, program={program}, semester={semester}, academic_year={academic_year}")
 
-    if user_data.get("role") not in ["teacher", "admin", "clerk", "student"]:
-        print(f"Unauthorized access attempt by role: {user_data.get('role')}")
-        raise HTTPException(
+    user_role = request.state.user.get("role")
+    if user_role not in ["teacher", "admin", "clerk", "student"]:
+        print(f"Unauthorized access attempt by role: {user_role}")
+        return JSONResponse(
             status_code=403,
-            detail={"status": "fail",
-                    "message": "User must be a teacher, admin, clerk, or student"}
+            content={
+                "status": "fail",
+                "message": "User must be a teacher, admin, clerk, or student"
+            }
         )
 
     try:
         if not department.strip() or not program.strip():
             print("Invalid department or program")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=400,
-                detail={"status": "fail",
-                        "message": "Department and program cannot be empty"}
+                content={
+                    "status": "fail",
+                    "message": "Department and program cannot be empty"
+                }
             )
         try:
             semester_int = int(semester)
@@ -34,10 +40,12 @@ async def get_timetable_data(department: str, program: str, semester: str, acade
                 raise ValueError
         except ValueError:
             print(f"Invalid semester: {semester}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=400,
-                detail={"status": "fail",
-                        "message": "Semester must be a number between 1 and 8"}
+                content={
+                    "status": "fail",
+                    "message": "Semester must be a number between 1 and 8"
+                }
             )
         try:
             academic_year_int = int(academic_year)
@@ -46,10 +54,12 @@ async def get_timetable_data(department: str, program: str, semester: str, acade
                 raise ValueError
         except ValueError:
             print(f"Invalid academic_year: {academic_year}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=400,
-                detail={
-                    "status": "fail", "message": f"Academic year must be between 2000 and {current_year + 1}"}
+                content={
+                    "status": "fail", 
+                    "message": f"Academic year must be between 2000 and {current_year + 1}"
+                }
             )
 
         cache_key = f"timetable:{program}:{department}:{semester}:{academic_year}"
@@ -58,7 +68,11 @@ async def get_timetable_data(department: str, program: str, semester: str, acade
         cached_data = await redis_client.get(cache_key)
         if cached_data:
             print("Cache hit: Returning cached timetable data")
-            return TimeTableResponse.model_validate_json(cached_data)
+            cached_response = json.loads(cached_data)
+            return JSONResponse(
+                status_code=200,
+                content=cached_response
+            )
 
         query = {
             "department": department,
@@ -71,12 +85,16 @@ async def get_timetable_data(department: str, program: str, semester: str, acade
         sessions = await Session.find(query).sort("start_time").to_list()
         if not sessions:
             print("No sessions found for query")
-            return TimeTableResponse(
-                program=program,
-                department=department,
-                semester=semester,
-                academic_year=academic_year,
-                schedule=[]
+            response_data = {
+                "program": program,
+                "department": department,
+                "semester": semester,
+                "academic_year": academic_year,
+                "schedule": []
+            }
+            return JSONResponse(
+                status_code=200,
+                content=response_data
             )
 
         # Fetch linked subject and teacher data
@@ -105,42 +123,42 @@ async def get_timetable_data(department: str, program: str, semester: str, acade
             day_sessions[day].append(session_view)
 
         schedule = [
-            # Changed from sessions to day_sessions[day]
             DaySchedule(day=day, sessions=day_sessions[day])
             for day in days_order
             if day in day_sessions
         ]
 
-        response = TimeTableResponse(
-            program=program,
-            department=department,
-            semester=semester,
-            academic_year=academic_year,
-            schedule=schedule
-        )
+        response_data = {
+            "program": program,
+            "department": department,
+            "semester": semester,
+            "academic_year": academic_year,
+            "schedule": [day_schedule.dict() for day_schedule in schedule]
+        }
 
         try:
             await redis_client.setex(
                 name=cache_key,
                 time=3600,
-                value=response.model_dump_json()
+                value=json.dumps(response_data)
             )
             print(f"Cached timetable data with key: {cache_key}")
         except Exception as e:
             print(f"Failed to cache timetable data: {str(e)}")
 
-        return response
-
-    except HTTPException:
-        print("HTTPException raised during get_timetable_data")
-        raise
+        return JSONResponse(
+            status_code=200,
+            content=response_data
+        )
 
     except Exception as e:
         print(f"Unhandled exception during get_timetable_data: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail={"status": "fail",
-                    "message": f"Error fetching timetable: {str(e)}"}
+            content={
+                "status": "fail",
+                "message": f"Error fetching timetable: {str(e)}"
+            }
         )
