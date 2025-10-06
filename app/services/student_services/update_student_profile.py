@@ -1,38 +1,64 @@
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile, Request
+from fastapi.responses import JSONResponse
 from app.core.database import get_db
 from app.core.redis import redis_client
-from datetime import datetime
+from datetime import datetime, date
 from app.utils.imagekit_uploader import upload_image_to_imagekit, delete_file
 from typing import Optional, List
 from app.schemas.student import Student
-from pydantic import ValidationError
-from app.utils.security import get_password_hash
+from pydantic import BaseModel, ValidationError, EmailStr
 from app.utils.publisher import send_to_queue 
 from app.utils.token_utils import create_verification_token
 from app.core.config import settings
-import httpx
 import base64
 
-async def update_student_profile(request_data, user_data, images: List[UploadFile] = None, profile_picture: Optional[UploadFile] = None):
-    print(f"Starting update_student_profile for email: {user_data['email']}")
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    dob: Optional[date] = None
+    roll_number: Optional[int] = None
+    program: Optional[str] = None
+    department: Optional[str] = None
+    semester: Optional[int] = None
+    batch_year: Optional[int] = None
+
+async def update_student_profile(
+    request: Request, 
+    request_data: UpdateProfileRequest, 
+    images: List[UploadFile] = None, 
+    profile_picture: Optional[UploadFile] = None
+):
+    user_role = request.state.user.get("role")
+    user_email = request.state.user.get("email")
+    
+    print(f"Starting update_student_profile for email: {user_email}")
 
     # Validate user role
-    if user_data["role"] != "student":
-        print(f"Unauthorized update attempt by role: {user_data['role']}")
-        raise HTTPException(
+    if user_role != "student":
+        print(f"Unauthorized update attempt by role: {user_role}")
+        return JSONResponse(
             status_code=403,
-            detail="Only Students can access their profile"
+            content={
+                "status": "fail",
+                "message": "Only Students can access their profile"
+            }
         )
 
     try:
-        student_email = user_data["email"]
+        student_email = user_email
         print(f"Fetching student with email: {student_email}")
         student = await Student.find_one(Student.email == student_email)
         if not student:
             print(f"Student with email {student_email} not found for update.")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=404,
-                detail={"status": "fail", "message": "Student not found"},
+                content={
+                    "status": "fail", 
+                    "message": "Student not found"
+                }
             )
         print(f"Student found: {student.student_id}")
 
@@ -40,9 +66,12 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         email_changed = False
         if request_data.email and request_data.email != student_email:
             if await Student.find_one(Student.email == request_data.email):
-                raise HTTPException(
+                return JSONResponse(
                     status_code=400,
-                    detail={"status": "fail", "message": "Email already in use"}
+                    content={
+                        "status": "fail", 
+                        "message": "Email already in use"
+                    }
                 )
             email_changed = True
 
@@ -53,9 +82,12 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
             for image in images:
                 if not image.content_type.startswith("image/"):
                     print(f"Invalid file type for image: {image.content_type}")
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=400,
-                        detail={"status": "fail", "message": "Files must be images"}
+                        content={
+                            "status": "fail",
+                            "message": "Files must be images"
+                        }
                     )
                 path = f"/tmp/{student.student_id}_{image.filename}"
                 with open(path, "wb") as f:
@@ -74,9 +106,12 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         # Handle profile picture
         if profile_picture:
             if not profile_picture.content_type.startswith("image/"):
-                raise HTTPException(
+                return JSONResponse(
                     status_code=400,
-                    detail={"status": "fail", "message": "File must be an image"}
+                    content={
+                        "status": "fail",
+                        "message": "File must be an image"
+                    }
                 )
             
             # Delete existing profile picture if it exists
@@ -100,9 +135,12 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
                 update_data["profile_picture_id"] = profile_picture_result["fileId"]
             except Exception as e:
                 print(f"Image upload error: {str(e)}")
-                raise HTTPException(
+                return JSONResponse(
                     status_code=500,
-                    detail={"status": "fail", "message": f"Profile picture upload failed: {str(e)}"}
+                    content={
+                        "status": "fail",
+                        "message": f"Profile picture upload failed: {str(e)}"
+                    }
                 )
 
         # Dynamically update fields if provided
@@ -156,7 +194,7 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
                             f"You've updated your email on MarkMe. Please verify your new email by clicking the link below:\n\n"
                             f"{verification_link}\n\n"
                             "This link will expire in 30 minutes.\n\n"
-                            "If you didn’t update your email, please contact support."
+                            "If you didn't update your email, please contact support."
                         )
                     }
                 }, priority=5)
@@ -164,17 +202,20 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         else:
             print("No fields to update for student.")
 
-        return {
-            "status": "success",
-            "message": "Student profile updated successfully",
-            "data": {
-                "student_id": student.student_id,
-                "name": f"{update_data.get('first_name', student.first_name)} "
-                        f"{update_data.get('middle_name', student.middle_name) or ''} "
-                        f"{update_data.get('last_name', student.last_name)}".strip(),
-                "email": update_data.get("email", student.email)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": "Student profile updated successfully",
+                "data": {
+                    "student_id": student.student_id,
+                    "name": f"{update_data.get('first_name', student.first_name)} "
+                            f"{update_data.get('middle_name', student.middle_name) or ''} "
+                            f"{update_data.get('last_name', student.last_name)}".strip(),
+                    "email": update_data.get("email", student.email)
+                }
             }
-        }
+        )
 
     except ValidationError as e:
         error = e.errors()[0]
@@ -182,17 +223,22 @@ async def update_student_profile(request_data, user_data, images: List[UploadFil
         msg = error["msg"]
         error_msg = f"Invalid {loc}: {msg.lower()}"
         print(f"Pydantic validation error: {error_msg}")
-        raise HTTPException(status_code=422, detail={"status": "fail", "message": error_msg})
-
-    except HTTPException:
-        print("HTTPException raised during student profile update.")
-        raise
+        return JSONResponse(
+            status_code=422,
+            content={
+                "status": "fail", 
+                "message": error_msg
+            }
+        )
 
     except Exception as e:
         print(f"Unhandled exception during student profile update: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail={"status": "fail", "message": f"Error updating student profile: {str(e)}"}
+            content={
+                "status": "fail",
+                "message": f"Error updating student profile: {str(e)}"
+            }
         )

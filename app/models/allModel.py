@@ -82,7 +82,22 @@ class UpdateProfileRequest(BaseModel):
     semester: Optional[int] = None
     batch_year: Optional[int] = None
 
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    mobile_number: Optional[str] = None  # Keep as string, convert in validator
 
+    @validator('mobile_number', pre=True)
+    def validate_mobile_number(cls, v):
+        if v is None or v == "":
+            return None
+        # Remove any non-digit characters
+        if isinstance(v, str):
+            cleaned = ''.join(filter(str.isdigit, v))
+            if cleaned:
+                return cleaned
+        return v
 
 # Day of week type
 DayOfWeek = Literal[
@@ -106,7 +121,6 @@ class ScheduleEntry(BaseModel):
 
 class TimeTableRequest(BaseModel):
     academic_year: str = Field(..., pattern=r"^\d{4}$")
-    department: str = Field(..., min_length=2, max_length=50)
     program: str = Field(..., min_length=2, max_length=50)
     semester: str = Field(..., pattern=r"^(1|2|3|4|5|6|7|8)$")
 
@@ -146,7 +160,6 @@ class TimeTableRequest(BaseModel):
         "json_schema_extra": {
             "example": {
                 "academic_year": "2025",
-                "department": "BTECH",
                 "program": "MCA",
                 "semester": "2",
                 "schedule": {
@@ -169,11 +182,6 @@ class TimeTableRequest(BaseModel):
         }
     }
 
-
-class ClassSearchRequest(BaseModel):
-    batch_year: int
-    program: str
-    semester: int
 
 class CreateExceptionSession(BaseModel):
     session_id: Optional[str] = None
@@ -281,25 +289,14 @@ class StudentShortView(BaseModel):
             datetime: lambda dt: dt.isoformat(),
             ObjectId: str
         }
-        
-class VerifyEmailRequest(BaseModel):
-    token: str
-    
+
 class UpdateClerkRequest(BaseModel):
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
     phone: Optional[int] = None
-    department: Optional[str] = None
-    program: Optional[str] = None
 
-    @validator("department", "program")
-    def check_non_empty(cls, v):
-        if v is not None and v.strip() == "":
-            raise ValueError(f"{cls.__name__} cannot be empty")
-        return v
-    
-
+   
 class SessionShortView(BaseModel):
     session_id: str
     start_time: str

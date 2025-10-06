@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from app.core.redis import redis_client
 import json
 from app.core.database import get_db
@@ -18,10 +18,11 @@ class MongoJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-async def get_subject_detail(user_data: dict):
-    print(f"🧾 user_data = {user_data}")
-    user_email = user_data["email"]
-    user_role = user_data["role"]
+async def get_subject_detail(request : Request):
+    
+    user_email = user_email = request.state.user.get("email")
+    user_role = request.state.user.get("role")
+    user_role = request.state.user.get("role")
     
     if user_role != "clerk":
         print("❌ Access denied: Not a clerk")
@@ -30,7 +31,7 @@ async def get_subject_detail(user_data: dict):
             detail={"status": "fail", "message": "Only Clerk can access this route"}
         )
     
-    clerk_program = user_data["program"]
+    clerk_program = user_email = request.state.user.get("program")
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
     
     # Simplified Redis key naming
@@ -72,11 +73,11 @@ async def get_subject_detail(user_data: dict):
 
 
 
-async def get_subject_by_id(subject_id: str, user_data: dict):
-    print(f"🧾 user_data = {user_data}, Subject id = {subject_id}")
+async def get_subject_by_id(request : Request , subject_id: str):
+    
     subject_id = subject_id.upper()
-    user_email = user_data["email"]
-    user_role = user_data["role"]
+    user_email = request.state.user.get("email")
+    user_role = request.state.user.get("role")
 
     if user_role != "clerk":
         print("❌ Access denied: Not a clerk")
@@ -85,7 +86,7 @@ async def get_subject_by_id(subject_id: str, user_data: dict):
             detail={"status": "fail", "message": "Only Clerk can access this route"}
         )
 
-    clerk_program = user_data["program"]
+    clerk_program = request.state.user.get("program")
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
 
     # Simplified Redis key naming

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends, Query
+from fastapi import APIRouter, Form, Request, UploadFile, File, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.services.student_services.register_student import register_student
 from app.services.student_services.get_student_detail import get_student_detail
@@ -8,35 +9,18 @@ from app.schemas.student import Student
 from pydantic import ValidationError, BaseModel, EmailStr
 from typing import List, Optional, Union  
 from datetime import datetime , date
-import json
-from app.middleware.is_logged_in import is_logged_in
-from app.models.allModel import VerifyEmailRequest
 
 # -- Pydantic Model Import
 from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest # Assuming UpdateProfileRequest is in allModel
 
 router = APIRouter()
-security = HTTPBearer()  # Define security scheme
 
 
-@router.post("/register")
-async def register_student_route(
-    first_name: str = Form(...),
-    last_name: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(..., min_length=6, max_length=6),    
-):
+@router.post("/")
+async def register_student_route(request : StudentRegisterRequest):
     try:
-        # Create StudentRegisterRequest object for validation
-        student_request = StudentRegisterRequest(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            password=password,
-        )
-        
         return await register_student(
-            student_data=student_request,
+            student_data=request,
         )
 
     except ValidationError as e:
@@ -49,20 +33,18 @@ async def register_student_route(
 
 
 @router.get("/me")
-async def get_me(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
-):
+async def get_me(request: Request):
     
-    return await get_student_detail(user_data)
+    return await get_student_detail(request)
 
 
 @router.put("/me/update-profile")
 async def update_profile(
+    request: Request,
     first_name: Optional[str] = Form(None),
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
-    email: Optional[EmailStr] = Form(None),
+    email: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     dob: Optional[str] = Form(None, description="Date of birth in YYYY-MM-DD format"),
     roll_number: Optional[str] = Form(None),
@@ -72,8 +54,6 @@ async def update_profile(
     batch_year: Optional[str] = Form(None),
     images: List[UploadFile] = File(default_factory=list),
     profile_picture: Optional[UploadFile] = File(None),
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in),
 ):
 
     # Parse dob string to date object if provided
@@ -82,9 +62,52 @@ async def update_profile(
         try:
             dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
         except ValueError:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=422,
-                detail={"status": "fail", "message": "Invalid date format for dob. Use YYYY-MM-DD."}
+                content={
+                    "status": "fail", 
+                    "message": "Invalid date format for dob. Use YYYY-MM-DD."
+                }
+            )
+
+    # Parse numeric fields
+    roll_number_int = None
+    if roll_number:
+        try:
+            roll_number_int = int(roll_number)
+        except ValueError:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "fail", 
+                    "message": "Invalid roll number format"
+                }
+            )
+
+    semester_int = None
+    if semester:
+        try:
+            semester_int = int(semester)
+        except ValueError:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "fail", 
+                    "message": "Invalid semester format"
+                }
+            )
+
+    batch_year_int = None
+    if batch_year:
+        try:
+            batch_year_int = int(batch_year)
+        except ValueError:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "status": "fail", 
+                    "message": "Invalid batch year format"
+                }
             )
 
     update_request_data = UpdateProfileRequest(
@@ -94,26 +117,20 @@ async def update_profile(
         email=email,
         phone=phone,
         dob=dob_date,
-        roll_number=int(roll_number) if roll_number else None,
+        roll_number=roll_number_int,
         program=program,
         department=department,
-        semester=int(semester) if semester else None,
-        batch_year=int(batch_year) if batch_year else None,
+        semester=semester_int,
+        batch_year=batch_year_int,
     )
 
     return await update_student_profile(
+        request=request,
         request_data=update_request_data,
-        user_data=user_data,
         images=images,
         profile_picture=profile_picture
     )
     
-    
 @router.post("/verify-email")
-async def verify_email(request: VerifyEmailRequest):
-    """
-    Endpoint to verify student email using a JWT token provided in the request body.
-    Example: POST /verify-email
-    Body: {"token": "XYZ"}
-    """
-    return await verify_student_email(request.token)
+async def verify_email(request: Request):
+    return await verify_student_email(request)

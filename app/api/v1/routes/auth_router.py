@@ -1,17 +1,10 @@
-from fastapi import APIRouter, HTTPException,Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from app.core.config import settings
-from pydantic import BaseModel, EmailStr
-from app.middleware.is_logged_in import is_logged_in
-from app.utils.security import create_access_token, create_refresh_token, decode_token
+from fastapi import APIRouter, Depends, Request, Request
 from app.services.auth_services.auth import login_user, refresh_access_token, request_password_reset, reset_user_password,change_current_password,verify_reset_otp
 
 # --- Pydantics Model Import ----- 
 from app.models.allModel import LoginRequest , ForgotPasswordRequest,ResetPasswordRequest,ChangePasswordRequest,OtpRequest
 
 router = APIRouter()
-security = HTTPBearer()  
 
 
 
@@ -20,14 +13,13 @@ async def login(request : LoginRequest):
     return await login_user(request)
 
 @router.post("/refresh-token")
-async def apply_refresh_access_token(request: Request):
+async def apply_refresh_access_token(
+    request: Request  
+):
     return await refresh_access_token(request)
 
 @router.post("/logout")
-async def logout(
-    credentials: HTTPAuthorizationCredentials = Depends(security), 
-    user_data: dict = Depends(is_logged_in)  
-):
+async def logout():
     return {"status": "success", "message": "Logout successful"}
 
 
@@ -46,11 +38,9 @@ async def reset_password(request: ResetPasswordRequest):
 
 
 
-@router.put("/{role}/change-password")
+@router.put("/change-password")
 async def change_password_route(
-
-    request: ChangePasswordRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_data: dict = Depends(is_logged_in)
+    request_model: ChangePasswordRequest,
+    request: Request  
 ):
-    return await change_current_password(request, user_data)
+    return await change_current_password(request_model,request)
