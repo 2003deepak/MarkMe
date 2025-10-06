@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from datetime import datetime, timedelta
 from app.schemas.student import Student
 from app.schemas.clerk import Clerk
@@ -72,6 +72,7 @@ async def login_user(request):
             )
     
     access_token = create_access_token({
+        "id" : str(user.id),
         "email": user.email,
         "role": request.role,
         "program": getattr(user, 'program', None),
@@ -96,9 +97,12 @@ async def login_user(request):
         }
     }
 
-async def refresh_access_token(request):
+async def refresh_access_token(request : Request):
    
-    refresh_token = request.refresh_token
+    refresh_token = request.headers.get("x-internal-token")
+    
+    if refresh_token and refresh_token.startswith("Bearer "):
+        refresh_token = refresh_token.split(" ")[1]  # take only the token part
     payload = decode_token(refresh_token)
     
     if not payload :
@@ -107,6 +111,7 @@ async def refresh_access_token(request):
     if payload.get("role") in ['teacher','student','clerk']:
 
             new_access_token = create_access_token({
+            "id" : str(payload.get("id")),
             "email": payload.get("email"),
             "role": payload.get("role"),
             "program": payload.get('program'),

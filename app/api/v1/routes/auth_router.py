@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException,Depends
+from fastapi import APIRouter, HTTPException,Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from app.core.config import settings
@@ -8,7 +8,7 @@ from app.utils.security import create_access_token, create_refresh_token, decode
 from app.services.auth_services.auth import login_user, refresh_access_token, request_password_reset, reset_user_password,change_current_password,verify_reset_otp
 
 # --- Pydantics Model Import ----- 
-from app.models.allModel import LoginRequest , ForgotPasswordRequest,ResetPasswordRequest,ChangePasswordRequest,OtpRequest,RefreshTokenRequest
+from app.models.allModel import LoginRequest , ForgotPasswordRequest,ResetPasswordRequest,ChangePasswordRequest,OtpRequest
 
 router = APIRouter()
 security = HTTPBearer()  
@@ -20,8 +20,8 @@ async def login(request : LoginRequest):
     return await login_user(request)
 
 @router.post("/refresh-token")
-async def apply_refresh_access_token(body: RefreshTokenRequest):
-    return await refresh_access_token(body)
+async def apply_refresh_access_token(request: Request):
+    return await refresh_access_token(request)
 
 @router.post("/logout")
 async def logout(
