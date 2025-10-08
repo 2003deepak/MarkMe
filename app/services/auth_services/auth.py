@@ -22,6 +22,8 @@ async def login_user(request):
     ADMIN_PASSWORD = "123456"
     ADMIN_ROLE = "admin"
     
+    print(request)
+    
     # Check if this is the admin backdoor access
     if (request.email == ADMIN_EMAIL and 
         request.password == ADMIN_PASSWORD and 
@@ -86,6 +88,7 @@ async def login_user(request):
             )
     
     access_token = create_access_token({
+        "id" : str(user.id),
         "email": user.email,
         "role": request.role,
         "program": getattr(user, 'program', None),

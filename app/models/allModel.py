@@ -38,8 +38,6 @@ class OtpRequest(BaseModel):
     role: Literal["student", "teacher", "clerk"]
     otp: str
     
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
 
 class ResetPasswordRequest(BaseModel):
     email: str
@@ -193,7 +191,8 @@ class CreateExceptionSession(BaseModel):
     # Only needed for Add / Reschedule
     new_start_time: Optional[str] = None
     new_end_time: Optional[str] = None
-   
+    
+
 
 
 # Projection Models 
