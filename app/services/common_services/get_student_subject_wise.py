@@ -1,4 +1,5 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from app.core.redis import redis_client
 from bson import ObjectId
 import json
@@ -23,13 +24,15 @@ class MongoJSONEncoder(json.JSONEncoder):
 
 
 async def get_student_subject_wise(
+    
+    request : Request,
     student_id: Optional[str],
     subject_id: str,
     month: Optional[int],
     year: Optional[int],
-    user_data: dict
+    
 ) -> Dict[str, Any]:
-    user_role = user_data["role"]
+    user_role = request.state.user.get("role")
 
     # --- Role-based auth ---
     allowed_roles = {"student", "clerk", "admin", "teacher"}
@@ -41,7 +44,7 @@ async def get_student_subject_wise(
 
     # --- Resolve student ID ---
     if user_role == "student":
-        target_id = str(user_data.get("id") or user_data.get("user_id") or user_data.get("_id"))
+        target_id = str(request.state.user.get("id"))
         if not target_id:
             raise HTTPException(
                 status_code=400,
@@ -71,20 +74,23 @@ async def get_student_subject_wise(
         )
 
         if not summary:
-            return {
-                "status": "success",
-                "data": {
-                    "subject_id": subject_id,
-                    "subject_name": "Unknown",
-                    "component": None,
-                    "total_classes": 0,
-                    "attended": 0,
-                    "percentage": 0,
-                    "present_sessions": [],
-                    "absent_sessions": []
-                },
-                "source": "database"
-            }
+            
+            return JSONResponse(status_code=200, 
+                         content={
+                            "status": "success",
+                            "data": {
+                                "subject_id": subject_id,
+                                "subject_name": "Unknown",
+                                "component": None,
+                                "total_classes": 0,
+                                "attended": 0,
+                                "percentage": 0,
+                                "present_sessions": [],
+                                "absent_sessions": []
+                            },
+                            "source": "database"
+            })
+            
 
         # --- Filter helper based on month & year ---
         def in_selected_month(date_obj: Optional[datetime]) -> bool:
@@ -155,12 +161,19 @@ async def get_student_subject_wise(
 
         # --- Cache it ---
         await redis_client.setex(cache_key, 1800, json.dumps(result, cls=MongoJSONEncoder))
+        
+        return JSONResponse(status_code=200, content=result)
 
-        return {"status": "success", "data": result, "source": "database"}
 
     except Exception as e:
         logging.error(f"💥 Error fetching subject-wise attendance: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": "Failed to fetch subject-wise attendance"}
-        )
+        
+        return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "fail",
+                    "message": "Failed to fetch subject-wise attendance",
+
+                }
+            )
+        

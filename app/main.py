@@ -9,6 +9,7 @@ from app.middleware.auth_middleware import AuthMiddleware  # Make sure you impor
 
 # Routes that do NOT require authentication
 WHITELIST = [
+    "/"
     "/docs",
     "/openapi.json",  
     "/api/v1/auth/login",

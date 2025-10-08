@@ -1,4 +1,5 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.core.redis import redis_client
 from bson import ObjectId, DBRef
@@ -23,10 +24,9 @@ class MongoJSONEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-async def get_student_attendance_summary(student_id: str, user_data: dict) -> Dict[str, Any]:
-    user_role = user_data["role"]
+async def get_student_attendance_summary(request: Request, student_id: str) -> Dict[str, Any]:
+    user_role = request.state.user.get("role")
     
-    print(user_data)
     # 1. ROLE-BASED AUTHORIZATION CHECK
     allowed_roles = {"student", "clerk", "admin", "teacher"}
     if user_role not in allowed_roles:
@@ -46,11 +46,15 @@ async def get_student_attendance_summary(student_id: str, user_data: dict) -> Di
 
     if cached_data:
         try:
-            return {
+            response_content = {
                 "status": "success",
                 "data": json.loads(cached_data),
                 "source": "cache"
             }
+            
+            return JSONResponse(status_code=200, content=response_content)
+        
+         
         except json.JSONDecodeError:
             await redis_client.delete(cache_key)
 
@@ -112,18 +116,22 @@ async def get_student_attendance_summary(student_id: str, user_data: dict) -> Di
         # cache result
         await redis_client.setex(cache_key, 1800, json.dumps(data))
 
-        return {
+        response_content = {
             "status": "success",
             "data": data,
             "source": "database"
         }
+        
+        return JSONResponse(status_code=200, content=response_content)
 
     except Exception as e:
         logging.error(f"💥 Error fetching attendance summary: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "status": "error",
-                "message": "Failed to fetch attendance summary due to server error"
-            }
-        )
+
+        return JSONResponse(
+                status_code=505,
+                content={
+                    "status": "fail",
+                    "message": "NFailed to fetch attendance summary due to server error",
+
+                }
+            )

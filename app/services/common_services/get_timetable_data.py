@@ -153,8 +153,6 @@ async def get_timetable_data(request: Request, department: str, program: str, se
 
     except Exception as e:
         print(f"Unhandled exception during get_timetable_data: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={
