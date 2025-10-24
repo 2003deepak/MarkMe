@@ -11,7 +11,7 @@ from typing import List, Optional, Union
 from datetime import datetime , date
 
 # -- Pydantic Model Import
-from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest # Assuming UpdateProfileRequest is in allModel
+from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest 
 
 router = APIRouter()
 
@@ -20,16 +20,16 @@ router = APIRouter()
 async def register_student_route(request : StudentRegisterRequest):
     try:
         return await register_student(
-            student_data=request,
+            student_data=request,   
         )
 
     except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(success_code=422, detail=str(e))
     except HTTPException as e:
         raise e
     except Exception as e:
         print(e)
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+        raise HTTPException(success_code=500, detail=f"Server error: {str(e)}")
 
 
 @router.get("/me")
@@ -44,7 +44,7 @@ async def update_profile(
     first_name: Optional[str] = Form(None),
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
-    email: Optional[str] = Form(None),
+    # email: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     dob: Optional[str] = Form(None, description="Date of birth in YYYY-MM-DD format"),
     roll_number: Optional[str] = Form(None),
@@ -63,9 +63,9 @@ async def update_profile(
             dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
         except ValueError:
             return JSONResponse(
-                status_code=422,
+                success_code=422,
                 content={
-                    "status": "fail", 
+                    "success": False, 
                     "message": "Invalid date format for dob. Use YYYY-MM-DD."
                 }
             )
@@ -77,9 +77,9 @@ async def update_profile(
             roll_number_int = int(roll_number)
         except ValueError:
             return JSONResponse(
-                status_code=422,
+                success_code=422,
                 content={
-                    "status": "fail", 
+                    "success": False, 
                     "message": "Invalid roll number format"
                 }
             )
@@ -90,9 +90,9 @@ async def update_profile(
             semester_int = int(semester)
         except ValueError:
             return JSONResponse(
-                status_code=422,
+                success_code=422,
                 content={
-                    "status": "fail", 
+                    "success": False, 
                     "message": "Invalid semester format"
                 }
             )
@@ -103,9 +103,9 @@ async def update_profile(
             batch_year_int = int(batch_year)
         except ValueError:
             return JSONResponse(
-                status_code=422,
+                success_code=422,
                 content={
-                    "status": "fail", 
+                    "success": False, 
                     "message": "Invalid batch year format"
                 }
             )
@@ -114,7 +114,6 @@ async def update_profile(
         first_name=first_name,
         middle_name=middle_name,
         last_name=last_name,
-        email=email,
         phone=phone,
         dob=dob_date,
         roll_number=roll_number_int,
@@ -123,6 +122,8 @@ async def update_profile(
         semester=semester_int,
         batch_year=batch_year_int,
     )
+    
+    print(update_request_data)
 
     return await update_student_profile(
         request=request,

@@ -24,7 +24,7 @@ async def update_teacher_profile(
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+               "success": False,
                 "message": "Only teachers can update their profile"
             }
         )
@@ -35,7 +35,7 @@ async def update_teacher_profile(
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+               "success": False,
                 "message": "Teacher not found"
             }
         )
@@ -48,7 +48,7 @@ async def update_teacher_profile(
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                   "success": False,
                     "message": "File must be an image"
                 }
             )
@@ -83,7 +83,7 @@ async def update_teacher_profile(
             return JSONResponse(
                 status_code=500,
                 content={
-                    "status": "fail",
+                   "success": False,
                     "message": f"Profile picture upload failed: {str(e)}"
                 }
             )
@@ -103,7 +103,7 @@ async def update_teacher_profile(
             return JSONResponse(
                 status_code=422,
                 content={
-                    "status": "fail",
+                   "success": False,
                     "message": "Invalid mobile number format"
                 }
             )
@@ -132,7 +132,7 @@ async def update_teacher_profile(
 
     # Prepare response data
     response_data = {
-        "status": "success",
+       "success": True,
         "message": "Teacher profile updated successfully",
         "data": {
             "teacher_id": teacher.teacher_id,

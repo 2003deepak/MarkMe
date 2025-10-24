@@ -39,7 +39,7 @@ async def get_student_subject_wise(
     if user_role not in allowed_roles:
         raise HTTPException(
             status_code=403,
-            detail={"status": "fail", "message": f"Role '{user_role}' not authorized"}
+            detail={"success": False, "message": f"Role '{user_role}' not authorized"}
         )
 
     # --- Resolve student ID ---
@@ -48,7 +48,7 @@ async def get_student_subject_wise(
         if not target_id:
             raise HTTPException(
                 status_code=400,
-                detail={"status": "fail", "message": "Student ID missing in token"}
+                detail={"success": False, "message": "Student ID missing in token"}
             )
     else:
         target_id = student_id
@@ -59,7 +59,7 @@ async def get_student_subject_wise(
     if cached_data:
         try:
             return {
-                "status": "success",
+                "success": True,
                 "data": json.loads(cached_data),
                 "source": "cache"
             }
@@ -77,7 +77,7 @@ async def get_student_subject_wise(
             
             return JSONResponse(status_code=200, 
                          content={
-                            "status": "success",
+                            "success": True,
                             "data": {
                                 "subject_id": subject_id,
                                 "subject_name": "Unknown",
@@ -171,7 +171,7 @@ async def get_student_subject_wise(
         return JSONResponse(
                 status_code=500,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Failed to fetch subject-wise attendance",
 
                 }

@@ -117,7 +117,7 @@ async def get_critical_students(
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "No critical-risk students found for the given filters",
                     "data": {},
                     "source": source
@@ -145,7 +145,7 @@ async def get_critical_students(
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+                "success": True,
                 "message": "Critical-risk students fetched successfully",
                 "data": response_data,
                 "source": source
@@ -157,7 +157,7 @@ async def get_critical_students(
         return JSONResponse(
             status_code=500,
             content={
-                "status": "error",
+                "success": False,
                 "message": "Failed to fetch critical-risk students",
                 "error": str(e),
                 "data": {}

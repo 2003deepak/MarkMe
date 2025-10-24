@@ -22,7 +22,7 @@ async def create_session_exception(request: Request, exception_request: CreateEx
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only teachers are authorized to create session exceptions"
             }
         )
@@ -38,7 +38,7 @@ async def create_session_exception(request: Request, exception_request: CreateEx
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "session_id is required for Cancel and Rescheduled actions"
                 }
             )
@@ -48,7 +48,7 @@ async def create_session_exception(request: Request, exception_request: CreateEx
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Session not found"
                 }
             )
@@ -59,7 +59,7 @@ async def create_session_exception(request: Request, exception_request: CreateEx
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "new_start_time and new_end_time required for Add and Rescheduled actions"
                 }
             )
@@ -117,7 +117,7 @@ async def create_session_exception(request: Request, exception_request: CreateEx
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": f"Invalid subject format for session {str(session_obj.id)}"
                 }
             )
@@ -181,7 +181,7 @@ async def create_session_exception(request: Request, exception_request: CreateEx
     return JSONResponse(
         status_code=201,
         content={
-            "status": "success",
+            "success": True,
             "message": "Exception created and scheduling updated",
             "data": {
                 "exception_id": str(exception_doc.id),

@@ -51,7 +51,7 @@ async def update_teacher_profile_route(
         return JSONResponse(
             status_code=422,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Validation error: {error_msg}"
             }
         )

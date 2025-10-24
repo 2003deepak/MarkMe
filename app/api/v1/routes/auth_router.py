@@ -20,7 +20,7 @@ async def apply_refresh_access_token(
 
 @router.post("/logout")
 async def logout():
-    return {"status": "success", "message": "Logout successful"}
+    return {"sucess": "true", "message": "Logout successful"}
 
 
 @router.post("/forgot-password")

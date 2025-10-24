@@ -19,7 +19,7 @@ async def create_clerk(request,request_model: CreateClerkRequest):
         return JSONResponse(
             status_code=401,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "You don't have right to create clerk"
             }
         )
@@ -31,7 +31,7 @@ async def create_clerk(request,request_model: CreateClerkRequest):
             return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Clerk already exists"
             }
         )
@@ -80,7 +80,7 @@ async def create_clerk(request,request_model: CreateClerkRequest):
         return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "Clerk created successfully",
             "data": {
                 "name": f"{request_model.first_name} {request_model.last_name}",
@@ -98,7 +98,7 @@ async def create_clerk(request,request_model: CreateClerkRequest):
         return JSONResponse(
         status_code=500,
         content={
-            "status": "fail",
+            "success": False,
             "message": f"Error creating clerk: {str(e)}"
            
         }

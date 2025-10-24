@@ -23,7 +23,7 @@ async def create_teacher(request, request_model):
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "You don't have the right to create a teacher"
             }
         )
@@ -35,7 +35,7 @@ async def create_teacher(request, request_model):
             return JSONResponse(
                 status_code=409,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Teacher already exists"
                 }
             )
@@ -57,7 +57,7 @@ async def create_teacher(request, request_model):
                 return JSONResponse(
                     status_code=400,
                     content={
-                        "status": "fail",
+                        "success": False,
                         "message": f"Invalid subject codes: {', '.join(invalid_subjects)}"
                     }
                 )
@@ -140,7 +140,7 @@ async def create_teacher(request, request_model):
         return JSONResponse(
             status_code=201,
             content={
-                "status": "success",
+                "success": True,
                 "message": "Teacher created successfully",
                 "data": {
                     "teacher_id": teacher_id,
@@ -158,7 +158,7 @@ async def create_teacher(request, request_model):
         return JSONResponse(
             status_code=422,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Validation error: {error_msg}"
             }
         )
@@ -167,7 +167,7 @@ async def create_teacher(request, request_model):
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"An unexpected error occurred: {str(e)}"
             }
         )

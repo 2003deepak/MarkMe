@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 from fastapi import HTTPException, Request, status, UploadFile
+from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 from app.schemas.attendance import Attendance
 from app.utils.publisher import send_to_queue
@@ -20,21 +21,31 @@ async def recognize_students(request: Request, attendance_id: str,images: List[U
 
     # 1️⃣ Verify role
     if request.state.user.get("role") != "teacher":
-        logger.error(f"[recognize_students] Unauthorized access attempt for attendance_id: {attendance_id}, role: {user_data.get('role')}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can perform face recognition."
+        # logger.error(f"[recognize_students] Unauthorized access attempt for attendance_id: {attendance_id}, role: {user_data.get('role')}")
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "message": "Only teachers can perform face recognition."
+            }
         )
+       
     logger.info(f"[recognize_students] User role verified as teacher for attendance_id: {attendance_id}")
 
     # 2️⃣ Fetch attendance and linked session details
     attendance = await Attendance.get(attendance_id, fetch_links=True)
     if not attendance:
         logger.error(f"[recognize_students] Attendance record not found for attendance_id: {attendance_id}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Attendance record not found."
+        
+        
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "message": "Attendance record not found."
+            }
         )
+        
     logger.info(f"[recognize_students] Successfully fetched attendance record for attendance_id: {attendance_id}")
 
     semester = attendance.session.semester
@@ -46,18 +57,29 @@ async def recognize_students(request: Request, attendance_id: str,images: List[U
     image_base64_list = []
     for idx, image in enumerate(images):
         if not image.content_type.startswith("image/"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File '{image.filename}' must be an image."
-            )
+            
+            return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": f"File '{image.filename}' must be an image."
+            }
+        )
+            
+            
         image_bytes = await image.read()
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
         image_base64_list.append(image_base64)
 
     if not image_base64_list:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one image is required."
+
+        
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "At least one image is required."
+            }
         )
 
     # 4️⃣ Add the recognition job to the queue with multiple images

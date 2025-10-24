@@ -26,7 +26,7 @@ async def get_teacher_me(request: Request):
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail", 
+                "success": False, 
                 "message": "Only teachers can access this route"
             }
         )
@@ -40,7 +40,8 @@ async def get_teacher_me(request: Request):
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success", 
+                "success": True, 
+                "message" : "Teacher details fetched successfully",
                 "data": json.loads(cached_data)
             }
         )
@@ -57,7 +58,7 @@ async def get_teacher_me(request: Request):
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail", 
+                "success": False, 
                 "message": "Teacher not found"
             }
         )
@@ -70,11 +71,12 @@ async def get_teacher_me(request: Request):
     await redis_client.setex(cache_key, 3600, teacher_json)
     print(f"📥 Saved teacher {teacher_email} to Redis (TTL 1h)")
 
-    # Return response (no need for jsonable_encoder since MongoJSONEncoder handles everything)
+    # Return response 
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success", 
+            "success": True, 
+            "message" : "Teacher details fetched successfully",
             "data": json.loads(teacher_json)
         }
     )
@@ -87,7 +89,7 @@ async def get_teacher_by_id(request: Request,teacher_id: str):
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail", 
+                "success": False, 
                 "message": "Only clerks can access this route"
             }
         )
@@ -99,7 +101,8 @@ async def get_teacher_by_id(request: Request,teacher_id: str):
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success", 
+                "success": True, 
+                "message" : "Teacher details fetched successfully",
                 "data": json.loads(cached_teacher)
             }
         )
@@ -110,7 +113,7 @@ async def get_teacher_by_id(request: Request,teacher_id: str):
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail", 
+                "success": False, 
                 "message": "Teacher not found"
             }
         )
@@ -146,7 +149,8 @@ async def get_teacher_by_id(request: Request,teacher_id: str):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success", 
+            "success": True, 
+            "message" : "Teacher details fetched successfully",
             "data": teacher_dict_for_response
         }
     )

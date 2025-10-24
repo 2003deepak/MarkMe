@@ -122,7 +122,7 @@ async def update_clerk_route(
             return JSONResponse(
                 status_code=422,
                 content={
-                    "status": "fail", 
+                    "success": False, 
                     "message": "Invalid integer value for phone"
                 }
             )

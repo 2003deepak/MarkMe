@@ -33,7 +33,7 @@ async def get_student_attendance_summary(request: Request, student_id: str) -> D
         raise HTTPException(
             status_code=403,
             detail={
-                "status": "fail",
+                "success": False,
                 "message": f"Access denied. Role '{user_role}' not authorized to view attendance summaries"
             }
         )
@@ -47,7 +47,8 @@ async def get_student_attendance_summary(request: Request, student_id: str) -> D
     if cached_data:
         try:
             response_content = {
-                "status": "success",
+                "success": True,
+                "message" : "Student attendance fetched successfully",
                 "data": json.loads(cached_data),
                 "source": "cache"
             }
@@ -117,7 +118,8 @@ async def get_student_attendance_summary(request: Request, student_id: str) -> D
         await redis_client.setex(cache_key, 1800, json.dumps(data))
 
         response_content = {
-            "status": "success",
+            "success": True,
+            "message" : "Student attendance fetched successfully",
             "data": data,
             "source": "database"
         }
@@ -130,8 +132,8 @@ async def get_student_attendance_summary(request: Request, student_id: str) -> D
         return JSONResponse(
                 status_code=505,
                 content={
-                    "status": "fail",
-                    "message": "NFailed to fetch attendance summary due to server error",
+                    "success": False,
+                    "message": "Failed to fetch attendance summary due to server error",
 
                 }
             )

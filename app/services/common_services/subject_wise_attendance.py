@@ -39,9 +39,8 @@ async def subject_wise_attendance(request: Request, subject_id: str) -> JSONResp
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
-                    "message": "Invalid subject ID format.",
-                    "data": {},
+                    "success": False,
+                    "message": "Invalid subject ID format."
                 },
             )
         validated_oid = ObjectId(subject_id)
@@ -61,7 +60,7 @@ async def subject_wise_attendance(request: Request, subject_id: str) -> JSONResp
             return JSONResponse(
                 status_code=200,
                 content={
-                    "status": "success",
+                    "success": True,
                     "message": "No attendance data found for this subject.",
                     "data": {},
                 },
@@ -100,7 +99,7 @@ async def subject_wise_attendance(request: Request, subject_id: str) -> JSONResp
 
         # --- Success response ---
         response_content = {
-            "status": "success",
+            "success": True,
             "message": "Average attendance fetched successfully.",
             "data": json.loads(json.dumps(response_data, cls=MongoJSONEncoder)),
         }
@@ -119,9 +118,8 @@ async def subject_wise_attendance(request: Request, subject_id: str) -> JSONResp
         return JSONResponse(
             status_code=500,
             content={
-                "status": "error",
+                "success": False,
                 "message": "Failed to fetch subject-wise attendance.",
-                "error": str(e),
-                "data": {},
+                "error": str(e)
             },
         )

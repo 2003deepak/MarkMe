@@ -1,8 +1,13 @@
 import redis.asyncio as redis
+import logging
 from app.core.config import Settings
 
 # Initialize Settings
 settings = Settings()
+
+# Setup logger
+logger = logging.getLogger("redis_client")
+logging.basicConfig(level=logging.INFO)
 
 # Create a Redis client (singleton pattern)
 redis_client = redis.Redis(
@@ -19,12 +24,14 @@ redis_client = redis.Redis(
 async def get_redis_client():
     """Get the Redis client instance with connection verification."""
     try:
-        await redis_client.ping()
+        pong = await redis_client.ping()
+        if pong:
+            logger.info(f"✅ Redis connected successfully to {settings.REDIS_HOST}:{settings.REDIS_PORT}")
         return redis_client
-    except redis.ConnectionError:
-        # Reconnect if connection is lost
+    except redis.ConnectionError as e:
+        logger.error(f"❌ Redis connection failed: {e}. Attempting to reconnect...")
         await redis_client.close()
-        return redis.Redis(
+        new_client = redis.Redis(
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
             db=0,
@@ -34,3 +41,11 @@ async def get_redis_client():
             socket_connect_timeout=5,
             health_check_interval=30
         )
+        try:
+            pong = await new_client.ping()
+            if pong:
+                logger.info(f"✅ Redis reconnected successfully to {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+            return new_client
+        except redis.ConnectionError as e2:
+            logger.critical(f"❌ Redis reconnection failed: {e2}")
+            raise e2

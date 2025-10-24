@@ -5,6 +5,7 @@ from app.api.v1.routes import auth_router, student_router, admin_router, clerk_r
 from app.core.database import init_db, close_db
 from app.core.config import settings
 from app.core.rabbit_setup import setup_rabbitmq
+from app.core.redis import get_redis_client
 from app.middleware.auth_middleware import AuthMiddleware  # Make sure you import your middleware
 
 # Routes that do NOT require authentication
@@ -14,7 +15,8 @@ WHITELIST = [
     "/openapi.json",  
     "/api/v1/auth/login",
     "/api/v1/auth/refresh-token",
-    "/api/v1/auth/forgot-password"
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
     "/api/v1/auth/verify-otp",
     "/api/v1/reset-password",
     "/api/v1/student/",
@@ -25,6 +27,7 @@ WHITELIST = [
 async def lifespan(app: FastAPI):
     print("📦 Connecting to DB...")
     await init_db()
+    await get_redis_client()
 
     print("🔄 Initializing RabbitMQ...")
     await setup_rabbitmq()

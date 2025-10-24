@@ -1,4 +1,5 @@
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from app.core.redis import redis_client
 import json
 from app.core.database import get_db
@@ -26,10 +27,14 @@ async def get_subject_detail(request : Request):
     
     if user_role != "clerk":
         print("❌ Access denied: Not a clerk")
-        raise HTTPException(
-            status_code=403,
-            detail={"status": "fail", "message": "Only Clerk can access this route"}
-        )
+        
+        return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "message": "Only Clerk can access this route"
+                }
+            )
     
     clerk_program = user_email = request.state.user.get("program")
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
@@ -42,8 +47,18 @@ async def get_subject_detail(request : Request):
         print(f"✅ Found data in Redis cache: {cache_key}")
         subject_data = json.loads(cached_subject)
         if "subjects" in subject_data:
+            
             print(f"📦 Returning cached subjects for {cache_key}")
-            return {"status": "success", "data": subject_data}
+            return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "message" : "Subject Details fetched successfully",
+                        "data": subject_data
+                    }
+                )
+        
+        
 
     print("ℹ️ No cached data found — fetching from DB...")
 
@@ -69,7 +84,14 @@ async def get_subject_detail(request : Request):
     print(f"📥 Saved subjects for {clerk_program} to Redis (TTL 24h)")
 
     # Use jsonable_encoder for response
-    return {"status": "success", "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
+    return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "message" : "Subject Details fetched successfully",
+                        "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})
+                    }
+                )
 
 
 
@@ -81,10 +103,14 @@ async def get_subject_by_id(request : Request , subject_id: str):
 
     if user_role != "clerk":
         print("❌ Access denied: Not a clerk")
-        raise HTTPException(
-            status_code=403,
-            detail={"status": "fail", "message": "Only Clerk can access this route"}
-        )
+        
+        return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "message": "Only Clerk can access this route"
+                }
+            )
 
     clerk_program = request.state.user.get("program")
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
@@ -95,7 +121,15 @@ async def get_subject_by_id(request : Request , subject_id: str):
 
     if cached_subject:
         print(f"✅ Found data in Redis cache: {cache_key}")
-        return {"status": "success", "data": json.loads(cached_subject)}
+    
+        return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "message" : "Subject Details fetched successfully",
+                        "data": json.loads(cached_subject)
+                    }
+                )
 
     print("ℹ️ No cached data found — fetching from DB...")
 
@@ -108,10 +142,15 @@ async def get_subject_by_id(request : Request , subject_id: str):
 
     if not subjects:
         print(f"❌ Subjects not found: {subject_id} in Program {clerk_program}")
-        raise HTTPException(
-            status_code=404,
-            detail={"status": "fail", "message": f"No subjects found with ID {subject_id} in Program {clerk_program}"}
-        )
+
+        
+        return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "message": f"No subjects found with ID {subject_id} in Program {clerk_program}"
+                }
+            )
 
     # Wrap in dict for response and Redis
     subject_data = {
@@ -126,4 +165,12 @@ async def get_subject_by_id(request : Request , subject_id: str):
     print(f"📥 Saved subjects {subject_id} for {clerk_program} to Redis (TTL 24h)")
 
     # Use jsonable_encoder for response
-    return {"status": "success", "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})}
+
+    return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "message" : "Subject Details fetched successfully",
+                        "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})
+                    }
+                )
