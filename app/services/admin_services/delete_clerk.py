@@ -32,7 +32,7 @@ async def delete_clerk(request : Request , email_id: str):
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only Admin can access this route"
             }
         )
@@ -45,7 +45,7 @@ async def delete_clerk(request : Request , email_id: str):
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Clerk with email '{email_id}' not found"
             }
         )
@@ -60,7 +60,7 @@ async def delete_clerk(request : Request , email_id: str):
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Error deleting clerk from database"
             }
         )
@@ -102,7 +102,7 @@ async def delete_clerk(request : Request , email_id: str):
     return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+                "success": True,
                 "message": f"Clerk with email '{email_id}' deleted successfully"
             }
         )

@@ -82,22 +82,6 @@ class UpdateProfileRequest(BaseModel):
     semester: Optional[int] = None
     batch_year: Optional[int] = None
 
-class UpdateProfileRequest(BaseModel):
-    first_name: Optional[str] = None
-    middle_name: Optional[str] = None
-    last_name: Optional[str] = None
-    mobile_number: Optional[str] = None  # Keep as string, convert in validator
-
-    @validator('mobile_number', pre=True)
-    def validate_mobile_number(cls, v):
-        if v is None or v == "":
-            return None
-        # Remove any non-digit characters
-        if isinstance(v, str):
-            cleaned = ''.join(filter(str.isdigit, v))
-            if cleaned:
-                return cleaned
-        return v
 
 # Day of week type
 DayOfWeek = Literal[
@@ -269,10 +253,11 @@ class SubjectShortView(BaseModel):
         }
 
 class StudentShortView(BaseModel):
-    student_id: str
+    student_id: str | ObjectId
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
+    dob: Optional[str]
     email: EmailStr
     phone: Optional[str] = None
     department: Optional[str] = None
@@ -282,6 +267,7 @@ class StudentShortView(BaseModel):
     roll_number: Optional[int] = None
     profile_picture: Optional[HttpUrl] = None
     is_verified: Optional[bool] = None
+    is_embeddings : Optional[bool] = None
 
     class Config:
         arbitrary_types_allowed = True

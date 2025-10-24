@@ -124,7 +124,7 @@ async def get_teacher_avg_attendance(
                 message_parts.append(f"semester {semester}")
             message = f"No teacher attendance data found for " + ", ".join(message_parts)
             response = {
-                "status": "fail",
+                "success": False,
                 "message": message
             }
             # logging.warning(f"🚨 No data for filters: {match_conditions}"
@@ -132,7 +132,7 @@ async def get_teacher_avg_attendance(
             return JSONResponse(
                 status_code=200,  
                 content={
-                    "status": "success",
+                    "success": True,
                     "message": "No data Found",
                     "data": response_data
                 }
@@ -157,7 +157,7 @@ async def get_teacher_avg_attendance(
         return JSONResponse(
             status_code=200,  
             content={
-                "status": "success",
+                "success": True,
                 "message": "Teacher avg class attendance fetched successfully",
                 "data": response_data
             }
@@ -170,7 +170,7 @@ async def get_teacher_avg_attendance(
         return JSONResponse(
             status_code=500,  
             content={
-                "status": "fail",
+                "success": False,
                 "message": str(e),
                
             }

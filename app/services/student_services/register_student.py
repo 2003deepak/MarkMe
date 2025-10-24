@@ -1,4 +1,5 @@
 from fastapi import HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from app.core.database import get_db
 from app.core.config import settings
 from datetime import datetime
@@ -19,20 +20,20 @@ async def register_student(student_data: StudentRegisterRequest):
 
         # ✅ Check if student already exists
         if await Student.find_one(Student.email == student_data.email):
-            raise HTTPException(
-                status_code=400,
-                detail={"status": "fail", "message": "Student already exists"}
-            )
-
-        # ✅ Generate student ID
-        student_id = str(uuid4()).replace("-", "").upper()
+            
+            return JSONResponse(
+            status_code=409,  
+            content={
+                "success": False,
+                "message": "Student already exists "
+            }
+        )
 
         # ✅ Hash password
         hashed_password = get_password_hash(str(student_data.password))
 
         # ✅ Create student record with is_verified=False
         student_doc = Student(
-            student_id=student_id,
             first_name=student_data.first_name,
             middle_name=None,
             last_name=student_data.last_name,
@@ -70,16 +71,18 @@ async def register_student(student_data: StudentRegisterRequest):
                 )
             }
         }, priority=5)
-
-        return {
-            "status": "success",
-            "message": "Student registered successfully. Verification email sent.",
-            "data": {
-                "student_id": student_id,
-                "name": f"{student_data.first_name} {student_data.last_name}".strip(),
-                "email": student_data.email
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Student registered successfully. Verification email sent.",
+                "data": {
+                    "name": f"{student_data.first_name} {student_data.last_name}".strip(),
+                    "email": student_data.email
+                }
             }
-        }
+        )
 
     except ValidationError as e:
         error = e.errors()[0]
@@ -91,18 +94,25 @@ async def register_student(student_data: StudentRegisterRequest):
         elif loc == "password" and "string_too_short" in str(error["type"]):
             error_msg = "Password must be at least 6 characters"
 
-        raise HTTPException(
+        
+        return JSONResponse(
             status_code=422,
-            detail={"status": "fail", "message": error_msg}
+            content={
+                "success": False, 
+                "message": error_msg 
+            }
         )
+    
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error in register_student: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
+
+        return JSONResponse(
             status_code=500,
-            detail={"status": "fail", "message": f"Error registering student: {str(e)}"}
+            content={
+                "success": False, 
+                "message": f"Error registering student: {str(e)}"
+            }
         )

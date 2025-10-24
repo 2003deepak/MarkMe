@@ -16,7 +16,7 @@ async def fetch_class(request: Request, batch_year: int, program: str, semester:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Access denied. Only teachers and clerks can use this endpoint."
             }
         )
@@ -37,7 +37,11 @@ async def fetch_class(request: Request, batch_year: int, program: str, semester:
             print(f"Cache hit for {cache_key}")
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content=json.loads(cached_data)
+                content={
+                    "success": True,
+                    "message" : "Class fetched successfully",
+                    "data": json.loads(cached_data)
+                }       
             )
 
         # Cache miss - fetch from database
@@ -70,7 +74,8 @@ async def fetch_class(request: Request, batch_year: int, program: str, semester:
         ]
 
         response = {
-            "status": "success",
+            "success": True,
+            "message" : "Class fetched successfully",
             "data": student_list
         }
 
@@ -92,7 +97,7 @@ async def fetch_class(request: Request, batch_year: int, program: str, semester:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Failed to fetch student records"
             }
         )

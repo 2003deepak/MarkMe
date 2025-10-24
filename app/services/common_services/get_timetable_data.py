@@ -19,7 +19,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "User must be a teacher, admin, clerk, or student"
             }
         )
@@ -30,7 +30,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Department and program cannot be empty"
                 }
             )
@@ -43,7 +43,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Semester must be a number between 1 and 8"
                 }
             )
@@ -57,7 +57,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail", 
+                    "success": False, 
                     "message": f"Academic year must be between 2000 and {current_year + 1}"
                 }
             )
@@ -71,7 +71,11 @@ async def get_timetable_data(request: Request, department: str, program: str, se
             cached_response = json.loads(cached_data)
             return JSONResponse(
                 status_code=200,
-                content=cached_response
+                content={
+                    "success" : True,
+                    "message" : "Attendance Records fetched successfully",
+                    "data" : cached_response
+                }
             )
 
         query = {
@@ -148,7 +152,12 @@ async def get_timetable_data(request: Request, department: str, program: str, se
 
         return JSONResponse(
             status_code=200,
-            content=response_data
+            content={
+                    "success" : True,
+                    "message" : "Attendance Records fetched successfully",
+                    "data" : response_data
+                }
+            
         )
 
     except Exception as e:
@@ -156,7 +165,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Error fetching timetable: {str(e)}"
             }
         )

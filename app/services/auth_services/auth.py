@@ -39,7 +39,7 @@ async def login_user(request):
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+                "success": True,
                 "message": "Admin logged in successfully",
                 "data": {
                     "access_token": access_token,
@@ -57,7 +57,7 @@ async def login_user(request):
         return JSONResponse(
             status_code=401,  
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid credentials"
             }
         )
@@ -69,7 +69,7 @@ async def login_user(request):
         return JSONResponse(
             status_code=401,  
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid credentials"
             }
         )
@@ -82,7 +82,7 @@ async def login_user(request):
             return JSONResponse(
                 status_code=401,  
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Email not verified. Please verify your email to log in."
                 }
             )
@@ -105,7 +105,7 @@ async def login_user(request):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "User logged in successfully",
             "data": {
                 "access_token": access_token,
@@ -127,7 +127,7 @@ async def refresh_access_token(request):
         return JSONResponse(
             status_code=401,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid refresh token"
             }
         )
@@ -148,7 +148,7 @@ async def refresh_access_token(request):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "Access token refreshed",
             "data": {
                 "access_token": new_access_token,
@@ -174,7 +174,7 @@ async def request_password_reset(request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid role specified"
             }
         )
@@ -189,7 +189,7 @@ async def request_password_reset(request):
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Email not found"
                 }
             )
@@ -207,7 +207,7 @@ async def request_password_reset(request):
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Error updating {role} record: {str(e)}"
             }
         )
@@ -228,7 +228,7 @@ async def request_password_reset(request):
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Failed to send OTP email: {str(e)}"
             }
         )
@@ -236,7 +236,7 @@ async def request_password_reset(request):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": f"OTP sent to {email}"
         }
     )
@@ -256,7 +256,7 @@ async def verify_reset_otp(request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid role specified"
             }
         )
@@ -271,7 +271,7 @@ async def verify_reset_otp(request):
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid OTP or user not found"
             }
         )
@@ -280,7 +280,7 @@ async def verify_reset_otp(request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Expired OTP"
             }
         )
@@ -296,7 +296,7 @@ async def verify_reset_otp(request):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "OTP verified successfully"
         }
     )
@@ -316,7 +316,7 @@ async def reset_user_password(request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid role specified"
             }
         )
@@ -328,7 +328,7 @@ async def reset_user_password(request):
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "User not found"
             }
         )
@@ -338,7 +338,7 @@ async def reset_user_password(request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "New password must be different from old password"
             }
         )
@@ -353,7 +353,7 @@ async def reset_user_password(request):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "Password reset successfully"
         }
     )
@@ -375,7 +375,7 @@ async def change_current_password(
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "New password must be exactly 6 digits"
             }
         )
@@ -393,7 +393,7 @@ async def change_current_password(
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid user role"
             }
         )
@@ -404,7 +404,7 @@ async def change_current_password(
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "User not found"
             }
         )
@@ -414,7 +414,7 @@ async def change_current_password(
         return JSONResponse(
             status_code=401,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Incorrect current password"
             }
         )
@@ -424,7 +424,7 @@ async def change_current_password(
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "New password cannot be same as current password"
             }
         )
@@ -436,7 +436,7 @@ async def change_current_password(
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "Password updated successfully"
         }
     )

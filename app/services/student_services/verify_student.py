@@ -19,7 +19,7 @@ async def verify_student_email(request: Request):
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail", 
+                   "success": False, 
                     "message": "Token is required as query parameter"
                 }
             )
@@ -33,7 +33,7 @@ async def verify_student_email(request: Request):
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail", 
+                   "success": False, 
                     "message": "Student not found"
                 }
             )
@@ -43,7 +43,7 @@ async def verify_student_email(request: Request):
             return JSONResponse(
                 status_code=200,
                 content={
-                    "status": "success",
+                   "success": True,
                     "message": "Email already verified"
                 }
             )
@@ -55,7 +55,7 @@ async def verify_student_email(request: Request):
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+               "success": True,
                 "message": "Email verified successfully"
             }
         )
@@ -64,7 +64,7 @@ async def verify_student_email(request: Request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail", 
+               "success": False, 
                 "message": "Invalid or expired token"
             }
         )
@@ -72,7 +72,7 @@ async def verify_student_email(request: Request):
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail", 
+               "success": False, 
                 "message": f"Error verifying email: {str(e)}"
             }
         )

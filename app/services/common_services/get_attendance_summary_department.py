@@ -44,7 +44,7 @@ async def get_attendance_summary_department(
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "No attendance records found for {}/{}".format(month, year),
             }
         )
@@ -177,7 +177,7 @@ async def get_attendance_summary_department(
         return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "No attendance records found for department '{department_name}' in {month}/{year}.",
 
                 }
@@ -203,7 +203,7 @@ async def get_attendance_summary_department(
     return JSONResponse(
                 status_code=201,
                 content={
-                    "status": "success",
+                    "success": True,
                     "message": "Records Found Successfully",
                     "data" : {
                         "department": department_name,

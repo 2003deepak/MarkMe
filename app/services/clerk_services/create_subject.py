@@ -11,7 +11,7 @@ async def create_subject(request, request_model):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only Clerk can create new subjects"
             }
         )
@@ -30,7 +30,7 @@ async def create_subject(request, request_model):
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": f"Subject with code {request_model.subject_code} and component {request_model.component} already exists"
                 }
             )
@@ -61,6 +61,7 @@ async def create_subject(request, request_model):
         return JSONResponse(
             status_code=200,  
             content={
+                "success": True,
                 "message": "Subject created successfully",
                 "data": {
                     "subject_code": subject_data.subject_code,
@@ -79,7 +80,7 @@ async def create_subject(request, request_model):
         raise HTTPException(
             status_code=422,
             detail={
-                "status": "fail",
+                "success": False,
                 "message": error_msg
             }
         )
@@ -92,7 +93,7 @@ async def create_subject(request, request_model):
         raise HTTPException(
             status_code=500,
             detail={
-                "status": "fail",
+                "success": False,
                 "message": f"Error creating subject: {str(e)}"
             }
         )

@@ -18,9 +18,9 @@ async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
     
     if user_role != "teacher":
         return JSONResponse(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only teachers can access this endpoint"
             }
         )
@@ -31,9 +31,9 @@ async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
     teacher = await Teacher.find_one(Teacher.email == teacher_email)
     if not teacher:
         return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Teacher not found"
             }
         )
@@ -58,9 +58,9 @@ async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error fetching sessions: {str(e)}")
         return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Failed to fetch session records"
             }
         )
@@ -112,7 +112,8 @@ async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
-            "status": "success",
+            "success": True,
+            "message" : "Session fetched successfully",
             "data": {
                 "upcoming": upcoming,
                 "current": current,

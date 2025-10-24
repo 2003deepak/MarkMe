@@ -15,7 +15,7 @@ async def get_all_teachers(request: Request):
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only clerks can access this route"
             }
         )
@@ -28,7 +28,7 @@ async def get_all_teachers(request: Request):
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Clerk department not found"
             }
         )
@@ -42,7 +42,8 @@ async def get_all_teachers(request: Request):
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+                "success": True,
+                "message" : "Teachers fetched successfully",
                 "data": json.loads(cached_teachers)
             }
         )
@@ -91,7 +92,8 @@ async def get_all_teachers(request: Request):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
+            "message" : "Teachers fetched successfully",
             "data": teachers_data
         }
     )

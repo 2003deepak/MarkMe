@@ -14,7 +14,7 @@ async def get_clerk_profile(request: Request):
             return JSONResponse(
                 status_code=401,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "User email not found in request"
                 }
             )
@@ -23,7 +23,7 @@ async def get_clerk_profile(request: Request):
             return JSONResponse(
                 status_code=403,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Only clerks can access this endpoint"
                 }
             )
@@ -37,7 +37,8 @@ async def get_clerk_profile(request: Request):
             return JSONResponse(
                 status_code=200,
                 content={
-                    "status": "success",
+                    "success": True,
+                    "message" : "Clerk profile fetched successfully",
                     "data": json.loads(cached_data)
                 }
             )
@@ -51,7 +52,7 @@ async def get_clerk_profile(request: Request):
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Clerk profile not found"
                 }
             )
@@ -83,7 +84,8 @@ async def get_clerk_profile(request: Request):
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+                "success": True,
+                "message" : "Clerk profile fetched successfully",
                 "data": clerk_data
             }
         )
@@ -93,7 +95,7 @@ async def get_clerk_profile(request: Request):
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Internal server error while fetching profile"
             }
         )

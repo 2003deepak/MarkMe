@@ -14,7 +14,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only teachers can mark attendance"
             }
         )
@@ -26,7 +26,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Attendance record not found"
                 }
             )
@@ -34,7 +34,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Invalid attendance ID: {str(e)}"
             }
         )
@@ -49,7 +49,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Session details not found"
             }
         )
@@ -63,7 +63,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Teacher details not found in session"
             }
         )
@@ -71,7 +71,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Teacher not authorized for this session"
             }
         )
@@ -81,7 +81,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Attendance cannot be marked on a different day"
             }
         )
@@ -94,7 +94,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "Attendance can only be marked within session time"
                 }
             )
@@ -102,7 +102,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Invalid time format in session"
             }
         )
@@ -112,7 +112,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=400,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Attendance must be a binary string of 0 and 1"
             }
         )
@@ -128,7 +128,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
             return JSONResponse(
                 status_code=400,
                 content={
-                    "status": "fail",
+                    "success": False,
                     "message": "No changes made to attendance"
                 }
             )
@@ -136,7 +136,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "success": False,
                 "message": f"Failed to update attendance: {str(e)}"
             }
         )
@@ -145,7 +145,7 @@ async def mark_student_attendance(request: Request, attendance_id: str, attendan
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "Attendance marked successfully",
             "data": {
                 "attendance_id": attendance_id

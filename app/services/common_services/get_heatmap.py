@@ -79,7 +79,7 @@ async def get_heatmap(
 
         if not date_results:
             response_content = {
-                "status": "fail",
+                "success": False,
                 "message": "No attendance data found for the given filters.",
                 "data": {},
             }
@@ -96,7 +96,7 @@ async def get_heatmap(
         ]
 
         response_content = {
-            "status": "success",
+            "success": True,
             "message": "Average attendance fetched successfully.",
             "data": json.loads(json.dumps(response_data, cls=MongoJSONEncoder)),
         }
@@ -107,7 +107,7 @@ async def get_heatmap(
     except Exception as e:
         logging.exception(f"💥 Error in get_heatmap: {e}")
         error_content = {
-            "status": "error",
+            "success": False,
             "message": "Failed to fetch department heatmap.",
             "error": str(e),
             "data": {},

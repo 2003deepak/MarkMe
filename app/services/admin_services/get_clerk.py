@@ -35,7 +35,7 @@ async def get_clerk(request : Request , department: str):
         return JSONResponse(
         status_code=403,
         content={
-            "status": "fail",
+            "success": False,
             "message": "Only Admin can access this route",
             
         }
@@ -63,7 +63,7 @@ async def get_clerk(request : Request , department: str):
         return JSONResponse(
         status_code=404,
         content={
-            "status": "fail",
+            "success": False,
             "message": f"Clerk not found in department {department}",
             
         })
@@ -86,7 +86,7 @@ async def get_clerk(request : Request , department: str):
     return JSONResponse(
         status_code=200,
         content={
-            "status": "success",
+            "success": True,
             "message": "Clerk fetched successfully",
             "data": jsonable_encoder(
                 clerk_data,
@@ -106,7 +106,7 @@ async def get_clerk_by_id(request : Request ,email_id: str):
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Only Admin can access this route"
             }
         )
@@ -128,7 +128,7 @@ async def get_clerk_by_id(request : Request ,email_id: str):
         return JSONResponse(
             status_code=404,
             content={
-                "status": "fail",
+                "success": False,
                 "message": "Clerk not found"
             }
         )
@@ -145,7 +145,7 @@ async def get_clerk_by_id(request : Request ,email_id: str):
     return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+                "success": True,
                 "message": "Clerk Fetched Successfully",
                 "data": jsonable_encoder(
                         clerk_dict,

@@ -42,7 +42,7 @@ async def update_student_profile(
         return JSONResponse(
             status_code=403,
             content={
-                "status": "fail",
+               "success": False,
                 "message": "Only Students can access their profile"
             }
         )
@@ -56,11 +56,10 @@ async def update_student_profile(
             return JSONResponse(
                 status_code=404,
                 content={
-                    "status": "fail", 
+                   "success": False, 
                     "message": "Student not found"
                 }
             )
-        print(f"Student found: {student.student_id}")
 
         # Check if email is being updated and already exists
         email_changed = False
@@ -69,7 +68,7 @@ async def update_student_profile(
                 return JSONResponse(
                     status_code=400,
                     content={
-                        "status": "fail", 
+                       "success": False, 
                         "message": "Email already in use"
                     }
                 )
@@ -78,6 +77,8 @@ async def update_student_profile(
         update_data = {}
         image_paths = []
         # Handle images for face embedding
+        
+        print("I have recieved images as = " , images)
         if images:
             for image in images:
                 if not image.content_type.startswith("image/"):
@@ -85,11 +86,11 @@ async def update_student_profile(
                     return JSONResponse(
                         status_code=400,
                         content={
-                            "status": "fail",
+                           "success": False,
                             "message": "Files must be images"
                         }
                     )
-                path = f"/tmp/{student.student_id}_{image.filename}"
+                path = f"/tmp/{str(student.id)}_{image.filename}"
                 with open(path, "wb") as f:
                     f.write(await image.read())
                 image_paths.append(path)
@@ -98,7 +99,7 @@ async def update_student_profile(
             await send_to_queue("embedding_queue", {
                 "type": "generate_embedding",
                 "data": {
-                    "student_id": student.student_id,
+                    "student_id": str(student.id),
                     "image_paths": image_paths
                 }
             }, priority=2)
@@ -109,7 +110,7 @@ async def update_student_profile(
                 return JSONResponse(
                     status_code=400,
                     content={
-                        "status": "fail",
+                       "success": False,
                         "message": "File must be an image"
                     }
                 )
@@ -138,7 +139,7 @@ async def update_student_profile(
                 return JSONResponse(
                     status_code=500,
                     content={
-                        "status": "fail",
+                       "success": False,
                         "message": f"Profile picture upload failed: {str(e)}"
                     }
                 )
@@ -205,10 +206,10 @@ async def update_student_profile(
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
+               "success": True,
                 "message": "Student profile updated successfully",
                 "data": {
-                    "student_id": student.student_id,
+                    "student_id": str(student.id),
                     "name": f"{update_data.get('first_name', student.first_name)} "
                             f"{update_data.get('middle_name', student.middle_name) or ''} "
                             f"{update_data.get('last_name', student.last_name)}".strip(),
@@ -226,7 +227,7 @@ async def update_student_profile(
         return JSONResponse(
             status_code=422,
             content={
-                "status": "fail", 
+               "success": False, 
                 "message": error_msg
             }
         )
@@ -238,7 +239,7 @@ async def update_student_profile(
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+               "success": False,
                 "message": f"Error updating student profile: {str(e)}"
             }
         )

@@ -16,7 +16,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
             return JSONResponse(
                 status_code=400,
                 content={
-                    'status': 'fail',
+                    "success": False,
                     'message': 'Department not found in user information'
                 }
             )
@@ -26,7 +26,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
             return JSONResponse(
                 status_code=400,
                 content={
-                    'status': 'fail',
+                    "success": False,
                     'message': 'Missing required fields: academic_year, program, or semester'
                 }
             )
@@ -35,7 +35,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
             return JSONResponse(
                 status_code=400,
                 content={
-                    'status': 'fail',
+                    "success": False,
                     'message': 'Invalid or empty schedule provided'
                 }
             )
@@ -53,7 +53,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     return JSONResponse(
                         status_code=400,
                         content={
-                            'status': 'fail',
+                            "success": False,
                             'message': 'Invalid entry: missing subject, start_time, or end_time'
                         }
                     )
@@ -65,7 +65,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                         return JSONResponse(
                             status_code=404,
                             content={
-                                'status': 'fail',
+                                "success": False,
                                 'message': f'Subject {entry.subject} not found'
                             }
                         )
@@ -73,7 +73,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     return JSONResponse(
                         status_code=500,
                         content={
-                            'status': 'fail',
+                            "success": False,
                             'message': f'Error fetching subject {entry.subject}: {str(e)}'
                         }
                     )
@@ -83,7 +83,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     return JSONResponse(
                         status_code=400,
                         content={
-                            'status': 'fail',
+                            "success": False,
                             'message': f'No teacher assigned to subject {subject.subject_name}'
                         }
                     )
@@ -95,7 +95,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                         return JSONResponse(
                             status_code=404,
                             content={
-                                'status': 'fail',
+                                "success": False,
                                 'message': f'Teacher not found for subject {subject.subject_name}'
                             }
                         )
@@ -103,7 +103,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     return JSONResponse(
                         status_code=500,
                         content={
-                            'status': 'fail',
+                            "success": False,
                             'message': f'Error fetching teacher for subject {subject.subject_name}: {str(e)}'
                         }
                     )
@@ -113,7 +113,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     return JSONResponse(
                         status_code=400,
                         content={
-                            'status': 'fail',
+                            "success": False,
                             'message': f'Invalid time range: start_time {entry.start_time} must be before end_time {entry.end_time}'
                         }
                     )
@@ -137,7 +137,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                         return JSONResponse(
                             status_code=500,
                             content={
-                                'status': 'fail',
+                                "success": False,
                                 'message': 'Failed to generate session ID'
                             }
                         )
@@ -146,7 +146,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     return JSONResponse(
                         status_code=500,
                         content={
-                            'status': 'fail',
+                            "success": False,
                             'message': f'Error inserting session for subject {subject.subject_name}: {str(e)}'
                         }
                     )
@@ -154,7 +154,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
         return JSONResponse(
             status_code=201,
             content={
-                'status': 'success',
+                'success': True,
                 'message': 'Timetable created successfully',
             }
         )
@@ -164,7 +164,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
         return JSONResponse(
             status_code=500,
             content={
-                'status': 'fail',
+                "success": False,
                 'message': f'Unexpected error occurred: {str(e)}'
             }
         )
