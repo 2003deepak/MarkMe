@@ -38,7 +38,7 @@ async def reset_password(request: ResetPasswordRequest):
 
 
 
-@router.put("/change-password")
+@router.patch("/change-password")
 async def change_password_route(
     request_model: ChangePasswordRequest,
     request: Request  

@@ -55,7 +55,7 @@ async def login_user(request):
         print(f"User not found for email: {request.email}, role: {request.role}")
         
         return JSONResponse(
-            status_code=401,  
+            status_code=404,  
             content={
                 "success": False,
                 "message": "Invalid credentials"
@@ -67,7 +67,7 @@ async def login_user(request):
     if not verify_password(request.password, user.password):
         print(f"Password verification failed for email: {request.email}")
         return JSONResponse(
-            status_code=401,  
+            status_code=404,  
             content={
                 "success": False,
                 "message": "Invalid credentials"
@@ -80,7 +80,7 @@ async def login_user(request):
             print(f"Login attempt failed for unverified student: {user.email}, isVerified: {getattr(user, 'isVerified', None)}")
             
             return JSONResponse(
-                status_code=401,  
+                status_code=404,  
                 content={
                     "success": False,
                     "message": "Email not verified. Please verify your email to log in."
@@ -96,6 +96,7 @@ async def login_user(request):
     })
 
     refresh_token = create_refresh_token({
+        "id" : str(user.id),
         "email": user.email,
         "role": request.role,
         "program": getattr(user, 'program', None),
@@ -134,6 +135,7 @@ async def refresh_access_token(request):
     
     if payload.get("role") in ['teacher','student','clerk']:
         new_access_token = create_access_token({
+            "id" : payload.get("id"),
             "email": payload.get("email"),
             "role": payload.get("role"),
             "program": payload.get('program'),

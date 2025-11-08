@@ -18,15 +18,10 @@ router = APIRouter()
 # 👨‍🎓 Student APIs
 
 
-@router.get("/student/summary/{student_id}")
-async def get_student_summary(
-    
-    request: Request,
-    student_id: str,
+@router.get("/student/summary")
+async def get_student_summary(request: Request, student_id: Optional[str] = None):
+    return await get_student_attendance_summary(request, student_id)
 
-):
-   
-    return await get_student_attendance_summary(request , student_id)
 
 
 @router.get("/student/{student_id}/subject/{subject_id}")

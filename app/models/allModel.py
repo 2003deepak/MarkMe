@@ -21,6 +21,13 @@ class TeacherRegisterRequest(BaseModel):
     mobile_number: int
     department: str
     subjects_assigned: List[str] = []
+    
+    
+class TeacherUpdateRequest(BaseModel):
+    email: str  
+    department: Optional[str] = None
+    subjects_assigned: Optional[List[str]] = []
+
 
   
 
@@ -289,13 +296,13 @@ class SessionShortView(BaseModel):
     end_time: str
     subject_name: str
     teacher_name: str
+    component: Optional[Literal["Lab", "Lecture"]] = None 
 
     @field_validator("start_time", "end_time")
     def validate_time_format(cls, v, info: ValidationInfo):
         if not re.match(r"^\d{2}:\d{2}$", v):
             raise ValueError(f"{info.field_name} must be in HH:MM format")
         return v
-
 class DaySchedule(BaseModel):
     day: str
     sessions: List[SessionShortView]
@@ -340,3 +347,11 @@ class TimeTableResponse(BaseModel):
         except ValueError:
             raise ValueError(f"{info.field_name} must be a valid integer")
         return v
+    
+class SessionView(BaseModel):
+    program: str
+    semester: str
+    subject_name: str
+    start_time: str
+    end_time: str
+    component: str
