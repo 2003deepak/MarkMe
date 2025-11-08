@@ -4,6 +4,7 @@ from app.core.database import get_db # This might not be needed if Beanie is ini
 from passlib.context import CryptContext
 from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
+from app.utils.publisher import send_to_queue
 from app.utils.send_email import send_email
 from pydantic import ValidationError
 from datetime import datetime
@@ -122,20 +123,32 @@ async def create_teacher(request, request_model):
             print(f"Cleared Redis cache key: {key}")
 
         await redis_client.delete(f"teacher:{request_model.department}")
+        
+         # ✅ Send Verification Email via Queue
+        await send_to_queue("email_queue", {
+            "type": "send_email",
+            "data": {
+                "to": request_model.email,
+                "subject": "Registration Successfull",
+                "body": (
+                    "<p>Welcome, {request_model.first_name}!<br>Your password is <strong>{raw_password}</strong>.<br>Your Teacher ID is <strong>{teacher_id}</strong>.</p>"
+                )
+            }
+        }, priority=5)
 
 
-        # Send confirmation email with generated password
-        try:
-            await send_email(
-                subject="Your Teacher Account Password",
-                email_to=request_model.email,
-                body=f"<p>Welcome, {request_model.first_name}!<br>Your password is <strong>{raw_password}</strong>.<br>Your Teacher ID is <strong>{teacher_id}</strong>.</p>"
-            )
-            print(f"Email sent successfully to {request_model.email}.")
-        except Exception as e:
-            print(f"Failed to send email to {request_model.email}: {str(e)}")
-            # Continue without raising, as email failure shouldn't block registration
-            # You might want to log this or add it to a delayed retry queue
+        # # Send confirmation email with generated password
+        # try:
+        #     await send_email(
+        #         subject="Your Teacher Account Password",
+        #         email_to=request_model.email,
+        #         body=f"<p>Welcome, {request_model.first_name}!<br>Your password is <strong>{raw_password}</strong>.<br>Your Teacher ID is <strong>{teacher_id}</strong>.</p>"
+        #     )
+        #     print(f"Email sent successfully to {request_model.email}.")
+        # except Exception as e:
+        #     print(f"Failed to send email to {request_model.email}: {str(e)}")
+        #     # Continue without raising, as email failure shouldn't block registration
+        #     # You might want to log this or add it to a delayed retry queue
 
         return JSONResponse(
             status_code=201,

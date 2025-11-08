@@ -1,5 +1,6 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import HttpUrl
 from app.core.redis import redis_client
 import json
 from app.core.database import get_db
@@ -17,6 +18,8 @@ class MongoJSONEncoder(json.JSONEncoder):
             return str(obj)
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, HttpUrl):
+            return str(obj)  # Convert HttpUrl to string
         return super().default(obj)
 
 async def get_subject_detail(request : Request):

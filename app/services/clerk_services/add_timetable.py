@@ -8,6 +8,8 @@ from typing import Dict, List
 from beanie.odm.fields import PydanticObjectId
 import traceback
 
+from app.utils.redis_key_deletion import invalidate_redis_keys
+
 async def add_timetable(request: Request, request_model: TimeTableRequest) -> dict:
     try:
         # Get department from request state user
@@ -150,6 +152,8 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                             'message': f'Error inserting session for subject {subject.subject_name}: {str(e)}'
                         }
                     )
+                    
+        await invalidate_redis_keys("timetable:*")
 
         return JSONResponse(
             status_code=201,

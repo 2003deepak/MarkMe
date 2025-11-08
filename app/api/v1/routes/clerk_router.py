@@ -16,6 +16,7 @@ from app.services.clerk_services.get_clerk_profile import get_clerk_profile
 from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
 from app.services.clerk_services.update_clerk import update_clerk
+from app.services.clerk_services.update_teacher import update_teacher_data
 from app.services.teacher_services.get_all_teachers import get_all_teachers
 from app.services.teacher_services.get_teacher_detail import get_teacher_by_id
 from app.services.teacher_services.fetch_class_list import fetch_class
@@ -24,6 +25,7 @@ from app.services.clerk_services.get_subject_detail import get_subject_detail, g
 
 # --- Pydantic Imports
 from app.models.allModel import (
+    TeacherUpdateRequest,
     UpdateClerkRequest,
     CreateSubjectRequest,
     TeacherRegisterRequest,
@@ -58,15 +60,22 @@ async def get_subject_by_id_route(
 
 # ------------------- Teacher Routes -------------------
 
-@router.post("/teacher/")
+@router.post("/teacher")
 async def create_teacher_route(
     request_model: TeacherRegisterRequest,
     request: Request
 ):
     return await create_teacher(request, request_model)
 
+@router.patch("/teacher")
+async def update_teacher(
+    request_model: TeacherUpdateRequest,
+    request: Request
+):
+    return await update_teacher_data(request, request_model)
 
-@router.get("/teacher/")
+
+@router.get("/teacher")
 async def get_all_teachers_route(request: Request):
     return await get_all_teachers(request)
 

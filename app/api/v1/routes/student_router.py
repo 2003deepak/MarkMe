@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Form, Request, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.services.student_services.get_upcoming_session import get_todays_upcoming_sessions_for_student
 from app.services.student_services.register_student import register_student
 from app.services.student_services.get_student_detail import get_student_detail
 from app.services.student_services.update_student_profile import update_student_profile
@@ -36,6 +37,10 @@ async def register_student_route(request : StudentRegisterRequest):
 async def get_me(request: Request):
     
     return await get_student_detail(request)
+
+@router.get("/current-session")
+async def get_current_session(request: Request):
+    return await get_todays_upcoming_sessions_for_student(request)
 
 
 @router.put("/me/update-profile")
