@@ -35,7 +35,13 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str 
     role: str
+    fcm_token: Optional[str] = None
+    device_type: Optional[str] = None
+    device_info: Optional[str] = None
 
+class LogoutRequest(BaseModel):
+    fcm_token: str
+    
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
     role: str
@@ -44,6 +50,18 @@ class OtpRequest(BaseModel):
     email: EmailStr
     role: Literal["student", "teacher", "clerk"]
     otp: str
+    
+class NotificationRequest(BaseModel):
+    user: Literal["student", "teacher", "clerk"]
+    dept: Optional[str] = None
+    program: Optional[str] = None
+    semester: Optional[str] = None
+    batch_year: Optional[str] = None
+
+    title: str
+    message: str
+    data: Optional[dict] = None
+
     
 
 class ResetPasswordRequest(BaseModel):
@@ -184,10 +202,24 @@ class CreateExceptionSession(BaseModel):
     new_end_time: Optional[str] = None
     
 
+class StudentSelectionRequest(BaseModel):
+    page: int = 1
+    limit: int = 10
+    batch_year: Optional[int] = None
+    program: Optional[str] = None
+    semester: Optional[int] = None
+    name: Optional[str] = None
+    
+
 
 
 # Projection Models 
+class EntityIdView(BaseModel):
+    id: PydanticObjectId = Field(..., alias="_id")
 
+    model_config = {
+        "populate_by_name": True
+    }
 class ClerkShortView(BaseModel):
     email : str
     first_name : str
@@ -254,10 +286,32 @@ class SubjectShortView(BaseModel):
     teacher_assigned: Optional[TeacherShortViewForSubject] = None  
 
     class Config:
-        arbitrary_types_allowed = True  # Allow ObjectId type
+        arbitrary_types_allowed = True 
         json_encoders = {
-            ObjectId: str  # Serialize ObjectId to string in API responses
+            ObjectId: str 
         }
+        
+
+class StudentBasicView(BaseModel):
+    student_id: str | ObjectId = Field(..., alias="_id") 
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    department: Optional[str] = None
+    program: Optional[str] = None
+    semester: Optional[int] = None
+    batch_year: Optional[int] = None
+    roll_number: Optional[int] = None
+    profile_picture: Optional[HttpUrl] = None
+    
+    class Config:
+        populate_by_name = True 
+        arbitrary_types_allowed = True
+        json_encoders = {
+            ObjectId: str
+        }
+
+
 
 class StudentShortView(BaseModel):
     student_id: str | ObjectId

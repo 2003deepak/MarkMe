@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from typing import List, Optional
 import json
+from app.services.teacher_services.teacher_wise_student import class_based_teacher, get_students_by_teacher
 from app.services.teacher_services.recognize_students import recognize_students
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
 from app.services.teacher_services.create_session_exception import create_session_exception
@@ -10,7 +11,7 @@ from app.services.teacher_services.update_teacher_profile import update_teacher_
 from app.services.teacher_services.mark_attendance import mark_student_attendance
 from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.models.allModel import UpdateProfileRequest, CreateExceptionSession
+from app.models.allModel import StudentSelectionRequest, UpdateProfileRequest, CreateExceptionSession
 import logging
 from app.core.config import settings
 
@@ -96,3 +97,18 @@ async def create_exception(
     exception_request: CreateExceptionSession
 ):
     return await create_session_exception(request, exception_request)
+
+
+@router.get("/subject-students")
+async def teacher_students(
+    request: Request,
+    student_request: StudentSelectionRequest = Depends()
+):
+    return await get_students_by_teacher(request, student_request)
+
+
+@router.get("/teacher-class")
+async def class_teacher(
+    request: Request,
+):
+    return await class_based_teacher(request)

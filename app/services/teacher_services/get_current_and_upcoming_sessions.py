@@ -41,7 +41,8 @@ async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
     # 3. Get current date and weekday name in IST
     current_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     today = current_time.date()
-    weekday_name = current_time.strftime("%A")
+    # weekday_name = current_time.strftime("%A")
+    weekday_name = 'Monday'
     print(f"Current time: {current_time}, Day: {weekday_name}")
 
     # 4. Query sessions for today and this teacher
@@ -83,6 +84,7 @@ async def get_current_and_upcoming_sessions(request: Request) -> Dict[str, Any]:
                 "day": session.day,
                 "start_time": session.start_time,
                 "end_time": session.end_time,
+                "component" : session.subject.component,
                 "subject_code": str(session.subject.subject_code) if session.subject and hasattr(session.subject, "subject_code") else None,
                 "subject_name": session.subject.subject_name if session.subject and hasattr(session.subject, "subject_name") else None,
                 "program": session.program,

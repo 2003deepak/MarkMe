@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Request, Request
-from app.services.auth_services.auth import login_user, refresh_access_token, request_password_reset, reset_user_password,change_current_password,verify_reset_otp
+from fastapi import APIRouter,Request
+from app.services.auth_services.auth import login_user, logout_user, refresh_access_token, request_password_reset, reset_user_password,change_current_password,verify_reset_otp
 
 # --- Pydantics Model Import ----- 
-from app.models.allModel import LoginRequest , ForgotPasswordRequest,ResetPasswordRequest,ChangePasswordRequest,OtpRequest
+from app.models.allModel import LoginRequest , ForgotPasswordRequest, LogoutRequest,ResetPasswordRequest,ChangePasswordRequest,OtpRequest
 
 router = APIRouter()
 
@@ -19,8 +19,8 @@ async def apply_refresh_access_token(
     return await refresh_access_token(request)
 
 @router.post("/logout")
-async def logout():
-    return {"sucess": "true", "message": "Logout successful"}
+async def logout(request : Request , request_model : LogoutRequest):
+    return await logout_user(request,request_model)
 
 
 @router.post("/forgot-password")
