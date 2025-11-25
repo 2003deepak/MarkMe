@@ -2,6 +2,7 @@ from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from app.core.config import settings
+from app.schemas.fcm import FCMToken
 from app.schemas.student import Student   
 from app.schemas.teacher import Teacher
 from app.schemas.clerk import Clerk
@@ -37,7 +38,8 @@ async def init_db():
         StudentAttendanceSummary,
         TeacherSubjectSummary,
         SubjectSessionStats,  
-        Session
+        Session,
+        FCMToken
 
 
 

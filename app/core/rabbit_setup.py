@@ -5,7 +5,8 @@ QUEUE_PRIORITY_CONFIG = {
     settings.face_recog_queue: 10,
     settings.email_queue: 10,
     settings.embedding_queue: 10,
-    settings.session_queue: 10
+    settings.session_queue: 10,
+    settings.notification_queue: 10
 }
 
 async def setup_rabbitmq():

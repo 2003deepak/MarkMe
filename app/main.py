@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import auth_router, student_router, admin_router, clerk_router, system_router, teacher_router , time_table_router , attendance_router
+from app.api.v1.routes import auth_router, notification_router, student_router, admin_router, clerk_router, system_router, teacher_router , time_table_router , attendance_router
 from app.core.database import init_db, close_db
 from app.core.config import settings
 from app.core.rabbit_setup import setup_rabbitmq
@@ -66,6 +66,7 @@ app.include_router(clerk_router.router, prefix="/api/v1/clerk", tags=["Clerk"])
 app.include_router(teacher_router.router, prefix="/api/v1/teacher", tags=["Teacher"])
 app.include_router(time_table_router.router, prefix="/api/v1/timetable", tags=["Timetable"])
 app.include_router(attendance_router.router, prefix="/api/v1/attendance", tags=["Attendance"])
+app.include_router(notification_router.router , prefix="/api/v1/notification" , tags=["Notification"])
 
 # Root endpoint
 @app.get("/")

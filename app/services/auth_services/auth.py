@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
 
+from beanie import Link
+from bson import ObjectId
 from fastapi import Request
 from app.models.allModel import ChangePasswordRequest
+from app.schemas.fcm import FCMToken
 from app.schemas.student import Student
 from app.schemas.clerk import Clerk
 from app.schemas.teacher import Teacher
@@ -17,25 +20,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def login_user(request):
-    # Admin backdoor check (only for development/testing)
+    # Admin backdoor
     ADMIN_EMAIL = "admin@gmail.com"
     ADMIN_PASSWORD = "123456"
     ADMIN_ROLE = "admin"
     
-    print(request)
-    
-    # Check if this is the admin backdoor access
-    if (request.email == ADMIN_EMAIL and 
-        request.password == ADMIN_PASSWORD and 
-        request.role == ADMIN_ROLE):
-        
+    if (
+        request.email == ADMIN_EMAIL and
+        request.password == ADMIN_PASSWORD and
+        request.role == ADMIN_ROLE
+    ):
         access_token = create_access_token({"email": ADMIN_EMAIL, "role": ADMIN_ROLE})
-        
-        refresh_token = create_refresh_token({
-            "email": ADMIN_EMAIL,
-            "role": ADMIN_ROLE,
-        })
-        
+        refresh_token = create_refresh_token({"email": ADMIN_EMAIL, "role": ADMIN_ROLE})
+
         return JSONResponse(
             status_code=200,
             content={
@@ -45,63 +42,91 @@ async def login_user(request):
                     "access_token": access_token,
                     "refresh_token": refresh_token,
                     "token_type": "bearer"
-                }
-            }
+                },
+            },
         )
-   
+
+    # Load user
     user = await get_user_by_email_role(request.email, request.role)
 
     if not user:
-        print(f"User not found for email: {request.email}, role: {request.role}")
-        
         return JSONResponse(
-            status_code=404,  
-            content={
-                "success": False,
-                "message": "Invalid credentials"
-            }
+            status_code=404,
+            content={"success": False, "message": "Invalid credentials"},
         )
-      
-    
-    # Verify the Password given by user and in DB
+
+    # Password verify
     if not verify_password(request.password, user.password):
-        print(f"Password verification failed for email: {request.email}")
         return JSONResponse(
-            status_code=404,  
+            status_code=404,
+            content={"success": False, "message": "Invalid credentials"},
+        )
+
+    # Student email verification
+    if request.role == "student" and not user.is_verified:
+        return JSONResponse(
+            status_code=404,
             content={
                 "success": False,
-                "message": "Invalid credentials"
-            }
+                "message": "Email not verified. Please verify to log in.",
+            },
         )
+
+    # Tokens
+    access_token = create_access_token(
+        {
+            "id": str(user.id),
+            "email": user.email,
+            "role": request.role,
+            "program": getattr(user, "program", None),
+            "department": getattr(user, "department", None),
+            "semester" : getattr(user , "semester",None),
+            "batch_year" : getattr(user , "batch_year",None)
+        }
+    )
+
+    refresh_token = create_refresh_token(
+        {
+            "id": str(user.id),
+            "email": user.email,
+            "role": request.role,
+            "program": getattr(user, "program", None),
+            "department": getattr(user, "department", None),
+        }
+    )
     
-    # Check if user is a student and if their email is verified
-    if request.role == "student":
-        if not hasattr(user, "is_verified") or user.is_verified is None or not user.is_verified:
-            print(f"Login attempt failed for unverified student: {user.email}, isVerified: {getattr(user, 'isVerified', None)}")
-            
-            return JSONResponse(
-                status_code=404,  
-                content={
-                    "success": False,
-                    "message": "Email not verified. Please verify your email to log in."
+    print("the request = ${request}")
+
+    # ---------- FCM TOKEN REGISTRATION ----------
+    if request.fcm_token:
+
+        existing = await FCMToken.find_one({"token": request.fcm_token})
+
+        if existing:
+            await existing.update(
+                {
+                    "$set": {
+                        "user_id": user.id,
+                        "user_role": request.role,
+                        "device_type": request.device_type,
+                        "device_info" : request.device_info,
+                        "active": True,
+                        "last_used_at": datetime.utcnow(),
+                    }
                 }
             )
-    
-    access_token = create_access_token({
-        "id" : str(user.id),
-        "email": user.email,
-        "role": request.role,
-        "program": getattr(user, 'program', None),
-        "department": getattr(user, 'department', None)
-    })
-
-    refresh_token = create_refresh_token({
-        "id" : str(user.id),
-        "email": user.email,
-        "role": request.role,
-        "program": getattr(user, 'program', None),
-        "department": getattr(user, 'department', None)
-    })
+        else:
+            new_fcm = FCMToken(
+                user_id=user.id,
+                user_role=request.role,
+                token=request.fcm_token,
+                device_type=request.device_type,
+                device_info=request.device_info,
+                active=True,
+                created_at=datetime.utcnow(),
+                last_used_at=datetime.utcnow(),
+            )
+            await new_fcm.insert()
 
     return JSONResponse(
         status_code=200,
@@ -111,10 +136,46 @@ async def login_user(request):
             "data": {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
-                "token_type": "bearer"
-            }
-        }
+                "token_type": "bearer",
+            },
+        },
     )
+  
+async def logout_user(request,request_model):
+
+    user_id = request.state.user.get("id")
+    fcm_token = request_model.fcm_token
+
+    if not fcm_token:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "FCM token required"},
+        )
+
+    record = await FCMToken.find_one(
+        {"user_id": ObjectId(user_id), "token": fcm_token}
+    )
+
+    if not record:
+        print("No user found with fcm token =  " , fcm_token)
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "message": "FCM token not found or does not belong to user",
+            },
+        )
+
+    await record.delete()
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "message": "Logged out successfully",
+        },
+    )
+  
 
 async def refresh_access_token(request):
     
