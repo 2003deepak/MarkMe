@@ -9,5 +9,4 @@ router = APIRouter()
 
 @router.post("/notify")
 async def notify(request : NotificationRequest):
-    print("came here")
     return await notify_users(request)

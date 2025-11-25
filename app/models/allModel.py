@@ -51,16 +51,21 @@ class OtpRequest(BaseModel):
     role: Literal["student", "teacher", "clerk"]
     otp: str
     
-class NotificationRequest(BaseModel):
-    user: Literal["student", "teacher", "clerk"]
+class NotificationFilter(BaseModel):
     dept: Optional[str] = None
     program: Optional[str] = None
-    semester: Optional[str] = None
-    batch_year: Optional[str] = None
+    semester: Optional[int] = None
+    batch_year: Optional[int] = None
 
+class NotificationRequest(BaseModel):
+    user: Literal["student", "teacher", "clerk"]
+    target_ids: Optional[List[str]] = None
+    filters: Optional[List[NotificationFilter]] = None
     title: str
     message: str
     data: Optional[dict] = None
+
+
 
     
 

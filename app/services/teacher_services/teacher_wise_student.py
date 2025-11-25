@@ -130,7 +130,8 @@ async def get_students_by_teacher(request: Request, student_request: StudentSele
 
 
 async def class_based_teacher(request: Request):
-    # 1. Auth & Role Check
+
+    # 1. Auth Check
     user = request.state.user
     if not user or user.get("role") != "teacher":
         return JSONResponse(
@@ -139,98 +140,98 @@ async def class_based_teacher(request: Request):
         )
 
     teacher_id = user.get("id")
+    teacher_dept = user.get("department")  # <-- department from token
+
     if not teacher_id:
         return JSONResponse(
             status_code=400,
             content={"success": False, "message": "Teacher ID not found in token"}
         )
 
+    if not teacher_dept:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Department missing in token"}
+        )
+
     try:
-        teacher_oid = ObjectId(teacher_id) if isinstance(teacher_id, str) else teacher_id
+        teacher_oid = ObjectId(teacher_id)
     except Exception:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "message": "Invalid teacher ID"}
+            content={"success": False, "message": "Invalid teacher ID format"}
         )
-        
-    pipeline = [
-    # 1️⃣ Match subjects taught by this teacher
-    {
-        "$match": {
-            "teacher_assigned.$id": teacher_oid
-        }
-    },
 
-    # 2️⃣ Lookup students by matching program + semester
-    {
-        "$lookup": {
-            "from": "students",
-            "let": {
-                "prog": "$program",
-                "sem": "$semester"
-            },
-            "pipeline": [
-                {
-                    "$match": {
-                        "$expr": {
-                            "$and": [
-                                {"$eq": ["$program", "$$prog"]},
-                                {"$eq": ["$semester", "$$sem"]}
-                            ]
+    # 2. Mongo Pipeline
+    pipeline = [
+        {
+            "$match": {
+                "teacher_assigned.$id": teacher_oid
+            }
+        },
+        {
+            "$lookup": {
+                "from": "students",
+                "let": {"prog": "$program", "sem": "$semester"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$program", "$$prog"]},
+                                    {"$eq": ["$semester", "$$sem"]}
+                                ]
+                            }
                         }
                     }
-                }
-            ],
-            "as": "students_in_class"
-        }
-    },
+                ],
+                "as": "students_in_class"
+            }
+        },
+        {
+            "$group": {
+                "_id": {
+                    "program": "$program",
+                    "semester": "$semester"
+                },
+                "subjects": {
+                    "$push": {
+                        "subject_name": "$subject_name",
+                        "subject_code": "$subject_code",
+                        "component": "$component"
+                    }
+                },
+                "students_in_class": {"$first": "$students_in_class"}
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "program": "$_id.program",
+                "semester": "$_id.semester",
+                "subjects": 1,
+                "student_count": {"$size": "$students_in_class"}
+            }
+        },
+        {"$sort": {"program": 1, "semester": 1}}
+    ]
 
-    # 3️⃣ Group by class (program + semester)
-    {
-        "$group": {
-            "_id": {
-                "program": "$program",
-                "semester": "$semester"
-            },
-            "subjects": {
-                "$push": {
-                    "subject_name": "$subject_name",
-                    "subject_code": "$subject_code",
-                    "component": "$component"
-                }
-            },
-            "students_in_class": {"$first": "$students_in_class"}
-        }
-    },
-
-    # 4️⃣ Prepare output
-    {
-        "$project": {
-            "_id": 0,
-            "program": "$_id.program",
-            "semester": "$_id.semester",
-            "subjects": 1,
-            "student_count": {"$size": "$students_in_class"}
-        }
-    },
-
-    # 5️⃣ Sort
-    {"$sort": {"program": 1, "semester": 1}}
-]
-
-
+    # 3. Execute pipeline
     try:
         cursor = Subject.aggregate(pipeline)
         class_list = await cursor.to_list(length=100)
 
-        total_classes = len(class_list)
+        # 4. Inject department into every class object
+        for cls in class_list:
+            cls["department"] = teacher_dept   # <-- insert here
 
+        # 5. Return response
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
                 "message": "Classes fetched successfully",
-                "total_classes": total_classes,
+                "total_classes": len(class_list),
                 "data": class_list
             }
         )

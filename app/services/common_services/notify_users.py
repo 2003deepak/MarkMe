@@ -1,6 +1,7 @@
 import logging
 import time
 import traceback
+from bson import ObjectId
 from fastapi import HTTPException
 from typing import List
 
@@ -16,101 +17,117 @@ logger = logging.getLogger(__name__)
 
 async def notify_users(request: NotificationRequest):
     start_ts = time.time()
-    logger.info("notify_users: started -- request=%s", {
-        "user": request.user,
-        "dept": request.dept,
-        "program": request.program,
-        "semester": request.semester,
-        "batch_year": request.batch_year,
-        "title": request.title,
-        "message" : request.message
-    })
+    logger.info("notify_users: started -- request=%s", request.dict())
 
     try:
-        filter_query: dict = {"active": True}
-        user_filter: dict = {}
-        user_ids: List = []
+        filter_query = {"active": True}
+        user_ids: List[ObjectId] = []
 
         # ------------------------------------------------------------------ #
-        # 1. User filtering
+        # CASE 1 — target_ids (direct send to specific users)
         # ------------------------------------------------------------------ #
-        logger.debug("Building user_filter for user=%s", request.user)
+        if request.target_ids:
+            logger.info("Target IDs provided → sending only to selected users: %d", len(request.target_ids))
 
-        # ---------------------- CLERK --------------------------------------
-        if request.user == "clerk":
-            if request.dept:
-                user_filter["department"] = request.dept
-            if request.program:
-                user_filter["program"] = request.program
+            try:
+                user_ids = [ObjectId(uid) for uid in request.target_ids]
+            except Exception:
+                raise HTTPException(400, "Invalid target_ids: must be valid MongoDB ObjectId")
 
-            logger.debug("Clerk user_filter=%s", user_filter)
+        # ------------------------------------------------------------------ #
+        # CASE 2 — filters array (OR logic)
+        # ------------------------------------------------------------------ #
+        elif request.filters:
+            logger.info("Using filter groups → %d filter blocks", len(request.filters))
 
-            clerk_docs = await Clerk.find(user_filter).project(EntityIdView).to_list()
-            logger.info("Clerk query returned %d docs", clerk_docs)
-            user_ids = [doc.id for doc in clerk_docs]
+            or_conditions = []
 
-        # ---------------------- TEACHER ------------------------------------
-        elif request.user == "teacher":
-            if request.dept:
-                user_filter["department"] = request.dept
+            for f in request.filters:
+                q = {}
 
-            logger.debug("Teacher user_filter=%s", user_filter)
+                if f.dept:
+                    q["department"] = f.dept
+                if f.program:
+                    q["program"] = f.program
+                if f.semester is not None:
+                    q["semester"] = f.semester
+                if f.batch_year is not None:
+                    q["batch_year"] = f.batch_year
 
-            teacher_docs = await Teacher.find(user_filter).project(EntityIdView).to_list()
-            logger.info("Teacher query returned %d docs", len(teacher_docs))
-            user_ids = [doc.id for doc in teacher_docs]
+                if q:
+                    or_conditions.append(q)
 
-        # ---------------------- STUDENT ------------------------------------
-        elif request.user == "student":
-            if request.dept:
-                user_filter["department"] = request.dept
-            if request.program:
-                user_filter["program"] = request.program
-            if request.semester:
-                user_filter["semester"] = request.semester
-            if request.batch_year:
-                user_filter["batch_year"] = request.batch_year
+            if not or_conditions:
+                return {"success": False, "message": "No valid filters provided"}
 
-            logger.debug("Student user_filter=%s", user_filter)
+            logger.debug("Generated OR filter = %s", or_conditions)
 
-            student_docs = await Student.find(user_filter).project(EntityIdView).to_list()
-            logger.info("Student query returned %d docs", len(student_docs))
-            user_ids = [doc.id for doc in student_docs]
+            # Run query depending on user type
+            if request.user == "student":
+                docs = await Student.find({"$or": or_conditions}).project(EntityIdView).to_list()
+            elif request.user == "teacher":
+                docs = await Teacher.find({"$or": or_conditions}).project(EntityIdView).to_list()
+            elif request.user == "clerk":
+                docs = await Clerk.find({"$or": or_conditions}).project(EntityIdView).to_list()
+            else:
+                raise HTTPException(400, "Invalid user type")
 
+            user_ids = [doc.id for doc in docs]
+            logger.info("Filter-based query returned %d users", len(user_ids))
+
+        # ------------------------------------------------------------------ #
+        # CASE 3 — No filters, No target_ids → send to ALL users by role
+        # ------------------------------------------------------------------ #
         else:
-            raise HTTPException(status_code=400, detail="Invalid user type")
+            logger.info("No target_ids and no filters → sending to ALL users of type: %s", request.user)
 
-        logger.info("Total user_ids=%d", len(user_ids))
+            if request.user == "student":
+                docs = await Student.find({}).project(EntityIdView).to_list()
+            elif request.user == "teacher":
+                docs = await Teacher.find({}).project(EntityIdView).to_list()
+            elif request.user == "clerk":
+                docs = await Clerk.find({}).project(EntityIdView).to_list()
+            else:
+                raise HTTPException(400, "Invalid user type")
+
+            user_ids = [doc.id for doc in docs]
+
+        # ------------------------------------------------------------------ #
+        # Validate user count
+        # ------------------------------------------------------------------ #
+        logger.info("Final user_ids count = %d", len(user_ids))
 
         if not user_ids:
             return {"success": False, "message": "No users found"}
 
+        # ------------------------------------------------------------------ #
+        # Fetch FCM tokens
+        # ------------------------------------------------------------------ #
         filter_query["user_id"] = {"$in": user_ids}
-        logger.debug("FCM token filter=%s", filter_query)
 
         token_docs = await FCMToken.find(filter_query).to_list()
-        logger.info("Found %d token docs", len(token_docs))
-
         tokens = [t.token for t in token_docs if t.active]
 
-        logger.info("Active tokens found=%d", len(tokens))
+        logger.info("Found %d active tokens", len(tokens))
 
         if not tokens:
-            return {"success": True, "message": "Notifications Done"}
+            return {"success": True, "message": "No active device tokens"}
 
+        # ------------------------------------------------------------------ #
+        # Prepare payload
+        # ------------------------------------------------------------------ #
         payload = {
             "tokens": tokens,
             "title": request.title,
             "body": request.message,
-            "data": request.data
+            "data": request.data or {},
         }
 
-        logger.debug("Payload prepared with %d tokens", len(tokens))
-
-
+        # ------------------------------------------------------------------ #
+        # Send to queue
+        # ------------------------------------------------------------------ #
         logger.info("Publishing to queue...")
         await send_to_queue("notification_queue", payload, priority=5)
-        logger.info("Publish success")
 
         elapsed = time.time() - start_ts
         logger.info("notify_users completed in %.3f sec", elapsed)
@@ -124,5 +141,5 @@ async def notify_users(request: NotificationRequest):
 
     except Exception as exc:
         logger.error("Exception occurred: %s", exc)
-        logger.error("Full traceback:\n%s", traceback.format_exc())
+        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {str(exc)}")
