@@ -13,7 +13,7 @@ from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 
 
-REDIS_SESSION_JOB_PREFIX = "attendance:job:"  # Redis key prefix for session-job mapping
+REDIS_SESSION_JOB_PREFIX = "attendance:job:"  
 SESSION_QUEUE_NAME = "session_queue"
 
 
@@ -43,8 +43,8 @@ async def generate_sessions_for_tomorrow():
     tomorrow = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     tomorrow_date = tomorrow.date()
     date_str = str(tomorrow_date)
-    # weekday = tomorrow.strftime("%A")  # ✅ Fixed weekday calc
-    weekday = "Monday"
+    weekday = tomorrow.strftime("%A")  # ✅ Fixed weekday calc
+    # weekday = "Monday"
     print(f"📆 Target date: {date_str} ({weekday})")
 
     sessions = await Session.find(Session.day == weekday, fetch_links=True).to_list()

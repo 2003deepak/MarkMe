@@ -8,43 +8,50 @@ from app.core.config import settings
 class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, whitelist: list[str] = None):
         super().__init__(app)
-        self.whitelist = whitelist or []  # Routes that do NOT require auth
+        self.whitelist = whitelist or []
 
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication for whitelisted routes
-        if request.url.path not in self.whitelist:
-            auth_header = request.headers.get("Authorization")
-            if not auth_header or not auth_header.startswith("Bearer "):
+
+        # 1️⃣ Always allow OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        # 2️⃣ Skip authentication for whitelisted routes
+        if request.url.path in self.whitelist:
+            return await call_next(request)
+
+        # 3️⃣ Require Authorization header for all other requests
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"status": "fail", "message": "Missing or invalid Authorization header"}
+            )
+
+        token = auth_header.split(" ")[1]
+
+        try:
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM]
+            )
+
+            # Check token expiration
+            if datetime.utcnow() > datetime.fromtimestamp(payload["exp"]):
                 return JSONResponse(
                     status_code=401,
-                    content={"status": "fail", "message": "Missing or invalid Authorization header"}
+                    content={"status": "fail", "message": "Token expired"}
                 )
 
-            token = auth_header.split(" ")[1]
+            # Save decoded token in request.state
+            request.state.user = payload
 
-            try:
-                payload = jwt.decode(
-                    token,
-                    settings.SECRET_KEY,
-                    algorithms=[settings.ALGORITHM]
-                )
+        except JWTError:
+            return JSONResponse(
+                status_code=401,
+                content={"status": "fail", "message": "Invalid or expired token"}
+            )
 
-                # Check token expiration
-                if datetime.utcnow() > datetime.fromtimestamp(payload["exp"]):
-                    return JSONResponse(
-                        status_code=401,
-                        content={"status": "fail", "message": "Token expired"}
-                    )
-
-                # Store decoded JWT in request.state
-                request.state.user = payload
-
-            except JWTError:
-                return JSONResponse(
-                    status_code=401,
-                    content={"status": "fail", "message": "Invalid or expired token"}
-                )
-
-        # Continue to the route
-        response = await call_next(request)
-        return response
+        # Continue request
+        return await call_next(request)

@@ -319,7 +319,7 @@ class StudentBasicView(BaseModel):
 
 
 class StudentShortView(BaseModel):
-    student_id: str | ObjectId
+    student_id: str | ObjectId = Field(..., alias="_id") 
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -336,6 +336,7 @@ class StudentShortView(BaseModel):
     is_embeddings : Optional[bool] = None
 
     class Config:
+        populate_by_name = True 
         arbitrary_types_allowed = True
         json_encoders = {
             datetime: lambda dt: dt.isoformat(),

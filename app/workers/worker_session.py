@@ -12,7 +12,7 @@ from app.schemas.attendance import Attendance
 from app.schemas.exception_session import ExceptionSession
 from app.core.rabbitmq_config import settings
 from app.core.database import init_db
-from app.core.redis import redis_client  # Assuming redis_client is an async Redis instance
+from app.core.redis import redis_client  
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

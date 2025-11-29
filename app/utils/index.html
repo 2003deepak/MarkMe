@@ -1,184 +1,216 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Face Recognition UI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        #results-container {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        .annotated-image {
-            max-width: 100%;
-            height: auto;
-            display: none;
-            margin-top: 10px;
-        }
-        #results-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        #results-table th, #results-table td {
-            border: 1px solid #e5e7eb;
-            padding: 8px;
-            text-align: left;
-        }
-        #progress-message {
-            margin-bottom: 10px;
-            font-style: italic;
-        }
-        #annotated-images-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
+      #results-container {
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .annotated-image {
+        max-width: 100%;
+        height: auto;
+        display: none;
+        margin-top: 10px;
+      }
+      #results-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      #results-table th,
+      #results-table td {
+        border: 1px solid #e5e7eb;
+        padding: 8px;
+        text-align: left;
+      }
+      #progress-message {
+        margin-bottom: 10px;
+        font-style: italic;
+      }
+      #annotated-images-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
     </style>
-</head>
-<body class="bg-gray-100 p-8">
+  </head>
+  <body class="bg-gray-100 p-8">
     <div class="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-md">
-        <h1 class="text-2xl font-bold mb-4">Face Recognition</h1>
+      <h1 class="text-2xl font-bold mb-4">Face Recognition</h1>
 
-        <form id="recognition-form" enctype="multipart/form-data" class="mb-4">
-            <div class="mb-4">
-                <label for="attendance_id" class="block text-sm font-medium text-gray-700">Attendance ID</label>
-                <input type="text" id="attendance_id" name="attendance_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-            </div>
-            <div class="mb-4">
-                <label for="images" class="block text-sm font-medium text-gray-700">Upload Images (Multiple Allowed)</label>
-                <input type="file" id="images" name="images" accept="image/*" multiple class="mt-1 block w-full" required>
-            </div>
-            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">Start Recognition</button>
-        </form>
-
-        <div id="results-container" class="mb-4 p-4 bg-gray-50 rounded-md">
-            <h2 class="text-lg font-semibold">Recognition Results</h2>
-            <div id="progress-message"></div>
-            <table id="results-table">
-                <thead>
-                    <tr>
-                        <th>Student Name</th>
-                        <th>Roll Number</th>
-                        <th>Confidence</th>
-                    </tr>
-                </thead>
-                <tbody id="results-body"></tbody>
-            </table>
+      <form id="recognition-form" enctype="multipart/form-data" class="mb-4">
+        <div class="mb-4">
+          <label
+            for="attendance_id"
+            class="block text-sm font-medium text-gray-700"
+            >Attendance ID</label
+          >
+          <input
+            type="text"
+            id="attendance_id"
+            name="attendance_id"
+            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+            required
+          />
         </div>
-
-        <div>
-            <h2 class="text-lg font-semibold mb-2">Annotated Images</h2>
-            <div id="annotated-images-container"></div>
+        <div class="mb-4">
+          <label for="images" class="block text-sm font-medium text-gray-700"
+            >Upload Images (Multiple Allowed)</label
+          >
+          <input
+            type="file"
+            id="images"
+            name="images"
+            accept="image/*"
+            multiple
+            class="mt-1 block w-full"
+            required
+          />
         </div>
+        <button
+          type="submit"
+          class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+        >
+          Start Recognition
+        </button>
+      </form>
+
+      <div id="results-container" class="mb-4 p-4 bg-gray-50 rounded-md">
+        <h2 class="text-lg font-semibold">Recognition Results</h2>
+        <div id="progress-message"></div>
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Student Name</th>
+              <th>Roll Number</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+
+      <div>
+        <h2 class="text-lg font-semibold mb-2">Annotated Images</h2>
+        <div id="annotated-images-container"></div>
+      </div>
     </div>
 
-<script type="module">
-import { fetchEventSource } from 'https://cdn.jsdelivr.net/npm/@microsoft/fetch-event-source/+esm';
+    <script type="module">
+      import { fetchEventSource } from "https://cdn.jsdelivr.net/npm/@microsoft/fetch-event-source/+esm";
 
-const form = document.getElementById('recognition-form');
-const resultsBody = document.getElementById('results-body');
-const annotatedImagesContainer = document.getElementById('annotated-images-container');
-const progressMessage = document.getElementById('progress-message');
+      const form = document.getElementById("recognition-form");
+      const resultsBody = document.getElementById("results-body");
+      const annotatedImagesContainer = document.getElementById(
+        "annotated-images-container"
+      );
+      const progressMessage = document.getElementById("progress-message");
 
-// Hardcoded token (replace with secure auth in production)
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImhhcnNoaWxAZ21haWwuY29tIiwicm9sZSI6InRlYWNoZXIiLCJwcm9ncmFtIjpudWxsLCJkZXBhcnRtZW50IjoiQlRFQ0giLCJleHAiOjE3NTc3NjY5NDN9._UwweR66uZTz-in3oILnxAIhPXXSLdgDfaWPQjiK3qE";
+      // Hardcoded token (replace with secure auth in production)
+      const token =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5MGJhMDE0ZjZkNjVmNTQyNzA4ZjkwNiIsImVtYWlsIjoiaGFyc2hpbEBnbWFpbC5jb20iLCJyb2xlIjoidGVhY2hlciIsInByb2dyYW0iOm51bGwsImRlcGFydG1lbnQiOiJCVEVDSCIsInNlbWVzdGVyIjpudWxsLCJiYXRjaF95ZWFyIjpudWxsLCJleHAiOjE3NjQxNjE0MDAsInR5cGUiOiJhY2Nlc3MifQ.HHBbErHiuv1FyZvl5cSfLsU4g_0NtmyR2Sy9oxqDnZY";
 
-form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    resultsBody.innerHTML = '';
-    annotatedImagesContainer.innerHTML = '';
-    progressMessage.textContent = 'Starting recognition...';
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        resultsBody.innerHTML = "";
+        annotatedImagesContainer.innerHTML = "";
+        progressMessage.textContent = "Starting recognition...";
 
-    const attendanceId = document.getElementById('attendance_id').value;
-    const imageFiles = document.getElementById('images').files;
+        const attendanceId = document.getElementById("attendance_id").value;
+        const imageFiles = document.getElementById("images").files;
 
-    if (!attendanceId || imageFiles.length === 0) {
-        progressMessage.textContent = '';
-        resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Please provide both Attendance ID and at least one image.</td></tr>`;
-        return;
-    }
+        if (!attendanceId || imageFiles.length === 0) {
+          progressMessage.textContent = "";
+          resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Please provide both Attendance ID and at least one image.</td></tr>`;
+          return;
+        }
 
-    const url = `http://127.0.0.1:8000/api/v1/teacher/session/recognize/${attendanceId}`;
+        const url = `http://localhost:8000/api/v1/teacher/session/recognize/${attendanceId}`;
 
-    // Build FormData for multiple images
-    const formData = new FormData();
-    for (const file of imageFiles) {
-        formData.append('images', file); // Use 'images' key to match List[UploadFile]
-    }
+        // Build FormData for multiple images
+        const formData = new FormData();
+        for (const file of imageFiles) {
+          formData.append("images", file); // Use 'images' key to match List[UploadFile]
+        }
 
-    // Track unique students to avoid duplicates in the UI
-    const uniqueStudents = new Set();
+        // Track unique students to avoid duplicates in the UI
+        const uniqueStudents = new Set();
 
-    try {
-        await fetchEventSource(url, {
-            method: 'POST',
+        try {
+          await fetchEventSource(url, {
+            method: "POST",
             headers: {
-                'Authorization': `Bearer ${token}`
-                // Content-Type is auto-set by FormData
+              Authorization: `Bearer ${token}`,
             },
             body: formData,
             async onmessage(event) {
-                const eventData = event.data.trim(); // Trim whitespace
-                if (!eventData) {
-                    console.log('Empty SSE event, skipping...');
-                    return; // Skip empty events (common SSE heartbeats)
-                }
-                try {
-                    const data = JSON.parse(eventData);
-                    handleData(data, uniqueStudents);
-                } catch (parseError) {
-                    console.error('Failed to parse SSE data:', eventData, parseError);
-                    // Don't re-throw; continue streaming
-                }
+              const eventData = event.data.trim(); // Trim whitespace
+              if (!eventData) {
+                console.log("Empty SSE event, skipping...");
+                return; // Skip empty events (common SSE heartbeats)
+              }
+              try {
+                const data = JSON.parse(eventData);
+                handleData(data, uniqueStudents);
+              } catch (parseError) {
+                console.error(
+                  "Failed to parse SSE data:",
+                  eventData,
+                  parseError
+                );
+                // Don't re-throw; continue streaming
+              }
             },
             onerror(err) {
-                progressMessage.textContent = '';
-                resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Connection to server lost. Please try again.</td></tr>`;
-                throw err; // Stop retrying
-            }
-        });
-    } catch (err) {
-        progressMessage.textContent = '';
-        resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Error: ${err.message}</td></tr>`;
-    }
-});
+              progressMessage.textContent = "";
+              resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Connection to server lost. Please try again.</td></tr>`;
+              throw err; // Stop retrying
+            },
+          });
+        } catch (err) {
+          progressMessage.textContent = "";
+          resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Error: ${err.message}</td></tr>`;
+        }
+      });
 
-function handleData(data, uniqueStudents) {
-    console.log('Received SSE data:', data);
+      function handleData(data, uniqueStudents) {
+        console.log("Received SSE data:", data);
 
-    if (data.student_id && data.name) {
-        // This is a per-student recognition event
-        const key = `${data.roll_number}:${data.name}`;
-        if (!uniqueStudents.has(key)) {
+        if (data.student_id && data.name) {
+          // This is a per-student recognition event
+          const key = `${data.roll_number}:${data.name}`;
+          if (!uniqueStudents.has(key)) {
             uniqueStudents.add(key);
-            const row = document.createElement('tr');
+            const row = document.createElement("tr");
             row.innerHTML = `<td>${data.name}</td><td>${data.roll_number}</td><td>${data.confidence}%</td>`;
             resultsBody.appendChild(row);
             progressMessage.textContent = `✅ New student recognized: ${data.name}`;
+          }
+          return; // stop here so we don’t misclassify as progress
         }
-        return; // stop here so we don’t misclassify as progress
-    }
 
-    if (data.status === 'progress') {
-        progressMessage.textContent = data.message || '';
-    } else if (data.status === 'image_processed') {
-        // per-image annotated updates
-        const img = document.createElement('img');
-        img.src = `data:image/jpeg;base64,${data.annotated_image_base64}`;
-        img.className = 'annotated-image';
-        img.alt = `Image ${data.current_image}`;
-        img.style.display = 'block';
-        annotatedImagesContainer.appendChild(img);
-        progressMessage.textContent = `Processed ${data.current_image}/${data.total_images}`;
-    } else if (data.status === 'complete') {
-        progressMessage.textContent = data.message || 'Recognition complete';
-        // final summary table can be built here if needed
-    } else if (data.status === 'failed') {
-        progressMessage.textContent = '';
-        resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Error: ${data.reason}</td></tr>`;
-    }
-}
-</script>
-</body>
+        if (data.status === "progress") {
+          progressMessage.textContent = data.message || "";
+        } else if (data.status === "image_processed") {
+          // per-image annotated updates
+          const img = document.createElement("img");
+          img.src = `data:image/jpeg;base64,${data.annotated_image_base64}`;
+          img.className = "annotated-image";
+          img.alt = `Image ${data.current_image}`;
+          img.style.display = "block";
+          annotatedImagesContainer.appendChild(img);
+          progressMessage.textContent = `Processed ${data.current_image}/${data.total_images}`;
+        } else if (data.status === "complete") {
+          progressMessage.textContent = data.message || "Recognition complete";
+          // final summary table can be built here if needed
+        } else if (data.status === "failed") {
+          progressMessage.textContent = "";
+          resultsBody.innerHTML = `<tr><td colspan="3" class="text-red-600">Error: ${data.reason}</td></tr>`;
+        }
+      }
+    </script>
+  </body>
 </html>
