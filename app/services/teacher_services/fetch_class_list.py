@@ -66,9 +66,9 @@ async def fetch_class(
 
         print(f"Found {len(students_raw)} students → caching as {cache_key}")
 
-        # Convert Pydantic models → dicts with correct aliases
+       
         students_data = [
-            student.model_dump(by_alias=True, exclude_unset=True)
+            json.loads(student.model_dump_json(by_alias=True, exclude_unset=True))
             for student in students_raw
         ]
 

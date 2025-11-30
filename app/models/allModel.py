@@ -206,6 +206,12 @@ class CreateExceptionSession(BaseModel):
     new_start_time: Optional[str] = None
     new_end_time: Optional[str] = None
     
+class AttendanceStudentRequest(BaseModel):
+    attendance_id: str
+    attendance_student: str
+    present_students: Optional[List[str]] = None
+    absent_students: Optional[List[str]] = None
+    
 
 class StudentSelectionRequest(BaseModel):
     page: int = 1
@@ -313,7 +319,8 @@ class StudentBasicView(BaseModel):
         populate_by_name = True 
         arbitrary_types_allowed = True
         json_encoders = {
-            ObjectId: str
+            ObjectId: str,
+            HttpUrl: str 
         }
 
 
@@ -340,7 +347,8 @@ class StudentShortView(BaseModel):
         arbitrary_types_allowed = True
         json_encoders = {
             datetime: lambda dt: dt.isoformat(),
-            ObjectId: str
+            ObjectId: str,
+            HttpUrl: str 
         }
 
 class UpdateClerkRequest(BaseModel):

@@ -146,7 +146,7 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
 
                         channel = channel_raw.decode("utf-8") if isinstance(channel_raw, bytes) else channel_raw
 
-                        logger.info(f"[event_generator] Message from channel={channel}: {raw_data}")
+                        # logger.info(f"[event_generator] Message from channel={channel}: {raw_data}")
 
                         if not raw_data:
                             continue

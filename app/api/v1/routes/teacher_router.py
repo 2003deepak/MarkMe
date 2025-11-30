@@ -11,7 +11,7 @@ from app.services.teacher_services.update_teacher_profile import update_teacher_
 from app.services.teacher_services.mark_attendance import mark_student_attendance
 from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.models.allModel import StudentSelectionRequest, UpdateProfileRequest, CreateExceptionSession
+from app.models.allModel import AttendanceStudentRequest, StudentSelectionRequest, UpdateProfileRequest, CreateExceptionSession
 import logging
 from app.core.config import settings
 
@@ -86,10 +86,9 @@ async def get_class_list_for_group(
 @router.post("/attendance/mark-attendance")
 async def mark_attendance(
     request: Request,
-    attendance_id: str,
-    attendance_student: str
+    attendance_request : AttendanceStudentRequest
 ):
-    return await mark_student_attendance(request, attendance_id, attendance_student)
+    return await mark_student_attendance(request, attendance_request)
 
 
 @router.post("/create-exception")

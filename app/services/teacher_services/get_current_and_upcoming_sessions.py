@@ -38,7 +38,8 @@ async def get_current_and_upcoming_sessions(request: Request):
     # -------------------------------------------------------------------
     current_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     today_date = current_time.date()
-    weekday_name = "Friday"
+    weekday_name = current_time.strftime("%A")
+    # weekday_name = "Friday"
 
     day_start = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
     day_end   = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
