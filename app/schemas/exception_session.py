@@ -10,8 +10,8 @@ class ExceptionSession(Document):
     session: Optional[Link[Session]] = None
     date: Indexed(datetime)
     action: str  # "Cancel", "Rescheduled", or "Add"
-    start_time: Optional[str] = Field(None, alias="startTime")
-    end_time: Optional[str] = Field(None, alias="endTime")
+    start_time: Optional[str] = Field(None)
+    end_time: Optional[str] = Field(None)
     created_at: Indexed(datetime) = Field(default_factory=datetime.utcnow)
     updated_at: Indexed(datetime) = Field(default_factory=datetime.utcnow)
 
@@ -41,6 +41,7 @@ class ExceptionSession(Document):
 
     class Settings:
         name = "exception_sessions"
+
 
         async def pre_save(self) -> None:
             self.updated_at = datetime.utcnow()

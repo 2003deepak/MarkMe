@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Form, Request, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from typing import List, Optional
+from typing import List, Literal, Optional
 import json
 from app.services.teacher_services.teacher_wise_student import class_based_teacher, get_students_by_teacher
 from app.services.teacher_services.recognize_students import recognize_students
@@ -11,7 +11,7 @@ from app.services.teacher_services.update_teacher_profile import update_teacher_
 from app.services.teacher_services.mark_attendance import mark_student_attendance
 from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.models.allModel import StudentSelectionRequest, UpdateProfileRequest, CreateExceptionSession
+from app.models.allModel import AttendanceStudentRequest, StudentSelectionRequest, UpdateProfileRequest, CreateExceptionSession
 import logging
 from app.core.config import settings
 
@@ -77,18 +77,18 @@ async def get_class_list_for_group(
     request: Request,
     batch_year: int,
     program: str,
-    semester: int
+    semester: int,
+    mode: Literal["student_listing", "attendance"] = "student_listing"
 ):
-    return await fetch_class(request, batch_year, program, semester)
+    return await fetch_class(request, batch_year, program, semester, mode)
 
 
 @router.post("/attendance/mark-attendance")
 async def mark_attendance(
     request: Request,
-    attendance_id: str,
-    attendance_student: str
+    attendance_request : AttendanceStudentRequest
 ):
-    return await mark_student_attendance(request, attendance_id, attendance_student)
+    return await mark_student_attendance(request, attendance_request)
 
 
 @router.post("/create-exception")

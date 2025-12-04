@@ -46,11 +46,9 @@ async def load_student_data(semester, department, program, academic_year, attend
         "program": program
     }
     
-    # Add academic_year filter if provided
-    # if academic_year:
-    #     query_filters["batch_year"] = academic_year
-    
+    logger.debug("[face_worker] Query filters: %s", query_filters)
     student_query = Student.find(query_filters)
+    
     student_docs = [doc async for doc in student_query]
     logger.info("[face_worker] Fetched %d students for attendance_id: %s with filters: %s", 
                len(student_docs), attendance_id, query_filters)
@@ -61,15 +59,27 @@ async def load_student_data(semester, department, program, academic_year, attend
 
     # Validate embeddings exist
     valid_students = []
+    invalid_embeddings = []
+    no_embeddings = []
+    
     for doc in student_docs:
+        logger.debug("[face_worker] Checking student: %s %s (ID: %s)", 
+                    doc.first_name, doc.last_name, str(doc.id))
+        
         if hasattr(doc, 'face_embedding') and doc.face_embedding is not None:
             if len(doc.face_embedding) == EMBEDDING_DIM:
                 valid_students.append(doc)
+                logger.debug("[face_worker] ✅ Valid embedding for student: %s", doc.first_name + " " + doc.last_name)
             else:
-                logger.warning("[face_worker] Invalid embedding dimension for student %s: %d", 
-                             doc.student_id, len(doc.face_embedding))
+                logger.warning("[face_worker] ❌ Invalid embedding dimension for student %s: %d", 
+                             str(doc.id), len(doc.face_embedding))
+                invalid_embeddings.append(str(doc.id))
         else:
-            logger.warning("[face_worker] No face embedding found for student %s", doc.student_id)
+            logger.warning("[face_worker] ❌ No face embedding found for student %s", str(doc.id))
+            no_embeddings.append(str(doc.id))
+    
+    logger.info("[face_worker] Embedding summary - Valid: %d, Invalid dim: %d, No embedding: %d", 
+               len(valid_students), len(invalid_embeddings), len(no_embeddings))
     
     if not valid_students:
         logger.error("[face_worker] No students with valid embeddings found")
@@ -77,12 +87,17 @@ async def load_student_data(semester, department, program, academic_year, attend
     
     logger.info("[face_worker] Found %d students with valid embeddings", len(valid_students))
     
-    # Prepare data arrays
+    # Prepare data arrays - FIX: Use doc.id (MongoDB _id) instead of non-existent student_id
     student_embeddings = np.array([doc.face_embedding for doc in valid_students], dtype="float32")
     student_names = [f"{doc.first_name} {doc.last_name}".strip() for doc in valid_students]
     student_rolls = [doc.roll_number for doc in valid_students]
-    student_ids = [str(doc.student_id) for doc in valid_students]  # Ensure string format
+    student_ids = [str(doc.id) for doc in valid_students]  # Use MongoDB _id as string
     
+    logger.debug("[face_worker] First 3 student IDs: %s", student_ids[:3])
+    logger.debug("[face_worker] First 3 student names: %s", student_names[:3])
+    logger.debug("[face_worker] First 3 student rolls: %s", student_rolls[:3])
+    logger.debug("[face_worker] Embeddings shape: %s", student_embeddings.shape)
+
     # Normalize embeddings and create FAISS index
     faiss.normalize_L2(student_embeddings)
     index = faiss.IndexFlatIP(EMBEDDING_DIM)
@@ -145,10 +160,15 @@ async def process_single_image(img, current_image, student_data, recognized_set_
             name = student_names[match_idx]
             roll = student_rolls[match_idx]
             
+            logger.debug("[face_worker] Potential match - Student ID: %s, Name: %s, Roll: %s", 
+                        student_id, name, roll)
+            
             # Check if student already recognized (handle Redis bytes vs string)
             recognized_members = await redis_client.smembers(recognized_set_key)
             recognized_ids = {member.decode('utf-8') if isinstance(member, bytes) else str(member) 
                             for member in recognized_members}
+            
+            logger.debug("[face_worker] Already recognized IDs: %s", list(recognized_ids))
             
             if student_id not in recognized_ids:
                 # New recognition
@@ -156,7 +176,7 @@ async def process_single_image(img, current_image, student_data, recognized_set_
                 label = f"{name} ({confidence}%)"
                 color = (0, 255, 0)  # Green for new recognition
                 new_recognitions += 1
-                logger.info("[face_worker] NEW recognition: %s (roll %s, ID %s) confidence=%.1f%% in image %d", 
+                logger.info("[face_worker] ✅ NEW recognition: %s (roll %s, ID %s) confidence=%.1f%% in image %d", 
                            name, roll, student_id, confidence, current_image)
                 
                 # Publish individual student recognition immediately
@@ -174,7 +194,7 @@ async def process_single_image(img, current_image, student_data, recognized_set_
                 # Duplicate recognition
                 label = f"{name} - Duplicate ({confidence}%)"
                 color = (255, 255, 0)  # Yellow for duplicate
-                logger.debug("[face_worker] Duplicate recognition: %s (ID %s) in image %d", 
+                logger.debug("[face_worker] 🔄 Duplicate recognition: %s (ID %s) in image %d", 
                            name, student_id, current_image)
                 
             # Add to results regardless of duplicate status
@@ -192,7 +212,7 @@ async def process_single_image(img, current_image, student_data, recognized_set_
             # Unknown face
             label = f"Unknown ({confidence}%)"
             color = (0, 0, 255)  # Red for unknown
-            logger.debug("[face_worker] Unknown face %d in image %d (confidence=%.1f%%)", 
+            logger.debug("[face_worker] ❓ Unknown face %d in image %d (confidence=%.1f%%)", 
                         idx + 1, current_image, confidence)
             
             result = {
@@ -209,38 +229,41 @@ async def process_single_image(img, current_image, student_data, recognized_set_
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
     
+    logger.debug("[face_worker] Image %d processing complete: %d results, %d new recognitions", 
+                current_image, len(image_results), new_recognitions)
     return image_results, img, new_recognitions
 
 async def face_worker():
-    logger.info("[face_worker] Starting face recognition worker")
+    logger.info("[face_worker] 🚀 Starting face recognition worker")
     logger.info("[face_worker] Initializing DB connection...")
     await init_db()
-    logger.info("[face_worker] Database connected successfully")
+    logger.info("[face_worker] ✅ Database connected successfully")
 
     logger.debug("[face_worker] Connecting to RabbitMQ: %s", settings.rabbitmq_url)
     connection = await aio_pika.connect_robust(settings.rabbitmq_url)
     channel = await connection.channel()
-    logger.info("[face_worker] RabbitMQ connection and channel established")
+    logger.info("[face_worker] ✅ RabbitMQ connection and channel established")
 
     queue = await channel.declare_queue(
         "face_recog_queue",
         durable=True,
         arguments={"x-max-priority": 10}
     )
-    logger.info("[face_worker] Listening on queue: face_recog_queue")
+    logger.info("[face_worker] 👂 Listening on queue: face_recog_queue")
 
     async with queue.iterator() as messages:
         async for message in messages:
             async with message.process():
-                logger.debug("[face_worker] Received message from queue")
+                logger.info("[face_worker] 📨 Received message from queue")
                 student_data = None  # Initialize for cleanup
                 recognized_set_key = None
                 all_annotated_images = []  # Initialize early to avoid undefined errors
+                attendance_id = None  # Initialize attendance_id
                 
                 try:
                     payload = json.loads(message.body)
                     data = payload.get("data", {})
-                    logger.debug("[face_worker] Parsed payload data keys: %s", list(data.keys()))
+                    logger.debug("[face_worker] 📋 Parsed payload data keys: %s", list(data.keys()))
 
                     # Extract job parameters
                     attendance_id = data.get("attendance_id")
@@ -251,24 +274,31 @@ async def face_worker():
                     program = data.get("program")
                     academic_year = data.get("academic_year")
 
-                    logger.info("[face_worker] Processing job - attendance_id: %s, images: %d, filters: semester=%s, dept=%s, program=%s, year=%s", 
+                    logger.info("[face_worker] 📊 Processing job - attendance_id: %s, images: %d, filters: semester=%s, dept=%s, program=%s, year=%s", 
                                attendance_id, num_images, semester, department, program, academic_year)
 
                     # Validate required data
                     if not all([attendance_id, image_base64_list, semester, department, program]):
-                        logger.error("[face_worker] Missing required data for attendance_id: %s", attendance_id)
+                        logger.error("[face_worker] ❌ Missing required data for attendance_id: %s", attendance_id)
+                        missing_fields = []
+                        if not attendance_id: missing_fields.append("attendance_id")
+                        if not image_base64_list: missing_fields.append("image_base64_list")
+                        if not semester: missing_fields.append("semester")
+                        if not department: missing_fields.append("department")
+                        if not program: missing_fields.append("program")
+                        
                         await publish_to_channel(f"face_progress:{attendance_id}", {
                             "status": "failed",
-                            "reason": "Missing required data: attendance_id, images, semester, department, or program"
+                            "reason": f"Missing required data: {', '.join(missing_fields)}"
                         })
                         continue
 
                     # Convert semester to int
                     try:
                         semester = int(semester)
-                        logger.debug("[face_worker] Converted semester to int: %d", semester)
+                        logger.debug("[face_worker] ✅ Converted semester to int: %d", semester)
                     except (ValueError, TypeError) as e:
-                        logger.error("[face_worker] Invalid semester format: %s, error: %s", semester, str(e))
+                        logger.error("[face_worker] ❌ Invalid semester format: %s, error: %s", semester, str(e))
                         await publish_to_channel(f"face_progress:{attendance_id}", {
                             "status": "failed",
                             "reason": f"Invalid semester format: {semester}"
@@ -278,18 +308,20 @@ async def face_worker():
                     # Initialize Redis set for unique students
                     recognized_set_key = f"recognized_students:{attendance_id}"
                     await redis_client.delete(recognized_set_key)
-                    logger.info("[face_worker] Initialized Redis set: %s", recognized_set_key)
+                    logger.info("[face_worker] 🔧 Initialized Redis set: %s", recognized_set_key)
 
                     # Load student data once for the entire job
+                    logger.info("[face_worker] 📥 Loading student data...")
                     student_data = await load_student_data(semester, department, program, academic_year, attendance_id)
                     if not student_data:
+                        logger.error("[face_worker] ❌ No student data loaded")
                         await publish_to_channel(f"face_progress:{attendance_id}", {
                             "status": "failed",
                             "reason": f"No students with valid face embeddings found for the given criteria"
                         })
                         continue
 
-                    logger.info("[face_worker] Loaded %d students for recognition", len(student_data['ids']))
+                    logger.info("[face_worker] ✅ Loaded %d students for recognition", len(student_data['ids']))
 
                     # Process each image
                     all_results = []
@@ -297,16 +329,17 @@ async def face_worker():
                     total_new_recognitions = 0
 
                     for current_image, image_base64 in enumerate(image_base64_list, 1):
-                        logger.info("[face_worker] Processing image %d/%d", current_image, num_images)
+                        logger.info("[face_worker] 🖼️ Processing image %d/%d", current_image, num_images)
 
                         try:
                             # Decode image
+                            logger.debug("[face_worker] 🔍 Decoding image %d", current_image)
                             image_bytes = base64.b64decode(image_base64)
                             nparr = np.frombuffer(image_bytes, np.uint8)
                             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                             
                             if img is None:
-                                logger.warning("[face_worker] Failed to decode image %d", current_image)
+                                logger.warning("[face_worker] ❌ Failed to decode image %d", current_image)
                                 # Store placeholder for failed image
                                 all_annotated_images.append({
                                     "image_index": current_image,
@@ -323,7 +356,11 @@ async def face_worker():
                                 })
                                 continue
 
+                            logger.debug("[face_worker] ✅ Image %d decoded successfully, shape: %s", 
+                                       current_image, str(img.shape))
+
                             # Process the image
+                            logger.debug("[face_worker] 🔍 Running face detection on image %d", current_image)
                             image_results, annotated_img, new_recognitions = await process_single_image(
                                 img, current_image, student_data, recognized_set_key, attendance_id
                             )
@@ -374,13 +411,13 @@ async def face_worker():
                                     "message": f"Processed image {current_image}: {len(image_results)} faces, {new_recognitions} new recognitions"
                                 })
 
-                                logger.info("[face_worker] Image %d processed: %d faces, %d new recognitions, total unique: %d", 
+                                logger.info("[face_worker] ✅ Image %d processed: %d faces, %d new recognitions, total unique: %d", 
                                            current_image, len(image_results), new_recognitions, recognized_count)
 
                                 all_results.extend(image_results)
 
                         except Exception as e:
-                            logger.error("[face_worker] Error processing image %d: %s", current_image, str(e))
+                            logger.error("[face_worker] ❌ Error processing image %d: %s", current_image, str(e))
                             # Store error info for this image
                             all_annotated_images.append({
                                 "image_index": current_image,
@@ -397,8 +434,9 @@ async def face_worker():
                             })
 
                     # Final results compilation
+                    logger.info("[face_worker] 📊 Compiling final results...")
                     if len(all_annotated_images) == 0:
-                        logger.error("[face_worker] No images processed successfully for attendance_id: %s", attendance_id)
+                        logger.error("[face_worker] ❌ No images processed successfully for attendance_id: %s", attendance_id)
                         await publish_to_channel(f"face_progress:{attendance_id}", {
                             "status": "failed",
                             "reason": "No images could be processed successfully"
@@ -409,30 +447,38 @@ async def face_worker():
                         unique_student_ids = [member.decode('utf-8') if isinstance(member, bytes) else str(member) 
                                             for member in recognized_members]
                         
-                        logger.info("[face_worker] Building final results for %d unique students", len(unique_student_ids))
+                        logger.info("[face_worker] 🎯 Building final results for %d unique students", len(unique_student_ids))
                         
                         unique_students = []
                         
                         # Build a lookup dictionary from the already loaded student data
                         if student_data:  # Check if student_data exists
-                            student_lookup = {str(doc.student_id): doc for doc in student_data['docs']}
+                            student_lookup = {str(doc.id): doc for doc in student_data['docs']}
+                            logger.debug("[face_worker] Built student lookup with %d entries", len(student_lookup))
                             
                             for student_id in unique_student_ids:
                                 try:
+                                    logger.debug("[face_worker] Processing student ID: %s", student_id)
                                     # Use the lookup dictionary instead of database query
                                     student = student_lookup.get(student_id)
                                     if student:
-                                        unique_students.append({
-                                            "student_id": str(student.student_id),
+                                        # FIX: Use str(student.id) - this is the MongoDB _id
+                                        student_info = {
+                                            "student_id": str(student.id),  # This is the MongoDB _id
                                             "name": f"{student.first_name} {student.last_name}".strip(),
                                             "roll_number": student.roll_number,
                                             "email": getattr(student, 'email', 'N/A')
-                                        })
-                                        logger.debug("[face_worker] Added student to final results: %s", student.first_name + " " + student.last_name)
+                                        }
+                                        unique_students.append(student_info)
+                                        logger.debug("[face_worker] ✅ Added student to final results: %s (ID: %s)", 
+                                                   student_info["name"], student_info["student_id"])
                                     else:
-                                        logger.warning("[face_worker] Student not found in lookup for ID: %s", student_id)
+                                        logger.warning("[face_worker] ❌ Student not found in lookup for ID: %s", student_id)
                                 except Exception as e:
-                                    logger.error("[face_worker] Error processing student %s: %s", student_id, str(e))
+                                    logger.error("[face_worker] ❌ Error processing student %s: %s", student_id, str(e))
+                                    logger.error("[face_worker] Student object attributes: %s", dir(student) if student else "No student object")
+
+                        logger.info("[face_worker] ✅ Final unique students count: %d", len(unique_students))
 
                         # Send completion message
                         completion_message = {
@@ -446,12 +492,14 @@ async def face_worker():
                         }
                         
                         await publish_to_channel(f"face_progress:{attendance_id}", completion_message)
-                        logger.info("[face_worker] Job completed - attendance_id: %s, unique students: %d, total faces: %d", 
+                        logger.info("[face_worker] 🎉 Job completed - attendance_id: %s, unique students: %d, total faces: %d", 
                                    attendance_id, len(unique_students), total_faces if 'total_faces' in locals() else 0)
 
                 except Exception as e:
-                    logger.error("[face_worker] Unexpected error for attendance_id %s: %s", 
-                               attendance_id if 'attendance_id' in locals() else 'unknown', str(e))
+                    logger.error("[face_worker] 💥 Unexpected error for attendance_id %s: %s", 
+                               attendance_id if attendance_id else 'unknown', str(e))
+                    logger.error("[face_worker] Traceback:", exc_info=True)
+                    
                     if attendance_id:
                         await publish_to_channel(f"face_progress:{attendance_id}", {
                             "status": "failed",
@@ -463,9 +511,11 @@ async def face_worker():
                     if recognized_set_key:
                         try:
                             await redis_client.delete(recognized_set_key)
-                            logger.debug("[face_worker] Cleaned up Redis set: %s", recognized_set_key)
+                            logger.debug("[face_worker] 🧹 Cleaned up Redis set: %s", recognized_set_key)
                         except Exception as e:
-                            logger.error("[face_worker] Error cleaning up Redis set: %s", str(e))
+                            logger.error("[face_worker] ❌ Error cleaning up Redis set: %s", str(e))
+                    
+                    logger.info("[face_worker] 🔄 Ready for next message")
 
 if __name__ == "__main__":
     asyncio.run(face_worker())

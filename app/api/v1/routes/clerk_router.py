@@ -7,7 +7,7 @@ from fastapi import (
     File,
     HTTPException
 )
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi.responses import JSONResponse
 
@@ -152,13 +152,15 @@ async def update_clerk_route(
 
 @router.get("/students")
 async def get_students_route(
+    request: Request,
     batch_year: int,
     program: str,
     semester: int,
-    request: Request
+    mode: Literal["student_listing", "attendance"] = "student_listing",
+    page: int = 1,
+    limit: int = 10,
 ):
-    print(f"Received request for /students with params: batch_year={batch_year}, program={program}, semester={semester}")
-    return await fetch_class(request, batch_year, program, semester)
+    return await fetch_class(request, batch_year, program, semester,mode,page,limit)
 
 
 

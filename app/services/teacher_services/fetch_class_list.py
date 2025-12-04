@@ -1,103 +1,128 @@
-from fastapi import HTTPException, status, Request
+from fastapi import status, Request
 from fastapi.responses import JSONResponse
-from typing import Dict, Any
-from bson import DBRef, ObjectId
-from app.schemas.teacher import Teacher
-from app.schemas.session import Session
-from app.schemas.student import Student
-from app.models.allModel import StudentShortView
-from app.core.redis import redis_client
+from typing import Literal
+from bson import ObjectId
+from datetime import datetime
 import json
 
-async def fetch_class(request: Request, batch_year: int, program: str, semester: int):
-    
+from app.schemas.student import Student
+from app.models.allModel import StudentBasicView, StudentShortView
+from app.core.redis import redis_client
+
+
+# Custom JSON encoder that handles ObjectId, datetime, etc.
+class JSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, bytes):
+            return obj.decode('utf-8')
+        return super().default(obj)
+
+
+async def fetch_class(
+    request: Request,
+    batch_year: int,
+    program: str,
+    semester: int,
+    mode: Literal["student_listing", "attendance"] = "student_listing",
+    page: int = 1,
+    limit: int = 10,
+):
     user_role = request.state.user.get("role")
     if user_role not in {"teacher", "clerk"}:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            content={
-                "success": False,
-                "message": "Access denied. Only teachers and clerks can use this endpoint."
-            }
+            content={"success": False, "message": "Access denied."}
         )
 
-    # Normalize input values
     department = request.state.user.get("department")
-    program = program.upper()
-    
-    # Create cache key
-    cache_key = f"students:{program}:{department}:{semester}:{batch_year}"
-    
-    print(f"Cache key: {cache_key}")
-    
+    program = program.upper().strip()
+
+    # Cache key now includes page + limit
+    cache_key = (
+        f"class_students:{program}:{department}:{semester}:{batch_year}:"
+        f"{mode}:page={page}:limit={limit}"
+    )
+
     try:
-        # Check redis_client cache first
-        cached_data = await redis_client.get(cache_key)
-        if cached_data:
-            print(f"Cache hit for {cache_key}")
+        # Cache HIT
+        cached = await redis_client.get(cache_key)
+        if cached:
             return JSONResponse(
-                status_code=status.HTTP_200_OK,
-                content={
-                    "success": True,
-                    "message" : "Class fetched successfully",
-                    "data": json.loads(cached_data)
-                }       
+                status_code=status.HTTP_200_OK, 
+                content=json.loads(cached)
             )
 
-        # Cache miss - fetch from database
-        students = await Student.find(
-            {
-                "program": program,
-                "department": department,
-                "semester": semester,
-                "batch_year": batch_year
-            }
-        ).project(StudentShortView).to_list()
-
-        print(f"Found {len(students)} students")
-
-        student_list = [
-            {
-                "student_id": student.student_id,
-                "name": f"{student.first_name} {student.middle_name or ''} {student.last_name}".strip() if student.first_name and student.last_name else None,
-                "roll_number": student.roll_number,
-                "email": student.email,
-                "phone": student.phone,
-                "department": student.department,
-                "program": student.program,
-                "semester": student.semester,
-                "batch_year": student.batch_year,
-                "profile_picture": str(student.profile_picture) if student.profile_picture else None,
-                "is_verified": student.is_verified
-            }
-            for student in students
-        ]
-
-        response = {
-            "success": True,
-            "message" : "Class fetched successfully",
-            "data": student_list
+        # Query
+        query = {
+            "program": program,
+            "department": department,
+            "semester": semester,
+            "batch_year": batch_year,
         }
 
-        # Store in redis_client with 1-hour expiration
-        await redis_client.setex(
-            cache_key,
-            3600,  # Cache for 1 hour
-            json.dumps(response)
+        # Add condition for attendance mode
+        projection_model = StudentShortView
+        if mode == "attendance":
+            query["is_verified"] = True
+            projection_model = StudentBasicView
+
+        # ---- Pagination ----
+        skip = (page - 1) * limit
+
+        # Count total matching docs (without pagination)
+        total = await Student.find(query).count()
+
+        # Fetch paginated results
+        students_raw = (
+            await Student.find(query)
+            .project(projection_model)
+            .skip(skip)
+            .limit(limit)
+            .to_list()
         )
-        print(f"Cached data for {cache_key}")
+
+        students_data = [
+            json.loads(student.model_dump_json(by_alias=True, exclude_unset=True))
+            for student in students_raw
+        ]
+
+        total_pages = (total + limit - 1) // limit
+
+        response_data = {
+            "success": True,
+            "message": "Class fetched successfully",
+            "data": students_data,
+            "count": len(students_data),
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+            "mode": mode,
+            "cached": False,
+        }
+
+        # Serialize & cache
+        serialized_response = json.dumps(response_data, cls=JSONEncoder)
+        await redis_client.setex(cache_key, 3600, serialized_response)
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content=response
+            content=response_data
         )
 
     except Exception as e:
-        print(f"Error fetching students: {str(e)}")
+        print(f"Error in fetch_class: {type(e).__name__}: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "message": "Failed to fetch student records"
+                "message": "Failed to fetch class data",
+                "detail": str(e) if "dev" in request.app.state.ENV.lower() else None
             }
         )

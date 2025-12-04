@@ -95,7 +95,6 @@ async def login_user(request):
         }
     )
     
-    print("the request = ${request}")
 
     # ---------- FCM TOKEN REGISTRATION ----------
     if request.fcm_token:

@@ -1,154 +1,164 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from app.models.allModel import AttendanceStudentRequest, NotificationRequest
 from app.schemas.attendance import Attendance
-from app.core.redis import redis_client
 from datetime import datetime
-from bson import ObjectId
 
-async def mark_student_attendance(request: Request, attendance_id: str, attendance_student: str):
-    # Step 1: Verify user role is teacher
+from app.services.common_services.notify_users import notify_users
+
+async def mark_student_attendance(request: Request, attendance_request: AttendanceStudentRequest):
+
+    # Step 1: Verify teacher
     user_role = request.state.user.get("role")
-    user_email = request.state.user.get("email")
-    
     if user_role != "teacher":
         return JSONResponse(
             status_code=403,
-            content={
-                "success": False,
-                "message": "Only teachers can mark attendance"
-            }
+            content={"success": False, "message": "Only teachers can mark attendance"}
         )
-    
-    # Step 2: Fetch attendance record with nested session and teacher details
+
+    # Step 2: Fetch Attendance + shallow links
     try:
-        attendance_record = await Attendance.get(attendance_id, fetch_links=True)
+        attendance_record = await Attendance.get(
+            attendance_request.attendance_id,
+            fetch_links=True,
+            nesting_depth=3
+        )
+
         if not attendance_record:
             return JSONResponse(
                 status_code=404,
-                content={
-                    "success": False,
-                    "message": "Attendance record not found"
-                }
+                content={"success": False, "message": "Attendance record not found"}
             )
+
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "message": f"Invalid attendance ID: {str(e)}"
-            }
+            content={"success": False, "message": f"Invalid attendance ID: {str(e)}"}
         )
-    
-    # Step 3: Validate time frame and teacher email
+
+
     current_time = datetime.now().time()
     current_date = datetime.now().date()
-    
-    # Extract session details (assuming session is a linked document in Beanie)
-    session = attendance_record.session
-    if not session:
+
+    # Identify session type
+    if attendance_record.session:
+        session = attendance_record.session
+        is_exception = False
+
+    elif attendance_record.exception_session:
+        exception = attendance_record.exception_session
+        session = exception.session
+
+        if not session:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid exception session → missing session reference"}
+            )
+
+        is_exception = True
+
+    else:
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "message": "Session details not found"
-            }
+            content={"success": False, "message": "No session or exception session found"}
         )
-    
-    start_time = session.start_time
-    end_time = session.end_time
-    session_day = session.day
-    
-    # Validate teacher email (assuming teacher is a linked document in session)
+
+    # Validate teacher
     if not session.teacher:
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "message": "Teacher details not found in session"
-            }
+            content={"success": False, "message": "Teacher details not found for this session"}
         )
-    if session.teacher.email != user_email:
+
+    if str(session.teacher.id) != str(request.state.user.get("id")):
         return JSONResponse(
             status_code=403,
-            content={
-                "success": False,
-                "message": "Teacher not authorized for this session"
-            }
+            content={"success": False, "message": "Teacher not authorized for this session"}
         )
-    
-    # Validate day
-    if session_day.lower() != current_date.strftime("%A").lower():
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "message": "Attendance cannot be marked on a different day"
-            }
-        )
-    
-    # Validate time frame
-    try:
-        start = datetime.strptime(start_time, "%H:%M").time()
-        end = datetime.strptime(end_time, "%H:%M").time()
-        if not (start <= current_time <= end):
+
+    # Validate class date
+    if is_exception:
+        if attendance_record.exception_session.date.date() != current_date:
             return JSONResponse(
                 status_code=400,
-                content={
-                    "success": False,
-                    "message": "Attendance can only be marked within session time"
-                }
+                content={"success": False, "message": "Attendance can only be marked on the exception session date"}
             )
+    else:
+        if session.day.lower() != current_date.strftime("%A").lower():
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Attendance cannot be marked on a different day"}
+            )
+
+    # Validate time window
+    try:
+        if is_exception:
+            start = datetime.strptime(attendance_record.exception_session.start_time, "%H:%M").time()
+            end = datetime.strptime(attendance_record.exception_session.end_time, "%H:%M").time()
+        else:
+            start = datetime.strptime(session.start_time, "%H:%M").time()
+            end = datetime.strptime(session.end_time, "%H:%M").time()
     except ValueError:
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "message": "Invalid time format in session"
-            }
+            content={"success": False, "message": "Invalid time format in session"}
         )
-    
-    # Ensure attendance_student is a string/bitmask
-    if not isinstance(attendance_student, str) or not set(attendance_student) <= {"0", "1"}:
+
+    if not (start <= current_time <= end):
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "message": "Attendance must be a binary string of 0 and 1"
-            }
+            content={"success": False, "message": "Attendance can only be marked within session time"}
         )
 
-    # # Check length (commented out as in original code)
-    # if len(session.students) != len(attendance_student):
-    #     raise HTTPException(status_code=400, detail="Invalid attendance string — it does not match class strength")
+    # Validate binary string
+    if not isinstance(attendance_request.attendance_student, str) or \
+            not set(attendance_request.attendance_student) <= {"0", "1"}:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Attendance must be a binary string of 0 and 1"}
+        )
 
+  
+    # Save attendance
     try:
-        attendance_record.students = attendance_student
-        update_result = await attendance_record.save()
-        if not update_result:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "message": "No changes made to attendance"
-                }
+        attendance_record.students = attendance_request.attendance_student
+        await attendance_record.save()
+        
+        # Send Confirmation Notification to the student 
+        await notify_users(
+            NotificationRequest(
+                user="student",
+                target_ids=attendance_request.present_students,
+                title="Attendance Marked",
+                message=f"Your attendance has been marked present for session on {current_date}.",
+                data=None
             )
+        )
+
+
+        # Send Absence Notification to absent students
+        await notify_users(
+            NotificationRequest(
+            user="student",
+            target_ids=attendance_request.absent_students,
+            title="Lecture Missed",
+            message=f"Your attendance has been marked absent for session on {current_date}. If you feel this is an error, please contact your teacher."
+            )
+        )
+
+        
+        
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "message": f"Failed to update attendance: {str(e)}"
-            }
+            content={"success": False, "message": f"Failed to update attendance: {str(e)}"}
         )
-    
-    # Step 5: Return success message
+
     return JSONResponse(
         status_code=200,
         content={
             "success": True,
             "message": "Attendance marked successfully",
-            "data": {
-                "attendance_id": attendance_id
-            }
+            "data": {"attendance_id": attendance_request.attendance_id}
         }
     )
