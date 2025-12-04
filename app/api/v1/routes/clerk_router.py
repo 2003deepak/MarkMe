@@ -17,7 +17,7 @@ from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
 from app.services.clerk_services.update_clerk import update_clerk
 from app.services.clerk_services.update_teacher import update_teacher_data
-from app.services.teacher_services.get_all_teachers import get_all_teachers
+from app.services.clerk_services.get_all_teachers import get_all_teachers
 from app.services.teacher_services.get_teacher_detail import get_teacher_by_id
 from app.services.teacher_services.fetch_class_list import fetch_class
 from app.services.clerk_services.add_timetable import add_timetable
@@ -76,8 +76,13 @@ async def update_teacher(
 
 
 @router.get("/teacher")
-async def get_all_teachers_route(request: Request):
-    return await get_all_teachers(request)
+async def get_all_teachers_route(
+    request: Request,
+    page: int = 1,
+    limit: int = 10,
+    search: str | None = None,
+    ):
+    return await get_all_teachers(request,page,limit,search)
 
 
 @router.get("/teacher/{teacher_id}")
@@ -153,14 +158,17 @@ async def update_clerk_route(
 @router.get("/students")
 async def get_students_route(
     request: Request,
-    batch_year: int,
-    program: str,
-    semester: int,
+    batch_year: int | None = None,
+    program: str | None = None,
+    semester: int | None = None,
     mode: Literal["student_listing", "attendance"] = "student_listing",
     page: int = 1,
     limit: int = 10,
+    search: str | None = None,
 ):
-    return await fetch_class(request, batch_year, program, semester,mode,page,limit)
+    return await fetch_class(
+        request, batch_year, program, semester, mode, page, limit, search
+    )
 
 
 
