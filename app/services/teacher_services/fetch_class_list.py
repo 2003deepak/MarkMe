@@ -27,7 +27,9 @@ async def fetch_class(
     batch_year: int,
     program: str,
     semester: int,
-    mode: Literal["student_listing", "attendance"] = "student_listing"
+    mode: Literal["student_listing", "attendance"] = "student_listing",
+    page: int = 1,
+    limit: int = 10,
 ):
     user_role = request.state.user.get("role")
     if user_role not in {"teacher", "clerk"}:
@@ -39,16 +41,22 @@ async def fetch_class(
     department = request.state.user.get("department")
     program = program.upper().strip()
 
-    # Cache key includes mode to avoid conflicts
-    cache_key = f"class_students:{program}:{department}:{semester}:{batch_year}:{mode}"
+    # Cache key now includes page + limit
+    cache_key = (
+        f"class_students:{program}:{department}:{semester}:{batch_year}:"
+        f"{mode}:page={page}:limit={limit}"
+    )
 
     try:
         # Cache HIT
         cached = await redis_client.get(cache_key)
         if cached:
-            return JSONResponse(status_code=status.HTTP_200_OK, content=json.loads(cached))
+            return JSONResponse(
+                status_code=status.HTTP_200_OK, 
+                content=json.loads(cached)
+            )
 
-        # Query based on mode
+        # Query
         query = {
             "program": program,
             "department": department,
@@ -56,41 +64,57 @@ async def fetch_class(
             "batch_year": batch_year,
         }
 
+        # Add condition for attendance mode
+        projection_model = StudentShortView
         if mode == "attendance":
             query["is_verified"] = True
             projection_model = StudentBasicView
-        else:
-            projection_model = StudentShortView
 
-        students_raw = await Student.find(query).project(projection_model).to_list()
+        # ---- Pagination ----
+        skip = (page - 1) * limit
 
-        print(f"Found {len(students_raw)} students → caching as {cache_key}")
+        # Count total matching docs (without pagination)
+        total = await Student.find(query).count()
 
-       
+        # Fetch paginated results
+        students_raw = (
+            await Student.find(query)
+            .project(projection_model)
+            .skip(skip)
+            .limit(limit)
+            .to_list()
+        )
+
         students_data = [
             json.loads(student.model_dump_json(by_alias=True, exclude_unset=True))
             for student in students_raw
         ]
+
+        total_pages = (total + limit - 1) // limit
 
         response_data = {
             "success": True,
             "message": "Class fetched successfully",
             "data": students_data,
             "count": len(students_data),
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
             "mode": mode,
-            "cached": False
+            "cached": False,
         }
 
-        # THIS IS THE KEY: Use our custom encoder
+        # Serialize & cache
         serialized_response = json.dumps(response_data, cls=JSONEncoder)
-
-        # Cache for 1 hour
         await redis_client.setex(cache_key, 3600, serialized_response)
 
-        # Mark as cached for next time (optional)
-        response_data["cached"] = False
-
-        return JSONResponse(status_code=status.HTTP_200_OK, content=response_data)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=response_data
+        )
 
     except Exception as e:
         print(f"Error in fetch_class: {type(e).__name__}: {e}")
