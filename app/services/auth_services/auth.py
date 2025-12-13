@@ -76,6 +76,7 @@ async def login_user(request):
     access_token = create_access_token(
         {
             "id": str(user.id),
+            "roll_no" : user.roll_number,
             "email": user.email,
             "role": request.role,
             "program": getattr(user, "program", None),
@@ -88,10 +89,9 @@ async def login_user(request):
     refresh_token = create_refresh_token(
         {
             "id": str(user.id),
+            "roll_no" : user.roll_number,
             "email": user.email,
             "role": request.role,
-            "program": getattr(user, "program", None),
-            "department": getattr(user, "department", None),
         }
     )
     

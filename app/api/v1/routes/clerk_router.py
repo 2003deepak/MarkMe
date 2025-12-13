@@ -46,8 +46,12 @@ async def create_subject_route(
 
 
 @router.get("/subject")
-async def get_subject_route(request: Request):
-    return await get_subject_detail(request)
+async def get_subject_route(
+    request: Request,
+    program: str | None = None,
+    semester: int | None = None,
+    ):
+    return await get_subject_detail(request,program,semester)
 
 
 @router.get("/subject/{subject_id}")

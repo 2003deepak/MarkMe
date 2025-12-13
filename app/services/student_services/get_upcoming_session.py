@@ -1,19 +1,24 @@
-from datetime import datetime, time
+from datetime import datetime
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.schemas.session import Session
-from app.schemas.student import Student
+from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
+from app.schemas.attendance import Attendance
 
 
 async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str, Any]:
     
-    # 1. Check if user is a student and fetch student data
-    user_role = request.state.user.get("role")
-    user_email = request.state.user.get("email")
+    print("\n===================== FETCH STUDENT SESSIONS START =====================")
+
+    # -------------------------------------------------------------------
+    # STEP 1 — Validate Student
+    # -------------------------------------------------------------------
+    user_data = request.state.user
+    user_role = user_data.get("role")
     
     if user_role != "student":
         return JSONResponse(
@@ -21,158 +26,216 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
             content={"success": False, "message": "Only students can access this endpoint"}
         )
 
-    student = await Student.find_one(Student.email == user_email)
-    if not student:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "message": "Student not found"}
-        )
-
-    # 2. Get student details (convert to same format as session)
-    student_program = student.program
-    student_semester = str(student.semester)  # Convert to string to match session
-    student_academic_year = str(student.batch_year)  # Convert to string to match session
-    student_department = student.department
-
-    print(f"Student: {student_program}, {student_semester}, {student_academic_year}, {student_department}")
-
-    # 3. Get current date and time in IST
+    # -------------------------------------------------------------------
+    # STEP 2 — Date Context
+    # -------------------------------------------------------------------
     current_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-    today = current_time.date()
-    current_weekday = current_time.strftime("%A")
-    current_time_str = current_time.strftime("%H:%M")
+    today_date = current_time.date()
+    weekday_name = current_time.strftime("%A")
 
-    print(f"Today: {today}, Weekday: {current_weekday}, Current Time: {current_time_str}")
+    day_start = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+    day_end   = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-    # 4. Query TODAY'S SESSIONS matching student's criteria
-    try:
-        session_list = await Session.find({
-            "program": student_program,
-            "semester": student_semester,
-            "academic_year": student_academic_year,
-            "department": student_department,
-            "day": current_weekday  # Only today's sessions
-        }).to_list()
 
-        print(f"Found {len(session_list)} sessions for today")
+    # STEP 3 — Base Sessions
+    student_program = user_data.get("program")
+    student_semester = str(user_data.get("semester"))
+    student_academic_year = str(user_data.get("batch_year"))
+    student_department = user_data.get("department")
 
-        # Fetch linked data for sessions
-        for session in session_list:
-            await session.fetch_link("subject")
-            await session.fetch_link("teacher")
-            print(f"Session: {session.start_time} - {session.end_time}")
+    session_list = await Session.find(
+        Session.day == weekday_name,
+        Session.program == student_program,
+        Session.semester == student_semester,
+        Session.academic_year == student_academic_year,
+        Session.department == student_department,
+        fetch_links=True
+    ).to_list()
 
-    except Exception as e:
-        print(f"Error fetching sessions: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": "Failed to fetch session records"}
-        )
+    # -------------------------------------------------------------------
+    # STEP 4 — Exception Sessions
+    # -------------------------------------------------------------------
+    exception_list = await ExceptionSession.find(
+        {"date": {"$gte": day_start, "$lte": day_end}},
+        fetch_links=True
+    ).to_list()
 
-    # 5. Get all exception sessions for today
-    session_ids = [session.id for session in session_list]
-    
-    # Convert today date to datetime for query
-    today_start = datetime.combine(today, time.min).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-    today_end = datetime.combine(today, time.max).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-    
-    exception_sessions = await ExceptionSession.find({
-        "session": {"$in": session_ids},
-        "date": {"$gte": today_start, "$lte": today_end}
-    }).to_list()
+    exception_map = {}
+    add_exceptions = []
 
-    print(f"Found {len(exception_sessions)} exception sessions")
+    for ex in exception_list:
+        if ex.action == "Add":
+            # For Add exceptions, check if the session targets this student
+            if ex.session:
+                base = ex.session
+                if (base.program == student_program and
+                    base.semester == student_semester and
+                    base.academic_year == student_academic_year and
+                    base.department == student_department):
+                    add_exceptions.append(ex)
+        else:
+            if ex.session:
+                exception_map[str(ex.session.id)] = ex
 
-    # Create dictionaries for different exception types
-    cancelled_sessions = {}
-    rescheduled_sessions = {}
+    # -------------------------------------------------------------------
+    # STEP 5 — Apply CANCEL / RESCHEDULE
+    # -------------------------------------------------------------------
+    final_sessions = []
 
-    for exception in exception_sessions:
-        if not exception.session:
-            continue
-            
-        session_id = str(exception.session.id)
-        
-        if exception.action == "Cancel":
-            cancelled_sessions[session_id] = exception
-        elif exception.action == "Rescheduled":
-            rescheduled_sessions[session_id] = exception
-
-    # 6. Process regular sessions and handle exceptions
-    upcoming_sessions = []
-    
     for session in session_list:
-        try:
-            session_id = str(session.id)
-            
-            # Skip if session is cancelled
-            if session_id in cancelled_sessions:
-                print(f"Session {session_id} is cancelled, skipping")
+        sid = str(session.id)
+
+        if sid in exception_map:
+            ex = exception_map[sid]
+
+            if ex.action == "Cancel":
                 continue
 
-            # Check if session is rescheduled
-            if session_id in rescheduled_sessions:
-                exception = rescheduled_sessions[session_id]
-                start_time_str = exception.start_time
-                end_time_str = exception.end_time
-                status = "rescheduled"
-                notes = f"Rescheduled to {start_time_str} - {end_time_str}"
-                print(f"Session {session_id} is rescheduled to {start_time_str}")
-            else:
-                start_time_str = session.start_time
-                end_time_str = session.end_time
-                status = "scheduled"
-                notes = None
+            if ex.action == "Rescheduled":
+                session.start_time = ex.start_time
+                session.end_time = ex.end_time
 
-            # Create timezone-aware datetime objects for session timing
-            start_time = datetime.strptime(f"{today} {start_time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        final_sessions.append(session)
+
+    # -------------------------------------------------------------------
+    # STEP 6 — ADD (Virtual Sessions)
+    # -------------------------------------------------------------------
+    for ex in add_exceptions:
+        base = ex.session
+
+        new_session = {
+            "_is_added": True,
+            "id": str(ex.id),                        # EXCEPTION SESSION ID
+            "start_time": ex.start_time,
+            "end_time": ex.end_time,
+            "subject": base.subject,
+            "teacher": base.teacher,
+            "program": base.program,
+            "department": base.department,
+            "semester": base.semester,
+            "academic_year": base.academic_year,
+            "day": weekday_name
+        }
+
+        final_sessions.append(new_session)
+
+    # -------------------------------------------------------------------
+    # STEP 7 — Fetch Attendance
+    # -------------------------------------------------------------------
+    # We fetch attendance for this student only
+    attendance_list = await Attendance.find(
+        {"date": {"$gte": day_start, "$lte": day_end}},
+        fetch_links=True
+    ).to_list()
+    
+    
+    attendance_by_id = {}
+    for a in attendance_list:
+        if a.session:
+            attendance_by_id[str(a.session.id)] = a
+        elif a.exception_session:
+            attendance_by_id[str(a.exception_session.id)] = a
+
+    # -------------------------------------------------------------------
+    # STEP 8 — Build response objects
+    # -------------------------------------------------------------------
+    upcoming, current, past = [], [], []
+
+    for session in final_sessions:
+
+        if isinstance(session, dict):
+            session_id      = session["id"]
+            start_time_str  = session["start_time"]
+            end_time_str    = session["end_time"]
+            subject         = session["subject"]
+            teacher_obj     = session["teacher"]
+            program         = session["program"]
+            department      = session["department"]
+            semester        = session["semester"]
+            academic_year   = session["academic_year"]
+        else:
+            session_id      = str(session.id)
+            start_time_str  = session.start_time
+            end_time_str    = session.end_time
+            subject         = session.subject
+            teacher_obj     = session.teacher
+            program         = session.program
+            department      = session.department
+            semester        = session.semester
+            academic_year   = session.academic_year
+
+        # -------------------------------------------------------------------
+        # Attendance Logic
+        # -------------------------------------------------------------------
+        attendance = attendance_by_id.get(session_id)
+
+        date_str = today_date.strftime("%Y-%m-%d")
+
+        start_time = datetime.strptime(
+            f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
+        end_time = datetime.strptime(
+            f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
+        attendance_id = str(attendance.id) if attendance else None
+
+        session_data = {
+            "session_id": session_id,
+            "attendance_id": attendance_id,
+            "date": date_str,
+            "start_time": start_time_str,
+            "end_time": end_time_str,
+            "subject_name": subject.subject_name if subject else None,
+            "subject_code": subject.subject_code if subject else None,
+            "component": subject.component if subject else None,
+            "program": program,
+            "department": department,
+            "semester": semester,
+            "academic_year": academic_year,
+            "teacher_name": f"{teacher_obj.first_name} {teacher_obj.last_name}" if teacher_obj else None,
+        }
+
+        # Put into categories
+        if start_time <= current_time <= end_time:
+            current.append(session_data)
+        elif start_time > current_time:
+            # Calculate time remaining
+            diff = start_time - current_time
+            total_seconds = int(diff.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
             
-            # Check if session is upcoming (start time is after current time)
-            is_upcoming = start_time > current_time
-
-            print(f"Session {start_time_str}: upcoming={is_upcoming}, current={current_time_str}")
-
-            if is_upcoming:
-                # Calculate time until start
-                time_diff = start_time - current_time
-                minutes_until_start = int(time_diff.total_seconds() // 60)
-                hours = minutes_until_start // 60
-                minutes = minutes_until_start % 60
+            if hours > 0 and minutes > 0:
+                display = f"{hours}hr {minutes}m"
+            elif hours > 0:
+                display = f"{hours}hr"
+            else:
+                display = f"{minutes}m"
                 
-                time_display = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-                
-                session_data = {
-                    "session_id": session_id,
-                    "start_time": start_time_str,
-                    "end_time": end_time_str,
-                    "subject_name": session.subject.subject_name if session.subject else None,
-                    "component": session.subject.component if session.subject else None,
-                    "teacher_name": f"{session.teacher.first_name} {session.teacher.last_name}" if session.teacher else None,
-                    "status": status,
-                    "time_until_start_minutes": minutes_until_start,
-                    "time_until_start_display": time_display
-                }
-                upcoming_sessions.append(session_data)
-                print(f"Added upcoming session: {start_time_str} - {end_time_str}")
+            session_data["time_until_start_display"] = display
+            upcoming.append(session_data)
+        else:
+            past.append(session_data)
 
-        except Exception as e:
-            print(f"Error processing session {session.id}: {str(e)}")
-            continue
 
-    # 7. Sort by start time (earliest first)
-    upcoming_sessions.sort(key=lambda x: datetime.strptime(x['start_time'], "%H:%M"))
+    # STEP 9 — Sort
+    for arr in (upcoming, current, past):
+        arr.sort(key=lambda x: datetime.strptime(
+            f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"
+        ))
 
-    # 8. Construct final response
+    # STEP 10 — Return Response
     return JSONResponse(
         status_code=200,
         content={
             "success": True,
-            "message": "Today's upcoming sessions fetched successfully",
+            "message": "Student sessions fetched successfully",
             "data": {
-                "date": str(today),
-                "day": current_weekday,
-                "current_time": current_time_str,
-                "upcoming_sessions": upcoming_sessions
+                "upcoming": upcoming,
+                "current": current,
+                "past": past
             }
         }
     )

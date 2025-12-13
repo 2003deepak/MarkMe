@@ -22,10 +22,13 @@ class MongoJSONEncoder(json.JSONEncoder):
             return str(obj)  # Convert HttpUrl to string
         return super().default(obj)
 
-async def get_subject_detail(request : Request):
+async def get_subject_detail(
+        request : Request , 
+        program: str | None = None,
+        semester: int | None = None,
+    ):
     
-    user_email = user_email = request.state.user.get("email")
-    user_role = request.state.user.get("role")
+    user_email = request.state.user.get("email")
     user_role = request.state.user.get("role")
     
     if user_role != "clerk":
@@ -39,11 +42,10 @@ async def get_subject_detail(request : Request):
                 }
             )
     
-    clerk_program = user_email = request.state.user.get("program")
-    print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
+    print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {program})")
     
     # Simplified Redis key naming
-    cache_key = f"subjects:{clerk_program}"
+    cache_key = f"subjects:{program}:{semester}"
     cached_subject = await redis_client.get(cache_key)
 
     if cached_subject:
@@ -64,12 +66,23 @@ async def get_subject_detail(request : Request):
         
 
     print("ℹ️ No cached data found — fetching from DB...")
-
-    # Fetch subjects by department and resolve teacher_assigned references
-    subjects = await Subject.find(
-        Subject.program == clerk_program,
-        fetch_links=True  # Fetch linked teacher data
-    ).project(SubjectShortView).to_list() 
+    
+    if program and semester : 
+            # Fetch subjects by department and resolve teacher_assigned references
+        subjects = await Subject.find(
+            Subject.program == program,
+            Subject.semester == semester,
+            Subject.department == request.state.user.get("department"),
+            fetch_links=True  
+        ).project(SubjectShortView).to_list() 
+        
+    else : 
+    
+        # Fetch subjects by department and resolve teacher_assigned references
+        subjects = await Subject.find(
+            Subject.department == request.state.user.get("department"),
+            fetch_links=True  
+        ).project(SubjectShortView).to_list() 
 
     if not subjects:
         print("❌ No subjects found in DB")
@@ -77,14 +90,14 @@ async def get_subject_detail(request : Request):
 
     # Wrap in dict before saving to Redis
     subject_data = {
-        "program": clerk_program,
+        "program": program,
         "subjects": [subject.dict() for subject in subjects]
     }
 
     # Save to Redis with 24hr TTL
     serialized_subject_data = json.dumps(subject_data, cls=MongoJSONEncoder)
     await redis_client.set(cache_key, serialized_subject_data, ex=86400)
-    print(f"📥 Saved subjects for {clerk_program} to Redis (TTL 24h)")
+    print(f"📥 Saved subjects for {program} to Redis (TTL 24h)")
 
     # Use jsonable_encoder for response
     return JSONResponse(

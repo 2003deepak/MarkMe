@@ -300,6 +300,7 @@ class TeacherShortViewForSubject(BaseModel):
         }
 
 class SubjectShortView(BaseModel):
+    subject_id : str | ObjectId = Field(..., alias="_id") 
     subject_code: str
     subject_name: str
     department: str
@@ -310,6 +311,7 @@ class SubjectShortView(BaseModel):
     teacher_assigned: Optional[TeacherShortViewForSubject] = None  
 
     class Config:
+        populate_by_name = True 
         arbitrary_types_allowed = True 
         json_encoders = {
             ObjectId: str 
@@ -355,6 +357,7 @@ class StudentShortView(BaseModel):
     is_verified: Optional[bool] = None
     face_embedding: Optional[list[float]] = None
     is_embeddings: bool = False
+    created_at:Optional[datetime] = None
 
     class Config:
         populate_by_name = True

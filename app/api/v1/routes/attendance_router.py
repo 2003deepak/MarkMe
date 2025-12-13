@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Path, Query, Request
 from typing import Any, Dict, Optional
 
 from fastapi.responses import JSONResponse
+from app.services.common_services.attendance_history import student_attendance_history
 from app.services.common_services.get_heatmap import get_heatmap
 from app.services.common_services.subject_wise_attendance import subject_wise_attendance
 from app.services.common_services.get_critical_students import get_critical_students
@@ -99,3 +100,30 @@ async def get_department_heatmap(
     year: Optional[int] = Query(None, description="Year (e.g., 2025)"),
 ):
     return await get_heatmap(department, program, batch_year, semester, month, year)
+
+
+
+@router.get("/history")
+async def get_department_heatmap(
+    request : Request,
+    department: Optional[str] = Query(None, description="Department name"),
+    program: Optional[str] = Query(None, description="Program name"),
+    batch_year: Optional[int] = Query(None, description="Batch year"),
+    semester: Optional[int] = Query(None, description="Semester number"),
+    month: Optional[int] = Query(None, description="Month number (1-12)"),
+    year: Optional[int] = Query(None, description="Year (e.g., 2025)"),
+):
+    user = request.state.user
+    role = user["role"]
+
+    if role == "student":
+        return await student_attendance_history(request, month , year)
+
+    # if role == "teacher":
+    #     return await teacher_attendance_history(user, date)
+
+    # if role == "clerk":
+    #     return await clerk_attendance_history(user, date)
+
+    # if role == "admin":
+    #     return await admin_attendance_history(date)

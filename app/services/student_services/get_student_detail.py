@@ -84,7 +84,8 @@ async def get_student_detail(request: Request):
         "batch_year": student.batch_year,
         "roll_number": student.roll_number,
         "profile_picture": student.profile_picture,
-        "is_embeddings": bool(student.face_embedding)
+        "is_embeddings": bool(student.face_embedding),
+        "created_at" : student.created_at
     }
 
     try:
