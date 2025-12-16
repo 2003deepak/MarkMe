@@ -1,4 +1,4 @@
-from bson import DBRef
+from bson import DBRef, ObjectId
 from fastapi import status, Request
 from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
@@ -14,11 +14,9 @@ async def get_current_and_upcoming_sessions(request: Request):
 
     print("\n===================== FETCH SESSIONS API START =====================")
 
-    # -------------------------------------------------------------------
     # STEP 1 — Validate Teacher
-    # -------------------------------------------------------------------
     user_role = request.state.user.get("role")
-    user_email = request.state.user.get("email")
+    teacher_id = request.state.user.get("id")
 
     if user_role != "teacher":
         return JSONResponse(
@@ -26,36 +24,29 @@ async def get_current_and_upcoming_sessions(request: Request):
             content={"success": False, "message": "Only teachers can access this endpoint"}
         )
 
-    teacher = await Teacher.find_one(Teacher.email == user_email)
-    if not teacher:
+    if not teacher_id:
         return JSONResponse(
-            status_code=404,
-            content={"success": False, "message": "Teacher not found"}
+            status_code=403,
+            content={"success": False, "message": "Teacher ID not found in request"}
         )
 
-    # -------------------------------------------------------------------
     # STEP 2 — Date Context
-    # -------------------------------------------------------------------
     current_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     today_date = current_time.date()
     weekday_name = current_time.strftime("%A")
-    # weekday_name = "Friday"
 
     day_start = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
     day_end   = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-    # -------------------------------------------------------------------
+
     # STEP 3 — Base Sessions (LINK SAFE FILTER)
-    # -------------------------------------------------------------------
     session_list = await Session.find(
         Session.day == weekday_name,
-        Session.teacher.id == teacher.id,
+        Session.teacher.id == ObjectId(teacher_id),
         fetch_links=True
     ).to_list()
 
-    # -------------------------------------------------------------------
     # STEP 4 — Exception Sessions
-    # -------------------------------------------------------------------
     exception_list = await ExceptionSession.find(
         {"date": {"$gte": day_start, "$lte": day_end}},
         fetch_links=True
@@ -70,9 +61,8 @@ async def get_current_and_upcoming_sessions(request: Request):
         else:
             exception_map[str(ex.session.id)] = ex
 
-    # -------------------------------------------------------------------
+
     # STEP 5 — Apply CANCEL / RESCHEDULE
-    # -------------------------------------------------------------------
     final_sessions = []
 
     for session in session_list:
@@ -90,9 +80,7 @@ async def get_current_and_upcoming_sessions(request: Request):
 
         final_sessions.append(session)
 
-    # -------------------------------------------------------------------
     # STEP 6 — ADD (Virtual Sessions)
-    # -------------------------------------------------------------------
     for ex in add_exceptions:
         base = ex.session
 
@@ -112,9 +100,7 @@ async def get_current_and_upcoming_sessions(request: Request):
 
         final_sessions.append(new_session)
 
-    # -------------------------------------------------------------------
     # STEP 7 — Fetch Attendance (with both session & exception_session)
-    # -------------------------------------------------------------------
     attendance_list = await Attendance.find(
         {"date": {"$gte": day_start, "$lte": day_end}},
         fetch_links=True
@@ -128,9 +114,8 @@ async def get_current_and_upcoming_sessions(request: Request):
         elif a.exception_session:
             attendance_by_id[str(a.exception_session.id)] = a
 
-    # -------------------------------------------------------------------
+
     # STEP 8 — Build response objects
-    # -------------------------------------------------------------------
     upcoming, current, past = [], [], []
 
     for session in final_sessions:
@@ -156,9 +141,7 @@ async def get_current_and_upcoming_sessions(request: Request):
             semester        = session.semester
             academic_year   = session.academic_year
 
-        # -------------------------------------------------------------------
         # NEW LOGIC — Map to attendance even if only exception_session matches
-        # -------------------------------------------------------------------
         attendance = attendance_by_id.get(session_id)
 
         date_str = today_date.strftime("%Y-%m-%d")
@@ -171,9 +154,7 @@ async def get_current_and_upcoming_sessions(request: Request):
             f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M"
         ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-        # -------------------------------------------------------------------
         # NEW FEATURE: Attendance ID if start_time < 15 minutes away
-        # -------------------------------------------------------------------
         attendance_id = None
 
         if attendance:
@@ -207,17 +188,13 @@ async def get_current_and_upcoming_sessions(request: Request):
         else:
             past.append(session_data)
 
-    # -------------------------------------------------------------------
     # STEP 9 — Sort
-    # -------------------------------------------------------------------
     for arr in (upcoming, current, past):
         arr.sort(key=lambda x: datetime.strptime(
             f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"
         ))
 
-    # -------------------------------------------------------------------
     # STEP 10 — Return Response
-    # -------------------------------------------------------------------
     return JSONResponse(
         status_code=200,
         content={

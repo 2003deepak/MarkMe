@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr,Field ,field_validator , HttpUrl , validator, ValidationInfo
 from enum import Enum
-from typing import Optional, List , Dict
+from typing import Optional, List , Dict, Union
 from typing import Optional,List, Literal
 import re
 from datetime import datetime , date , time
@@ -209,8 +209,6 @@ class CreateExceptionSession(BaseModel):
 class AttendanceStudentRequest(BaseModel):
     attendance_id: str
     attendance_student: str
-    present_students: Optional[List[str]] = None
-    absent_students: Optional[List[str]] = None
     
 
 class StudentSelectionRequest(BaseModel):
@@ -245,6 +243,19 @@ class SubjectOutputDetail(BaseModel):
     subject_code: str
     subject_name: str
     component: str
+    
+class TeacherListingView(BaseModel):
+    teacher_id: str
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: EmailStr
+    mobile_number: Optional[Union[str, int]] = None  
+    department: Optional[str] = None
+    profile_picture: Optional[HttpUrl] = None
+
+    class Config:
+        populate_by_name = True
 
 class TeacherShortView(BaseModel):
    
@@ -253,12 +264,12 @@ class TeacherShortView(BaseModel):
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
     email: EmailStr
-    mobile_number: Optional[int] = None # Ensure default is None for Optional
-    department: str
+    mobile_number: Optional[int] = None 
+    department: Optional[str] = None
     profile_picture: Optional[HttpUrl] = None
     profile_picture_id: Optional[str] = None # Make sure this is also handled
 
-    subjects_assigned: List[SubjectOutputDetail] = []
+    subjects_assigned: List[SubjectOutputDetail] = None
 
     class Config:
         populate_by_name = True
@@ -285,8 +296,22 @@ class TeacherShortViewForSubject(BaseModel):
             datetime: lambda dt: dt.isoformat(),
            
         }
+        
+class SubjectListingView(BaseModel):
+    subject_id : str | ObjectId = Field(..., alias="_id") 
+    subject_name: str
+    component: str
+    
+    class Config:
+        populate_by_name = True 
+        arbitrary_types_allowed = True 
+        json_encoders = {
+            ObjectId: str 
+        }
+        
 
 class SubjectShortView(BaseModel):
+    subject_id : str | ObjectId = Field(..., alias="_id") 
     subject_code: str
     subject_name: str
     department: str
@@ -297,9 +322,26 @@ class SubjectShortView(BaseModel):
     teacher_assigned: Optional[TeacherShortViewForSubject] = None  
 
     class Config:
+        populate_by_name = True 
         arbitrary_types_allowed = True 
         json_encoders = {
             ObjectId: str 
+        }
+        
+class StudentListingView(BaseModel):
+    student_id: str | ObjectId = Field(..., alias="_id") 
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    roll_number: Optional[int] = None
+    profile_picture: Optional[HttpUrl] = None
+    
+    class Config:
+        populate_by_name = True 
+        arbitrary_types_allowed = True
+        json_encoders = {
+            ObjectId: str,
+            HttpUrl: str 
         }
         
 
@@ -326,12 +368,12 @@ class StudentBasicView(BaseModel):
 
 
 class StudentShortView(BaseModel):
-    student_id: str | ObjectId = Field(..., alias="_id") 
+    student_id: str | ObjectId = Field(..., alias="_id")
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
-    dob: Optional[str]
-    email: EmailStr
+    dob: Optional[datetime] = None   
+    email: Optional[EmailStr] = None
     phone: Optional[str] = None
     department: Optional[str] = None
     program: Optional[str] = None
@@ -340,16 +382,19 @@ class StudentShortView(BaseModel):
     roll_number: Optional[int] = None
     profile_picture: Optional[HttpUrl] = None
     is_verified: Optional[bool] = None
-    is_embeddings : Optional[bool] = None
+    face_embedding: Optional[list[float]] = None
+    is_embeddings: bool = False
+    created_at:Optional[datetime] = None
 
     class Config:
-        populate_by_name = True 
+        populate_by_name = True
         arbitrary_types_allowed = True
         json_encoders = {
             datetime: lambda dt: dt.isoformat(),
             ObjectId: str,
-            HttpUrl: str 
+            HttpUrl: str,
         }
+
 
 class UpdateClerkRequest(BaseModel):
     first_name: Optional[str] = None

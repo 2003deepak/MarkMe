@@ -1,16 +1,14 @@
 from fastapi import APIRouter, Form, Request, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import ValidationError
+from app.services.student_services.bunk_safety_calculator import get_tomorrow_bunk_safety, get_week_plan
 from app.services.student_services.get_upcoming_session import get_todays_upcoming_sessions_for_student
 from app.services.student_services.register_student import register_student
 from app.services.student_services.get_student_detail import get_student_detail
 from app.services.student_services.update_student_profile import update_student_profile
 from app.services.student_services.verify_student import verify_student_email
-from app.schemas.student import Student
-from pydantic import ValidationError, BaseModel, EmailStr
-from typing import List, Optional, Union  
-from datetime import datetime , date
-
+from typing import List, Optional
+from datetime import datetime
 # -- Pydantic Model Import
 from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest 
 
@@ -127,8 +125,6 @@ async def update_profile(
         semester=semester_int,
         batch_year=batch_year_int,
     )
-    
-    print(update_request_data)
 
     return await update_student_profile(
         request=request,
@@ -140,3 +136,14 @@ async def update_profile(
 @router.post("/verify-email")
 async def verify_email(request: Request):
     return await verify_student_email(request)
+
+
+@router.get("/tomorrow-bunk-safety")
+async def bunk_safety(request: Request):
+    return await get_tomorrow_bunk_safety(request)
+
+@router.get("/weekly-bunk-safety")
+async def bunk_safety_weekly(request: Request):
+    return await get_week_plan(request)
+
+

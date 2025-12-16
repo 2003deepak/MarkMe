@@ -327,8 +327,7 @@ async def update_subject_session_stats(
         new_session = SubjectSessionStats(
             session_id=DBRef("attendances", attendance.id),
             subject=subject,
-            date=date.today(),
-            component_type=getattr(attendance, "component_type", "Lecture"),
+            date=attendance.date,
             present_count=present_count,
             absent_count=absent_count,
             percentage_present=percentage,

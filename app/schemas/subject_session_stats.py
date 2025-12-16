@@ -1,7 +1,7 @@
 from beanie import Document, Link, Indexed
 from pydantic import BaseModel, field_validator
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 from bson import Decimal128
 from app.schemas.subject import Subject
 from app.schemas.attendance import Attendance
@@ -9,18 +9,10 @@ from app.schemas.attendance import Attendance
 class SubjectSessionStats(Document):
     session_id: Link[Attendance]
     subject: Link[Subject]
-    date: date
-    component_type: str
+    date: Indexed(datetime)
     present_count: int
     absent_count: int
     percentage_present: float
-
-    @field_validator("component_type")
-    def validate_component_type(cls, v):
-        valid_types = ["Lecture", "Tutorial", "Lab", "Seminar"]
-        if v not in valid_types:
-            raise ValueError(f"Component type must be one of {valid_types}")
-        return v
 
     @field_validator("present_count")
     def validate_present_count(cls, v):

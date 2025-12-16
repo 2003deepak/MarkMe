@@ -140,7 +140,7 @@ async def class_based_teacher(request: Request):
         )
 
     teacher_id = user.get("id")
-    teacher_dept = user.get("department")  # <-- department from token
+    teacher_dept = user.get("department")  
 
     if not teacher_id:
         return JSONResponse(
@@ -196,6 +196,7 @@ async def class_based_teacher(request: Request):
                 },
                 "subjects": {
                     "$push": {
+                        "subject_id": {"$toString": "$_id"},  
                         "subject_name": "$subject_name",
                         "subject_code": "$subject_code",
                         "component": "$component"

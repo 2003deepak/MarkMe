@@ -17,7 +17,7 @@ async def create_clerk(request,request_model: CreateClerkRequest):
     if request.state.user.get("role") != "admin":
         
         return JSONResponse(
-            status_code=401,
+            status_code=403,
             content={
                 "success": False,
                 "message": "You don't have right to create clerk"

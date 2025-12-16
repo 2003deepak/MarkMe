@@ -137,7 +137,9 @@ async def process_session(message: aio_pika.IncomingMessage):
 
             # Store attendance
             attendance_data = dict(
-                date=datetime.strptime(date, "%Y-%m-%d"),
+                date=datetime.strptime(date, "%Y-%m-%d").replace(
+                    tzinfo=ZoneInfo("Asia/Kolkata")
+                ),
                 day=payload.get("day"),
                 subject=subject_id_obj,
                 program=payload.get("program"),

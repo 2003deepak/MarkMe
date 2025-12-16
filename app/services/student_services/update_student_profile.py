@@ -78,7 +78,6 @@ async def update_student_profile(
         image_paths = []
         # Handle images for face embedding
         
-        print("I have recieved images as = " , images)
         if images:
             for image in images:
                 if not image.content_type.startswith("image/"):
@@ -172,7 +171,6 @@ async def update_student_profile(
 
         # Only update if there's something to update
         if update_data:
-            print(f"Update data prepared: {update_data}")
             await student.update({"$set": update_data})
             print("Student document updated successfully.")
 
@@ -180,25 +178,25 @@ async def update_student_profile(
             cache_key_student = f"student:{student_email}"
             await redis_client.delete(cache_key_student)
 
-            # Send verification email if email was changed
-            if email_changed:
-                print(f"Email changed to {request_data.email}. Sending verification email.")
-                token = create_verification_token(request_data.email)
-                verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
-                await send_to_queue("email_queue", {
-                    "type": "send_email",
-                    "data": {
-                        "to": request_data.email,
-                        "subject": "Verify your new email - MarkMe",
-                        "body": (
-                            f"Hello {request_data.first_name or student.first_name},\n\n"
-                            f"You've updated your email on MarkMe. Please verify your new email by clicking the link below:\n\n"
-                            f"{verification_link}\n\n"
-                            "This link will expire in 30 minutes.\n\n"
-                            "If you didn't update your email, please contact support."
-                        )
-                    }
-                }, priority=5)
+            # # Send verification email if email was changed
+            # if email_changed:
+            #     print(f"Email changed to {request_data.email}. Sending verification email.")
+            #     token = create_verification_token(request_data.email)
+            #     verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
+            #     await send_to_queue("email_queue", {
+            #         "type": "send_email",
+            #         "data": {
+            #             "to": request_data.email,
+            #             "subject": "Verify your new email - MarkMe",
+            #             "body": (
+            #                 f"Hello {request_data.first_name or student.first_name},\n\n"
+            #                 f"You've updated your email on MarkMe. Please verify your new email by clicking the link below:\n\n"
+            #                 f"{verification_link}\n\n"
+            #                 "This link will expire in 30 minutes.\n\n"
+            #                 "If you didn't update your email, please contact support."
+            #             )
+            #         }
+            #     }, priority=5)
 
         else:
             print("No fields to update for student.")
