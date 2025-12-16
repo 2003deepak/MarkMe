@@ -9,7 +9,6 @@ from app.schemas.student import Student
 from app.schemas.clerk import Clerk
 from app.schemas.teacher import Teacher
 from app.utils.security import verify_password, create_access_token, get_password_hash , create_refresh_token , decode_token
-from app.core.database import get_db
 import random
 from app.utils.publisher import send_to_queue
 from fastapi.responses import JSONResponse
@@ -20,18 +19,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def login_user(request):
-    # Admin backdoor
+
+    # ---------------- ADMIN BACKDOOR ----------------
     ADMIN_EMAIL = "admin@gmail.com"
     ADMIN_PASSWORD = "123456"
     ADMIN_ROLE = "admin"
-    
+
     if (
         request.email == ADMIN_EMAIL and
         request.password == ADMIN_PASSWORD and
         request.role == ADMIN_ROLE
     ):
-        access_token = create_access_token({"email": ADMIN_EMAIL, "role": ADMIN_ROLE})
-        refresh_token = create_refresh_token({"email": ADMIN_EMAIL, "role": ADMIN_ROLE})
+        access_token = create_access_token({
+            "email": ADMIN_EMAIL,
+            "role": ADMIN_ROLE
+        })
+        refresh_token = create_refresh_token({
+            "email": ADMIN_EMAIL,
+            "role": ADMIN_ROLE
+        })
 
         return JSONResponse(
             status_code=200,
@@ -42,80 +48,78 @@ async def login_user(request):
                     "access_token": access_token,
                     "refresh_token": refresh_token,
                     "token_type": "bearer"
-                },
-            },
+                }
+            }
         )
 
-    # Load user
+    # ---------------- LOAD USER ----------------
     user = await get_user_by_email_role(request.email, request.role)
 
-    if not user:
+    if not user or not verify_password(request.password, user.password):
         return JSONResponse(
             status_code=404,
-            content={"success": False, "message": "Invalid credentials"},
+            content={"success": False, "message": "Invalid credentials"}
         )
 
-    # Password verify
-    if not verify_password(request.password, user.password):
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "message": "Invalid credentials"},
-        )
-
-    # Student email verification
     if request.role == "student" and not user.is_verified:
         return JSONResponse(
-            status_code=404,
-            content={
-                "success": False,
-                "message": "Email not verified. Please verify to log in.",
-            },
+            status_code=403,
+            content={"success": False, "message": "Email not verified"}
         )
 
-    # Tokens
-    access_token = create_access_token(
-        {
+    # ---------------- ROLE BASED PAYLOAD ----------------
+    if request.role == "student":
+        access_payload = {
             "id": str(user.id),
-            "roll_no" : user.roll_number,
+            "email": user.email,
+            "role": "student",
+            "roll_number": user.roll_number,
+            "program": user.program,
+            "department": user.department,
+            "semester": user.semester,
+            "batch_year": user.batch_year
+        }
+
+    elif request.role in ["teacher", "clerk"]:
+        access_payload = {
+            "id": str(user.id),
             "email": user.email,
             "role": request.role,
-            "program": getattr(user, "program", None),
-            "department": getattr(user, "department", None),
-            "semester" : getattr(user , "semester",None),
-            "batch_year" : getattr(user , "batch_year",None)
+            "department": user.department
         }
-    )
 
-    refresh_token = create_refresh_token(
-        {
-            "id": str(user.id),
-            "roll_no" : user.roll_number,
-            "email": user.email,
-            "role": request.role,
-        }
-    )
-    
+    else:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Invalid role"}
+        )
 
-    # ---------- FCM TOKEN REGISTRATION ----------
+    access_token = create_access_token(access_payload)
+
+    # Refresh token → minimal but sufficient
+    refresh_token = create_refresh_token({
+        "id": str(user.id),
+        "email": user.email,
+        "role": request.role
+    })
+
+    # ---------------- FCM TOKEN ----------------
     if request.fcm_token:
-
         existing = await FCMToken.find_one({"token": request.fcm_token})
 
         if existing:
-            await existing.update(
-                {
-                    "$set": {
-                        "user_id": user.id,
-                        "user_role": request.role,
-                        "device_type": request.device_type,
-                        "device_info" : request.device_info,
-                        "active": True,
-                        "last_used_at": datetime.utcnow(),
-                    }
+            await existing.update({
+                "$set": {
+                    "user_id": user.id,
+                    "user_role": request.role,
+                    "device_type": request.device_type,
+                    "device_info": request.device_info,
+                    "active": True,
+                    "last_used_at": datetime.utcnow()
                 }
-            )
+            })
         else:
-            new_fcm = FCMToken(
+            await FCMToken(
                 user_id=user.id,
                 user_role=request.role,
                 token=request.fcm_token,
@@ -123,9 +127,8 @@ async def login_user(request):
                 device_info=request.device_info,
                 active=True,
                 created_at=datetime.utcnow(),
-                last_used_at=datetime.utcnow(),
-            )
-            await new_fcm.insert()
+                last_used_at=datetime.utcnow()
+            ).insert()
 
     return JSONResponse(
         status_code=200,
@@ -135,10 +138,11 @@ async def login_user(request):
             "data": {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
-                "token_type": "bearer",
-            },
-        },
+                "token_type": "bearer"
+            }
+        }
     )
+
   
 async def logout_user(request,request_model):
 
@@ -177,35 +181,70 @@ async def logout_user(request,request_model):
   
 
 async def refresh_access_token(request):
-    
-    refresh_token = request.headers.get("x-internal-token")
-    token = refresh_token.split(" ")[1]
 
+    auth_header = request.headers.get("x-internal-token")
+    if not auth_header:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Refresh token missing"}
+        )
+
+    token = auth_header.split(" ")[1]
     payload = decode_token(token)
-    
-    
+
     if not payload:
         return JSONResponse(
             status_code=401,
-            content={
-                "success": False,
-                "message": "Invalid refresh token"
-            }
+            content={"success": False, "message": "Invalid refresh token"}
         )
-    
-    if payload.get("role") in ['teacher','student','clerk']:
-        new_access_token = create_access_token({
-            "id" : payload.get("id"),
-            "email": payload.get("email"),
-            "role": payload.get("role"),
-            "program": payload.get('program'),
-            "department": payload.get('department')
-        })
+
+    role = payload.get("role")
+    user_id = payload.get("id")
+
+    role_model_map = {
+        "student": Student,
+        "teacher": Teacher,
+        "clerk": Clerk
+    }
+
+    model = role_model_map.get(role)
+
+    if not model:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid role in token"}
+        )
+
+    # 🔥 FETCH USER AGAIN FROM DB
+    user = await model.find_one(model.id == ObjectId(user_id))
+
+    if not user:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "User no longer exists"}
+        )
+
+    # 🔥 REBUILD ACCESS TOKEN (ROLE AWARE)
+    if role == "student":
+        access_payload = {
+            "id": str(user.id),
+            "email": user.email,
+            "role": "student",
+            "roll_number": user.roll_number,
+            "program": user.program,
+            "department": user.department,
+            "semester": user.semester,
+            "batch_year": user.batch_year
+        }
     else:
-        new_access_token = create_access_token({
-            "email": payload.get("email"),
-            "role": payload.get("role")
-        })
+        access_payload = {
+            "id": str(user.id),
+            "email": user.email,
+            "role": role,
+            "department": user.department
+        }
+
+    new_access_token = create_access_token(access_payload)
 
     return JSONResponse(
         status_code=200,
@@ -474,7 +513,7 @@ async def change_current_password(
     # Check if current password matches
     if not verify_password(current_password, user.password):
         return JSONResponse(
-            status_code=401,
+            status_code=404,
             content={
                 "success": False,
                 "message": "Incorrect current password"

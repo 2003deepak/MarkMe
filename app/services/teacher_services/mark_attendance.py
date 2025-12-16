@@ -1,9 +1,10 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from app.models.allModel import AttendanceStudentRequest, NotificationRequest
+from app.models.allModel import AttendanceStudentRequest, NotificationRequest, StudentListingView
 from app.schemas.attendance import Attendance
 from datetime import datetime
 
+from app.schemas.student import Student
 from app.services.common_services.notify_users import notify_users
 
 async def mark_student_attendance(request: Request, attendance_request: AttendanceStudentRequest):
@@ -117,6 +118,49 @@ async def mark_student_attendance(request: Request, attendance_request: Attendan
             status_code=400,
             content={"success": False, "message": "Attendance must be a binary string of 0 and 1"}
         )
+        
+    # Fetching fcm token of present and absent student based on bit string 
+    program = session.program 
+    batch_year = session.academic_year
+    department = session.department 
+    semester = session.semester
+    
+    print(program , batch_year , department , semester)
+    
+    
+    students = await Student.find_many(
+            Student.program == program,
+            Student.semester == int(semester),
+            Student.department == department,
+            Student.batch_year == int(batch_year)
+        ).project(StudentListingView).sort("roll_no").to_list()
+    
+    print(len(students))
+    
+    # Safety check
+    if len(attendance_request.attendance_student) != len(students):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "Attendance string length does not match number of students"
+            }
+        )
+
+    present_students = []
+    absent_students = []
+
+    for idx, bit in enumerate(attendance_request.attendance_student):
+        student = students[idx]
+        student_id = str(student.student_id)
+
+        if bit == "1":
+            present_students.append(student_id)
+        else:
+            absent_students.append(student_id)
+    
+    
+
 
   
     # Save attendance
@@ -128,7 +172,7 @@ async def mark_student_attendance(request: Request, attendance_request: Attendan
         await notify_users(
             NotificationRequest(
                 user="student",
-                target_ids=attendance_request.present_students,
+                target_ids=present_students,
                 title="Attendance Marked",
                 message=f"Your attendance has been marked present for session on {current_date}.",
                 data=None
@@ -140,7 +184,7 @@ async def mark_student_attendance(request: Request, attendance_request: Attendan
         await notify_users(
             NotificationRequest(
             user="student",
-            target_ids=attendance_request.absent_students,
+            target_ids=absent_students,
             title="Lecture Missed",
             message=f"Your attendance has been marked absent for session on {current_date}. If you feel this is an error, please contact your teacher."
             )

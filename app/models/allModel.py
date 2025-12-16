@@ -209,8 +209,6 @@ class CreateExceptionSession(BaseModel):
 class AttendanceStudentRequest(BaseModel):
     attendance_id: str
     attendance_student: str
-    present_students: Optional[List[str]] = None
-    absent_students: Optional[List[str]] = None
     
 
 class StudentSelectionRequest(BaseModel):
@@ -298,6 +296,19 @@ class TeacherShortViewForSubject(BaseModel):
             datetime: lambda dt: dt.isoformat(),
            
         }
+        
+class SubjectListingView(BaseModel):
+    subject_id : str | ObjectId = Field(..., alias="_id") 
+    subject_name: str
+    component: str
+    
+    class Config:
+        populate_by_name = True 
+        arbitrary_types_allowed = True 
+        json_encoders = {
+            ObjectId: str 
+        }
+        
 
 class SubjectShortView(BaseModel):
     subject_id : str | ObjectId = Field(..., alias="_id") 
@@ -315,6 +326,22 @@ class SubjectShortView(BaseModel):
         arbitrary_types_allowed = True 
         json_encoders = {
             ObjectId: str 
+        }
+        
+class StudentListingView(BaseModel):
+    student_id: str | ObjectId = Field(..., alias="_id") 
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    roll_number: Optional[int] = None
+    profile_picture: Optional[HttpUrl] = None
+    
+    class Config:
+        populate_by_name = True 
+        arbitrary_types_allowed = True
+        json_encoders = {
+            ObjectId: str,
+            HttpUrl: str 
         }
         
 
@@ -345,7 +372,7 @@ class StudentShortView(BaseModel):
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
-    dob: Optional[str] = None
+    dob: Optional[datetime] = None   
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     department: Optional[str] = None

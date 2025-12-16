@@ -1,113 +1,115 @@
-from fastapi import HTTPException, Request
+from typing import Literal, Optional
+from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import HttpUrl
-from app.core.redis import redis_client
-import json
-from app.core.database import get_db
-from app.schemas.clerk import Clerk
-from app.schemas.subject import Subject
 from bson import ObjectId
 from datetime import datetime
-from fastapi.encoders import jsonable_encoder
-from app.models.allModel import SubjectShortView
+import json
 
-# JSON encoder to handle ObjectId and datetime
+from app.core.redis import redis_client
+from app.schemas.subject import Subject
+from app.models.allModel import SubjectListingView, SubjectShortView
+
+
+# Custom JSON encoder for Mongo-specific types
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):
             return str(obj)
         if isinstance(obj, datetime):
             return obj.isoformat()
-        if isinstance(obj, HttpUrl):
-            return str(obj)  # Convert HttpUrl to string
         return super().default(obj)
 
+
+
 async def get_subject_detail(
-        request : Request , 
-        program: str | None = None,
-        semester: int | None = None,
-    ):
-    
-    user_email = request.state.user.get("email")
-    user_role = request.state.user.get("role")
-    
-    if user_role != "clerk":
-        print("❌ Access denied: Not a clerk")
-        
+    request: Request,
+    program: Optional[str] = None,
+    semester: Optional[int] = None,
+    mode: Literal["subject_listing", "subject_teacher_listing"] = "subject_teacher_listing",
+):
+    user = request.state.user
+    user_role = user.get("role")
+    department = user.get("department")
+
+    # Role validation
+    if user_role not in {"clerk", "student"}:
         return JSONResponse(
-                status_code=403,
-                content={
-                    "success": False,
-                    "message": "Only Clerk can access this route"
-                }
-            )
-    
-    print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {program})")
-    
-    # Simplified Redis key naming
-    cache_key = f"subjects:{program}:{semester}"
-    cached_subject = await redis_client.get(cache_key)
+            status_code=403,
+            content={
+                "success": False,
+                "message": "You are not authorized to access subjects"
+            }
+        )
 
-    if cached_subject:
-        print(f"✅ Found data in Redis cache: {cache_key}")
-        subject_data = json.loads(cached_subject)
-        if "subjects" in subject_data:
-            
-            print(f"📦 Returning cached subjects for {cache_key}")
-            return JSONResponse(
-                    status_code=200,
-                    content={
-                        "success": True,
-                        "message" : "Subject Details fetched successfully",
-                        "data": subject_data
-                    }
-                )
-        
-        
+    # Cache key (mode-aware ❗)
+    cache_key = f"subjects:{department}:{program}:{semester}:{mode}"
+    cached = await redis_client.get(cache_key)
 
-    print("ℹ️ No cached data found — fetching from DB...")
-    
-    if program and semester : 
-            # Fetch subjects by department and resolve teacher_assigned references
-        subjects = await Subject.find(
-            Subject.program == program,
-            Subject.semester == semester,
-            Subject.department == request.state.user.get("department"),
-            fetch_links=True  
-        ).project(SubjectShortView).to_list() 
-        
-    else : 
-    
-        # Fetch subjects by department and resolve teacher_assigned references
-        subjects = await Subject.find(
-            Subject.department == request.state.user.get("department"),
-            fetch_links=True  
-        ).project(SubjectShortView).to_list() 
+    if cached:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Subject details fetched successfully",
+                "data": json.loads(cached)
+            }
+        )
+
+    # Build query dynamically
+    query = {Subject.department: department}
+
+    if program:
+        query[Subject.program] = program
+    if semester:
+        query[Subject.semester] = semester
+
+    projection = (
+        SubjectListingView
+        if mode == "subject_listing"
+        else SubjectShortView
+    )
+
+    # Fetch from DB
+    subjects = await Subject.find(
+        *[k == v for k, v in query.items()],
+        fetch_links=True
+    ).project(projection).to_list()
 
     if not subjects:
-        print("❌ No subjects found in DB")
-        return {"status": "success", "data": "No subjects found"}
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "No subjects found",
+                "data" : []
+            }
+        )
 
-    # Wrap in dict before saving to Redis
-    subject_data = {
-        "program": program,
-        "subjects": [subject.dict() for subject in subjects]
-    }
+    # Prepare response data
+    response_data =  [s.dict() for s in subjects]
 
-    # Save to Redis with 24hr TTL
-    serialized_subject_data = json.dumps(subject_data, cls=MongoJSONEncoder)
-    await redis_client.set(cache_key, serialized_subject_data, ex=86400)
-    print(f"📥 Saved subjects for {program} to Redis (TTL 24h)")
+    # Cache result (24h)
+    await redis_client.set(
+        cache_key,
+        json.dumps(response_data, cls=MongoJSONEncoder),
+        ex=86400
+    )
 
-    # Use jsonable_encoder for response
     return JSONResponse(
-                    status_code=200,
-                    content={
-                        "success": True,
-                        "message" : "Subject Details fetched successfully",
-                        "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})
-                    }
-                )
+        status_code=200,
+        content={
+            "success": True,
+            "message": "Subject details fetched successfully",
+            "data": jsonable_encoder(
+                response_data,
+                custom_encoder={
+                    ObjectId: str,
+                    datetime: lambda x: x.isoformat()
+                }
+            )
+        }
+    )
 
 
 
@@ -148,6 +150,7 @@ async def get_subject_by_id(request : Request , subject_id: str):
                 )
 
     print("ℹ️ No cached data found — fetching from DB...")
+    
 
     # Query all subjects by subject_code and program, and fetch linked teacher data
     subjects = await Subject.find(

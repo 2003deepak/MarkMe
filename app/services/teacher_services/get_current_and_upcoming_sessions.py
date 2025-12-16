@@ -26,7 +26,7 @@ async def get_current_and_upcoming_sessions(request: Request):
 
     if not teacher_id:
         return JSONResponse(
-            status_code=401,
+            status_code=403,
             content={"success": False, "message": "Teacher ID not found in request"}
         )
 

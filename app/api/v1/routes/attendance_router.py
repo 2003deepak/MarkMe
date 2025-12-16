@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Path, Query, Request
 from typing import Any, Dict, Optional
 
 from fastapi.responses import JSONResponse
-from app.services.common_services.attendance_history import student_attendance_history
+from app.services.common_services.attendance_history import clerk_attendance_history, student_attendance_history, teacher_attendance_history
 from app.services.common_services.get_heatmap import get_heatmap
 from app.services.common_services.subject_wise_attendance import subject_wise_attendance
 from app.services.common_services.get_critical_students import get_critical_students
@@ -11,6 +11,7 @@ from app.services.common_services.get_teacher_avg_attendance import get_teacher_
 from app.services.common_services.get_attendance_summary_department import get_attendance_summary_department
 from app.services.common_services.get_student_attendance_summary import get_student_attendance_summary
 from app.services.common_services.get_student_subject_wise import get_student_subject_wise
+from app.utils.parse_data import parse_comma_separated_list
 
 
 router = APIRouter()
@@ -105,25 +106,52 @@ async def get_department_heatmap(
 
 @router.get("/history")
 async def get_department_heatmap(
-    request : Request,
-    department: Optional[str] = Query(None, description="Department name"),
-    program: Optional[str] = Query(None, description="Program name"),
-    batch_year: Optional[int] = Query(None, description="Batch year"),
-    semester: Optional[int] = Query(None, description="Semester number"),
+    request: Request,
+    department: Optional[str] = Query(None, description="Department name (comma-separated)"),
+    program: Optional[str] = Query(None, description="Program name (comma-separated)"),
+    batch_year: Optional[str] = Query(None, description="Batch year (comma-separated)"),
+    semester: Optional[str] = Query(None, description="Semester numbers (comma-separated)"),
+    subject: Optional[str] = Query(None, description="Subject IDs (comma-separated)"),
     month: Optional[int] = Query(None, description="Month number (1-12)"),
     year: Optional[int] = Query(None, description="Year (e.g., 2025)"),
 ):
     user = request.state.user
     role = user["role"]
+    
+    # Parse comma-separated strings into lists
+    subject_list = parse_comma_separated_list(subject)
+    program_list = parse_comma_separated_list(program)
+    department_list = parse_comma_separated_list(department)
+    
+    # Parse batch_year and semester as integers
+    batch_year_list = None
+    semester_list = None
+    
+    if batch_year:
+        try:
+            batch_year_list = [int(year.strip()) for year in batch_year.split(",") if year.strip()]
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid batch_year format"}
+            )
+    
+    if semester:
+        try:
+            semester_list = [int(sem.strip()) for sem in semester.split(",") if sem.strip()]
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "Invalid semester format"}
+            )
 
     if role == "student":
-        return await student_attendance_history(request, month , year)
+        return await student_attendance_history(request, month, year, subject_list)
 
-    # if role == "teacher":
-    #     return await teacher_attendance_history(user, date)
+    if role == "teacher":
+        return await teacher_attendance_history(request, month, year, subject_list)
 
-    # if role == "clerk":
-    #     return await clerk_attendance_history(user, date)
-
-    # if role == "admin":
-    #     return await admin_attendance_history(date)
+    if role == "clerk":
+        return await clerk_attendance_history(
+            request, month, year, subject_list, program_list, batch_year_list
+        )

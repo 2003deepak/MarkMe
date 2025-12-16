@@ -269,6 +269,12 @@ async def get_tomorrow_bunk_safety(request: Request):
     )
 
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from bson import ObjectId
+
 async def get_week_plan(request: Request):
 
     print("\n\n===================== WEEKLY BUNK SAFETY START =====================")
@@ -278,10 +284,10 @@ async def get_week_plan(request: Request):
     # -------------------------------------------------------------------
     user = request.state.user
     if user.get("role") != "student":
-        return JSONResponse(status_code=403, content={
-            "success": False,
-            "message": "Only students can access this endpoint"
-        })
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "message": "Only students can access this endpoint"}
+        )
 
     student_id = str(user.get("id"))
     prog = user.get("program")
@@ -293,7 +299,7 @@ async def get_week_plan(request: Request):
     today = datetime.now(tz=tz).date()
 
     # -------------------------------------------------------------------
-    # STEP 2 — LOAD ATTENDANCE SUMMARY
+    # STEP 2 — LOAD ATTENDANCE SUMMARY (OPTIONAL)
     # -------------------------------------------------------------------
     attendance_docs = await StudentAttendanceSummary.find(
         StudentAttendanceSummary.student.id == ObjectId(student_id),
@@ -308,26 +314,22 @@ async def get_week_plan(request: Request):
         subj = doc.subject
         sid = str(subj.id)
 
-        attended = doc.attended
-        conducted = doc.total_classes
-        pct = doc.percentage
-
         subject_map[sid] = {
             "subject_name": subj.subject_name,
             "subject_code": subj.subject_code,
             "component": subj.component,
-            "attended": attended,
-            "conducted": conducted,
-            "attendance_now": pct,
+            "attended": doc.attended,
+            "conducted": doc.total_classes,
+            "attendance_now": doc.percentage,
         }
 
-        total_attended += attended
-        total_conducted += conducted
+        total_attended += doc.attended
+        total_conducted += doc.total_classes
 
-    print(f"📊 Loaded attendance: {len(subject_map)} records")
+    print(f"📊 Attendance summary loaded: {len(subject_map)} subjects")
 
     # -------------------------------------------------------------------
-    # STEP 3 — LOAD BASE WEEKLY SESSIONS
+    # STEP 3 — LOAD WEEKLY BASE SESSIONS
     # -------------------------------------------------------------------
     weekly_sessions = await Session.find(
         Session.program == prog,
@@ -341,27 +343,19 @@ async def get_week_plan(request: Request):
     for ses in weekly_sessions:
         sessions_by_day.setdefault(ses.day, []).append(ses)
 
-    print(f"📘 Loaded weekly base sessions: {len(weekly_sessions)}")
+    print(f"📘 Weekly base sessions loaded: {len(weekly_sessions)}")
 
     # -------------------------------------------------------------------
-    # STEP 4 — DETERMINE DAYS LEFT IN CURRENT WEEK
+    # STEP 4 — DETERMINE DAYS LEFT
     # -------------------------------------------------------------------
-    weekday_index = today.weekday()  # Monday=0 ... Sunday=6
-
-    # If today is Sunday → return only Sunday
-    if weekday_index == 6:
-        days_left = 0
-    else:
-        days_left = 6 - weekday_index
-
-
-    print(f"📆 Today = {today}, Weekday Index = {weekday_index}, Days Left = {days_left}")
+    weekday_index = today.weekday()  # Monday=0
+    days_left = 0 if weekday_index == 6 else 6 - weekday_index
 
     week_start = today + timedelta(days=1)
     week_end = today + timedelta(days=days_left)
 
     # -------------------------------------------------------------------
-    # STEP 5 — LOAD EXCEPTION SESSIONS FOR REMAINING DAYS
+    # STEP 5 — LOAD EXCEPTION SESSIONS
     # -------------------------------------------------------------------
     exceptions = await ExceptionSession.find(
         {
@@ -375,44 +369,37 @@ async def get_week_plan(request: Request):
 
     exceptions_by_date = {}
     for ex in exceptions:
-        date_key = ex.date.date()
-        exceptions_by_date.setdefault(date_key, []).append(ex)
-
-    print(f"⚠️ Loaded exceptions for this week: {len(exceptions)}")
+        exceptions_by_date.setdefault(ex.date.date(), []).append(ex)
 
     # -------------------------------------------------------------------
-    # STEP 6 — LOOP THROUGH DAYS ONLY UNTIL SUNDAY
+    # STEP 6 — BUILD WEEK PLAN
     # -------------------------------------------------------------------
     weekly_plan = []
 
-    for i in range(1, days_left + 1):  # +1 because range end is exclusive
+    for i in range(1, days_left + 1):
         date = today + timedelta(days=i)
         weekday = date.strftime("%A")
-
-        print(f"\n==================== {date} ({weekday}) ====================")
 
         base_sessions = sessions_by_day.get(weekday, [])
         todays_ex = exceptions_by_date.get(date, [])
 
-        cancel_resched = {}
+        cancel_or_resched = {}
         add_list = []
 
         for ex in todays_ex:
-            session_id = str(ex.session.id)
-
+            sid = str(ex.session.id)
             if ex.action == "Add":
                 add_list.append(ex)
             else:
-                cancel_resched[session_id] = ex
+                cancel_or_resched[sid] = ex
 
-        # Build final session list
         final_sessions = []
 
         for ses in base_sessions:
-            session_id = str(ses.id)
+            sid = str(ses.id)
 
-            if session_id in cancel_resched:
-                ex = cancel_resched[session_id]
+            if sid in cancel_or_resched:
+                ex = cancel_or_resched[sid]
 
                 if ex.action == "Cancel":
                     continue
@@ -423,7 +410,6 @@ async def get_week_plan(request: Request):
 
             final_sessions.append(ses)
 
-        # Add sessions
         for ex in add_list:
             final_sessions.append({
                 "_is_added": True,
@@ -432,24 +418,35 @@ async def get_week_plan(request: Request):
                 "end_time": ex.end_time
             })
 
-        todays_subjects = set()
+        # -------------------------------------------------------------------
+        # STEP 7 — COLLECT SUBJECT METADATA FROM SESSIONS (CRITICAL FIX)
+        # -------------------------------------------------------------------
+        todays_subjects = {}
+
         for ses in final_sessions:
             subject = ses["subject"] if isinstance(ses, dict) else ses.subject
-            todays_subjects.add(str(subject.id))
+            sid = str(subject.id)
 
-        # Ensure defaults
-        for sid in todays_subjects:
+            if sid not in todays_subjects:
+                todays_subjects[sid] = {
+                    "subject_name": subject.subject_name,
+                    "subject_code": subject.subject_code,
+                    "component": subject.component
+                }
+
+        # Merge attendance data (or defaults)
+        for sid, meta in todays_subjects.items():
             if sid not in subject_map:
                 subject_map[sid] = {
-                    "subject_name": None,
-                    "subject_code": None,
-                    "component": None,
+                    **meta,
                     "attended": 0,
                     "conducted": 0,
                     "attendance_now": 0.0
                 }
 
-        # Calculate
+        # -------------------------------------------------------------------
+        # STEP 8 — CALCULATE SAFETY
+        # -------------------------------------------------------------------
         day_results = []
         safe_today = True
 
@@ -474,7 +471,6 @@ async def get_week_plan(request: Request):
                 "safe": safe
             })
 
-        # Aggregate impact
         agg_now = (total_attended / total_conducted * 100) if total_conducted else 0
         total_if = total_conducted + len(final_sessions)
         agg_if = (total_attended / total_if * 100) if total_if else 0
@@ -494,9 +490,6 @@ async def get_week_plan(request: Request):
             }
         })
 
-    # -------------------------------------------------------------------
-    # SUMMARY
-    # -------------------------------------------------------------------
     summary = [
         {
             "date": d["date"],

@@ -50,8 +50,9 @@ async def get_subject_route(
     request: Request,
     program: str | None = None,
     semester: int | None = None,
+    mode: Literal["subject_listing", "subject_teacher_listing"] = "subject_teacher_listing",
     ):
-    return await get_subject_detail(request,program,semester)
+    return await get_subject_detail(request,program,semester,mode)
 
 
 @router.get("/subject/{subject_id}")
