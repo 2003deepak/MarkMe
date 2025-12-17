@@ -1,6 +1,5 @@
-# app/services/teacher_services/get_all_teachers.py
-
 from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from typing import Optional
 import json
@@ -72,7 +71,10 @@ async def get_all_teachers(
     )
 
     # Convert projection → pure dict 
-    teachers = [t.model_dump() for t in teachers_raw]   
+    teachers = [
+        t.model_dump(mode="json", by_alias=True)
+        for t in teachers_raw
+    ]
 
 
     total_pages = max(1, (total + limit - 1) // limit)
@@ -89,7 +91,8 @@ async def get_all_teachers(
     }
 
     # Optional: Cache the list
-    await redis_client.setex(cache_key, 3600, json.dumps(response_payload))
+    encoded_payload = jsonable_encoder(response_payload)
+    await redis_client.setex(cache_key, 3600, json.dumps(encoded_payload))
 
     return JSONResponse(
         status_code=200,

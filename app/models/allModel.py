@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr,Field ,field_validator , HttpUrl , validator, ValidationInfo
+from pydantic import BaseModel, ConfigDict, EmailStr,Field ,field_validator , HttpUrl , validator, ValidationInfo
 from enum import Enum
 from typing import Optional, List , Dict, Union
 from typing import Optional,List, Literal
@@ -245,17 +245,24 @@ class SubjectOutputDetail(BaseModel):
     component: str
     
 class TeacherListingView(BaseModel):
+    id: str|ObjectId = Field(..., alias="_id")
     teacher_id: str
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
     email: EmailStr
-    mobile_number: Optional[Union[str, int]] = None  
+    mobile_number: Optional[Union[str, int]] = None
     department: Optional[str] = None
     profile_picture: Optional[HttpUrl] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        json_encoders={
+            ObjectId: str,
+            HttpUrl: str,
+        }
+    )
 
 class TeacherShortView(BaseModel):
    

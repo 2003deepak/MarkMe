@@ -7,6 +7,8 @@ import uuid
 from app.models.allModel import CreateExceptionSession
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.session import Session
+from app.schemas.subject import Subject
+from app.schemas.teacher import Teacher
 from app.core.redis import redis_client
 from app.utils.publisher import send_to_queue
 
@@ -15,139 +17,118 @@ SESSION_QUEUE_NAME = "session_queue"
 
 
 async def create_session_exception(request: Request, exception_request: CreateExceptionSession):
-    # ---------------- ROLE CHECK ----------------
-    user_role = request.state.user.get("role")
-    if user_role != "teacher":
+    # ---------------- AUTH ----------------
+    if request.state.user.get("role") != "teacher":
         return JSONResponse(
             status_code=403,
-            content={"success": False, "message": "Only teachers are authorized to create session exceptions"}
+            content={"success": False, "message": "Only teachers can create exceptions"}
         )
 
+    teacher_id = request.state.user.get("id")
     action = exception_request.action
     ex_date = exception_request.date
     date_str = ex_date.strftime("%Y-%m-%d")
 
-    # ---------------- FETCH SESSION ----------------
     session_obj = None
-    if action in ["Cancel", "Rescheduled", "Add"]:
+    subject_obj = None
+
+    # ---------------- FETCH BASE ENTITIES ----------------
+    if action in ["Cancel", "Rescheduled"]:
         if not exception_request.session_id:
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "session_id is required for Cancel, Rescheduled, Add"}
-            )
+            return JSONResponse(status_code=400, content={"success": False, "message": "session_id required"})
 
-        # IMPORTANT: fetch_links=True (you requested this)
         session_obj = await Session.get(exception_request.session_id, fetch_links=True)
-
         if not session_obj:
             return JSONResponse(status_code=404, content={"success": False, "message": "Session not found"})
 
-    # ---------------- VALIDATE TIMINGS ----------------
-    if action in ["Add", "Rescheduled"]:
-        if not (exception_request.new_start_time and exception_request.new_end_time):
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "new_start_time and new_end_time required"}
-            )
+    if action == "Add":
+        if not exception_request.subject_id:
+            return JSONResponse(status_code=400, content={"success": False, "message": "subject_id required for Add"})
 
-    # ---------------- CREATE EXCEPTION DOC ----------------
+        subject_obj = await Subject.get(exception_request.subject_id)
+        teacher_obj = await Teacher.get(teacher_id)
+
+        if not subject_obj or not teacher_obj:
+            return JSONResponse(status_code=404, content={"success": False, "message": "Invalid subject/teacher"})
+
+    # ---------------- CREATE EXCEPTION ----------------
     exception_doc = ExceptionSession(
         session=session_obj,
+        subject=subject_obj if action == "Add" else None,
+        teacher=teacher_obj if action == "Add" else None,
         date=ex_date,
         action=action,
         start_time=exception_request.new_start_time if action in ["Add", "Rescheduled"] else None,
         end_time=exception_request.new_end_time if action in ["Add", "Rescheduled"] else None,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
     )
     await exception_doc.insert()
 
     # ---------------- REDIS KEY ----------------
-    redis_key = f"{REDIS_SESSION_JOB_PREFIX}{str(session_obj.id)}:{date_str}"
+    redis_key = (
+        f"{REDIS_SESSION_JOB_PREFIX}{exception_doc.id}:{date_str}"
+        if action == "Add"
+        else f"{REDIS_SESSION_JOB_PREFIX}{session_obj.id}:{date_str}"
+    )
 
-    # ---------------- ACTION: CANCEL ----------------
+    # ---------------- CANCEL ----------------
     if action == "Cancel":
         await redis_client.delete(redis_key)
 
-    # ---------------- ACTION: RESCHEDULE ----------------
+    # ---------------- RESCHEDULE ----------------
     elif action == "Rescheduled":
         await redis_client.delete(redis_key)
 
-        new_start_datetime = datetime.combine(
-            ex_date,
-            datetime.strptime(exception_request.new_start_time, "%H.%M").time()
-        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-
-        new_job_id = str(uuid.uuid4())
-        await redis_client.set(redis_key, new_job_id, ex=48 * 3600)
-
-        # subject is fully fetched → directly use session_obj.subject.id
-        subject_id = str(session_obj.subject.id)
-
-        payload = {
-            "session_id": str(session_obj.id),
-            "date": date_str,
-            "day": new_start_datetime.strftime("%A"),
-            "start_time_timestamp": new_start_datetime.timestamp(),
-            "subject": subject_id,
-            "job_id": new_job_id,
-            "is_exception": True,
-            "exception_id": str(exception_doc.id),
-        }
-
-        delay_seconds = (
-            new_start_datetime - timedelta(minutes=15) -
-            datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-        ).total_seconds()
-
-        await send_to_queue(SESSION_QUEUE_NAME, payload, delay_ms=max(0, int(delay_seconds * 1000)))
-
-    # ---------------- ACTION: ADD ----------------
-    elif action == "Add":
-
-        new_start_datetime = datetime.combine(
+        new_start = datetime.combine(
             ex_date,
             datetime.strptime(exception_request.new_start_time, "%H:%M").time()
         ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-        new_job_id = str(uuid.uuid4())
-        await redis_client.set(redis_key, new_job_id, ex=48 * 3600)
+        job_id = str(uuid.uuid4())
+        await redis_client.set(redis_key, job_id, ex=48 * 3600)
 
-        subject_id = str(session_obj.subject.id)
-
-        session_payload = {
+        payload = {
             "session_id": str(session_obj.id),
+            "subject": str(session_obj.subject.id),
             "date": date_str,
-            "day": new_start_datetime.strftime("%A"),
-            "start_time_timestamp": new_start_datetime.timestamp(),
-            "subject": subject_id,
-            "job_id": new_job_id,
+            "start_time_timestamp": new_start.timestamp(),
+            "job_id": job_id,
             "is_exception": True,
             "exception_id": str(exception_doc.id)
         }
 
-        delay_seconds = (
-            new_start_datetime - timedelta(minutes=15) -
-            datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-        ).total_seconds()
+        delay = (new_start - timedelta(minutes=15) - datetime.now(ZoneInfo("Asia/Kolkata"))).total_seconds()
+        await send_to_queue(SESSION_QUEUE_NAME, payload, delay_ms=max(0, int(delay * 1000)))
 
-        await send_to_queue(SESSION_QUEUE_NAME, session_payload, delay_ms=max(0, int(delay_seconds * 1000)))
+    # ---------------- ADD ----------------
+    elif action == "Add":
+        new_start = datetime.combine(
+            ex_date,
+            datetime.strptime(exception_request.new_start_time, "%H:%M").time()
+        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
+        job_id = str(uuid.uuid4())
+        await redis_client.set(redis_key, job_id, ex=48 * 3600)
+
+        payload = {
+            "subject": str(subject_obj.id),
+            "teacher": teacher_id,
+            "date": date_str,
+            "start_time_timestamp": new_start.timestamp(),
+            "job_id": job_id,
+            "is_exception": True,
+            "exception_id": str(exception_doc.id)
+        }
+
+        delay = (new_start - timedelta(minutes=15) - datetime.now(ZoneInfo("Asia/Kolkata"))).total_seconds()
+        await send_to_queue(SESSION_QUEUE_NAME, payload, delay_ms=max(0, int(delay * 1000)))
 
     # ---------------- RESPONSE ----------------
     return JSONResponse(
         status_code=201,
         content={
             "success": True,
-            "message": "Exception created and scheduling updated",
-            "data": {
-                "exception_id": str(exception_doc.id),
-                "action": exception_doc.action,
-                "date": date_str,
-                "session_id": str(session_obj.id) if session_obj else None,
-                "start_time": exception_doc.start_time,
-                "end_time": exception_doc.end_time,
-                "created_at": exception_doc.created_at.isoformat(),
-                "updated_at": exception_doc.updated_at.isoformat(),
-            }
+            "message": "Exception created",
+            "exception_id": str(exception_doc.id),
+            "action": action
         }
     )

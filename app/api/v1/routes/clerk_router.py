@@ -18,7 +18,7 @@ from app.services.clerk_services.create_subject import create_subject
 from app.services.clerk_services.update_clerk import update_clerk
 from app.services.clerk_services.update_teacher import update_teacher_data
 from app.services.clerk_services.get_all_teachers import get_all_teachers
-from app.services.teacher_services.get_teacher_detail import get_teacher_by_id
+from app.services.teacher_services.get_teacher_detail import get_teacher_by_id, get_teacher_subject_insights, get_teacher_subject_performance
 from app.services.teacher_services.fetch_class_list import fetch_class
 from app.services.clerk_services.add_timetable import add_timetable
 from app.services.clerk_services.get_subject_detail import get_subject_detail, get_subject_by_id
@@ -90,12 +90,29 @@ async def get_all_teachers_route(
     return await get_all_teachers(request,page,limit,search)
 
 
-@router.get("/teacher/{teacher_id}")
+@router.get("/teacher/{teacher_id}/subject-performance")
 async def get_teacher_route(
     request: Request,
     teacher_id: str = Path(..., description="Teacher ID to fetch details for")
 ):
     return await get_teacher_by_id(request, teacher_id)
+
+@router.get("/teacher/{teacher_id}/subjects/{subject_id}/performance")
+async def get_teacher_route(
+    request: Request,
+    teacher_id: str = Path(..., description="Teacher ID to fetch details for"),
+    subject_id: str = Path(..., description="Subject ID to fetch details for")
+):
+    return await get_teacher_subject_performance(request, teacher_id,subject_id)
+
+@router.get("/teacher/{teacher_id}/subjects/{subject_id}/insights")
+async def get_teacher_route(
+    request: Request,
+    teacher_id: str = Path(..., description="Teacher ID to fetch details for"),
+    subject_id: str = Path(..., description="Subject ID to fetch details for")
+):
+    return await get_teacher_subject_insights(request, teacher_id,subject_id)
+
 
 
 # ------------------- Clerk Routes -------------------
