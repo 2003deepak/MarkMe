@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 async def recognize_students(request: Request, attendance_id: str, images: List[UploadFile]):
     logger.info(f"[recognize_students] Received request for attendance_id={attendance_id}")
 
-    # -------------------------------------------------------------
+    
     # 1️⃣ Verify teacher role
-    # -------------------------------------------------------------
+    
     user_role = request.state.user.get("role")
     if user_role != "teacher":
         logger.warning(f"[recognize_students] Unauthorized role '{user_role}' attempted access.")
@@ -32,9 +32,9 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
 
     logger.info(f"[recognize_students] Role verified: teacher")
 
-    # -------------------------------------------------------------
+    
     # 2️⃣ Fetch attendance + session
-    # -------------------------------------------------------------
+    
     attendance = await Attendance.get(attendance_id, fetch_links=True)
     if not attendance:
         logger.error(f"[recognize_students] Attendance NOT FOUND for id={attendance_id}")
@@ -71,9 +71,9 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
     program = session_obj.program
     academic_year = session_obj.academic_year
 
-    # -------------------------------------------------------------
+    
     # 3️⃣ Convert uploaded images → Base64
-    # -------------------------------------------------------------
+    
     image_base64_list = []
     for idx, image in enumerate(images):
         logger.info(f"[recognize_students] Processing uploaded file: {image.filename}")
@@ -98,9 +98,9 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
 
     logger.info(f"[recognize_students] Total images received: {len(image_base64_list)}")
 
-    # -------------------------------------------------------------
+    
     # 4️⃣ Add job into RabbitMQ queue
-    # -------------------------------------------------------------
+    
     job_data = {
         "type": "recognize_faces",
         "data": {
@@ -116,9 +116,9 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
     logger.info(f"[recognize_students] Sending job to face_recog_queue for attendance_id={attendance_id}")
     await send_to_queue("face_recog_queue", job_data, priority=10)
 
-    # -------------------------------------------------------------
+    
     # 5️⃣ SSE Streaming Generator
-    # -------------------------------------------------------------
+    
     async def event_generator():
         progress_channel = f"face_progress:{attendance_id}"
         recognized_channel = f"student_recognized:{attendance_id}"
@@ -154,9 +154,9 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
                         # Convert JSON safely
                         data = json.loads(raw_data)
 
-                        # ---------------------------------------------------------
+                        
                         # ⭐ ADD SLOWDOWN WHEN A FACE IS DETECTED ⭐
-                        # ---------------------------------------------------------
+                        
                         if channel == recognized_channel:
                             logger.info(f"[event_generator] FACE DETECTED -> Delaying 2 seconds for UI testing")
                             await asyncio.sleep(1)
@@ -167,9 +167,9 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
                             })
                             continue
 
-                        # ---------------------------------------------------------
+                        
                         # Progress events
-                        # ---------------------------------------------------------
+                        
                         if data.get("status") == "complete":
                             logger.info("[event_generator] Recognition complete")
                             annotated_image = data.get("annotated_image_base64")

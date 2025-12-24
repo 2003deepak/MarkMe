@@ -23,9 +23,9 @@ async def notify_users(request: NotificationRequest):
         filter_query = {"active": True}
         user_ids: List[ObjectId] = []
 
-        # ------------------------------------------------------------------ #
+        
         # CASE 1 — target_ids (direct send to specific users)
-        # ------------------------------------------------------------------ #
+        
         if request.target_ids:
             logger.info("Target IDs provided → sending only to selected users: %d", len(request.target_ids))
 
@@ -34,9 +34,9 @@ async def notify_users(request: NotificationRequest):
             except Exception:
                 raise HTTPException(400, "Invalid target_ids: must be valid MongoDB ObjectId")
 
-        # ------------------------------------------------------------------ #
+        
         # CASE 2 — filters array (OR logic)
-        # ------------------------------------------------------------------ #
+        
         elif request.filters:
             logger.info("Using filter groups → %d filter blocks", len(request.filters))
 
@@ -75,9 +75,9 @@ async def notify_users(request: NotificationRequest):
             user_ids = [doc.id for doc in docs]
             logger.info("Filter-based query returned %d users", len(user_ids))
 
-        # ------------------------------------------------------------------ #
+        
         # CASE 3 — No filters, No target_ids → send to ALL users by role
-        # ------------------------------------------------------------------ #
+        
         else:
             logger.info("No target_ids and no filters → sending to ALL users of type: %s", request.user)
 
@@ -92,17 +92,15 @@ async def notify_users(request: NotificationRequest):
 
             user_ids = [doc.id for doc in docs]
 
-        # ------------------------------------------------------------------ #
         # Validate user count
-        # ------------------------------------------------------------------ #
         logger.info("Final user_ids count = %d", len(user_ids))
 
         if not user_ids:
             return {"success": False, "message": "No users found"}
 
-        # ------------------------------------------------------------------ #
+        
         # Fetch FCM tokens
-        # ------------------------------------------------------------------ #
+        
         filter_query["user_id"] = {"$in": user_ids}
 
         token_docs = await FCMToken.find(filter_query).to_list()
@@ -113,9 +111,9 @@ async def notify_users(request: NotificationRequest):
         if not tokens:
             return {"success": True, "message": "No active device tokens"}
 
-        # ------------------------------------------------------------------ #
+        
         # Prepare payload
-        # ------------------------------------------------------------------ #
+        
         payload = {
             "tokens": tokens,
             "title": request.title,
@@ -123,9 +121,9 @@ async def notify_users(request: NotificationRequest):
             "data": request.data or {},
         }
 
-        # ------------------------------------------------------------------ #
+        
         # Send to queue
-        # ------------------------------------------------------------------ #
+        
         logger.info("Publishing to queue...")
         await send_to_queue("notification_queue", payload, priority=5)
 

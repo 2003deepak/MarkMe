@@ -1,200 +1,163 @@
-from bson import DBRef, ObjectId
-from fastapi import status, Request
+from bson import ObjectId
+from fastapi import Request
 from fastapi.responses import JSONResponse
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
+import logging
 
-from app.schemas.teacher import Teacher
+from beanie.operators import Or
 from app.schemas.session import Session
 from app.schemas.attendance import Attendance
 from app.schemas.exception_session import ExceptionSession
+from app.schemas.swap_approval import SwapApproval
+from app.utils.parse_data import _build_swap_payload
+
+logger = logging.getLogger("session_exception")
+IST = ZoneInfo("Asia/Kolkata")
 
 
 async def get_current_and_upcoming_sessions(request: Request):
+    logger.info("===== FETCH CURRENT & UPCOMING SESSIONS START =====")
 
-    print("\n===================== FETCH SESSIONS API START =====================")
-
-    # STEP 1 — Validate Teacher
-    user_role = request.state.user.get("role")
-    teacher_id = request.state.user.get("id")
-
-    if user_role != "teacher":
+    # auth
+    user = request.state.user
+    if user.get("role") != "teacher":
         return JSONResponse(
             status_code=403,
-            content={"success": False, "message": "Only teachers can access this endpoint"}
+            content={"success": False, "message": "Only teachers can access"}
         )
 
-    if not teacher_id:
-        return JSONResponse(
-            status_code=403,
-            content={"success": False, "message": "Teacher ID not found in request"}
-        )
+    teacher_id = ObjectId(user["id"])
 
-    # STEP 2 — Date Context
-    current_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-    today_date = current_time.date()
-    weekday_name = current_time.strftime("%A")
+    # date context
+    now = datetime.now(tz=IST)
+    today = now.date()
+    weekday = now.strftime("%A")
 
-    day_start = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-    day_end   = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+    day_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=IST)
+    day_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=IST)
 
-
-    # STEP 3 — Base Sessions (LINK SAFE FILTER)
-    session_list = await Session.find(
-        Session.day == weekday_name,
-        Session.teacher.id == ObjectId(teacher_id),
+    # 1️⃣ base sessions
+    base_sessions = await Session.find(
+        Session.day == weekday,
+        Session.teacher.id == teacher_id,
         fetch_links=True
     ).to_list()
 
-    # STEP 4 — Exception Sessions
-    exception_list = await ExceptionSession.find(
-        {"date": {"$gte": day_start, "$lte": day_end}},
+    base_session_map = {str(s.id): s for s in base_sessions}
+
+    # 2️⃣ exceptions
+    exceptions = await ExceptionSession.find(
+        ExceptionSession.date >= day_start,
+        ExceptionSession.date <= day_end,
+        Or(
+            ExceptionSession.created_by.id == teacher_id,
+            ExceptionSession.swap_id.requested_to.id == teacher_id
+        ),
         fetch_links=True
     ).to_list()
 
-    exception_map = {}
-    add_exceptions = []
+    cancel_map = {}
+    reschedule_map = {}
+    target_swap_sessions = {}
 
-    for ex in exception_list:
-        if ex.action == "Add":
-            add_exceptions.append(ex)
-        else:
-            exception_map[str(ex.session.id)] = ex
+    # 3️⃣ process exceptions
+    for ex in exceptions:
+        # swap must be approved
+        if ex.swap_id and ex.swap_id.status != "APPROVED":
+            continue
 
+        sid = str(ex.session.id)
 
-    # STEP 5 — Apply CANCEL / RESCHEDULE
+        if ex.action == "Cancel":
+            cancel_map[sid] = ex
+
+        elif ex.action == "Reschedule":
+            # SOURCE and TARGET both mean RESCHEDULE now
+            reschedule_map[sid] = ex
+
+            if ex.swap_role == "TARGET":
+                target_swap_sessions[sid] = ex
+
     final_sessions = []
+    added_session_ids = set()
 
-    for session in session_list:
-        sid = str(session.id)
+    # 4️⃣ apply to base sessions
+    for sid, session in base_session_map.items():
 
-        if sid in exception_map:
-            ex = exception_map[sid]
+        if sid in cancel_map:
+            continue
 
-            if ex.action == "Cancel":
-                continue
-
-            if ex.action == "Rescheduled":
-                session.start_time = ex.start_time
-                session.end_time = ex.end_time
+        if sid in reschedule_map:
+            ex = reschedule_map[sid]
+            session.start_time = ex.start_time
+            session.end_time = ex.end_time
 
         final_sessions.append(session)
+        added_session_ids.add(sid)
 
-    # STEP 6 — ADD (Virtual Sessions)
-    for ex in add_exceptions:
-        base = ex.session
+    # 5️⃣ inject TARGET swap sessions if missing
+    for sid, ex in target_swap_sessions.items():
+        if sid not in added_session_ids:
+            injected = ex.session
+            injected.start_time = ex.start_time
+            injected.end_time = ex.end_time
+            final_sessions.append(injected)
+            added_session_ids.add(sid)
 
-        new_session = {
-            "_is_added": True,
-            "id": str(ex.id),                        # EXCEPTION SESSION ID
-            "start_time": ex.start_time,
-            "end_time": ex.end_time,
-            "subject": base.subject,
-            "teacher": base.teacher,
-            "program": base.program,
-            "department": base.department,
-            "semester": base.semester,
-            "academic_year": base.academic_year,
-            "day": weekday_name
-        }
-
-        final_sessions.append(new_session)
-
-    # STEP 7 — Fetch Attendance (with both session & exception_session)
+    # 6️⃣ attendance
     attendance_list = await Attendance.find(
-        {"date": {"$gte": day_start, "$lte": day_end}},
+        Attendance.date >= day_start,
+        Attendance.date <= day_end,
         fetch_links=True
     ).to_list()
 
-    attendance_by_id = {}
+    attendance_map = {
+        str(a.session.id): a
+        for a in attendance_list
+        if a.session
+    }
 
-    for a in attendance_list:
-        if a.session:
-            attendance_by_id[str(a.session.id)] = a
-        elif a.exception_session:
-            attendance_by_id[str(a.exception_session.id)] = a
+    upcoming = []
+    current = []
+    past = []
 
+    # 7️⃣ classify
+    for s in final_sessions:
+        start_dt = datetime.strptime(
+            f"{today} {s.start_time}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=IST)
 
-    # STEP 8 — Build response objects
-    upcoming, current, past = [], [], []
+        end_dt = datetime.strptime(
+            f"{today} {s.end_time}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=IST)
 
-    for session in final_sessions:
+        attendance = attendance_map.get(str(s.id))
+        attendance_id = str(attendance.id) if attendance else None
 
-        if isinstance(session, dict):
-            session_id      = session["id"]
-            start_time_str  = session["start_time"]
-            end_time_str    = session["end_time"]
-            subject         = session["subject"]
-            teacher_obj     = session["teacher"]
-            program         = session["program"]
-            department      = session["department"]
-            semester        = session["semester"]
-            academic_year   = session["academic_year"]
-        else:
-            session_id      = str(session.id)
-            start_time_str  = session.start_time
-            end_time_str    = session.end_time
-            subject         = session.subject
-            teacher_obj     = session.teacher
-            program         = session.program
-            department      = session.department
-            semester        = session.semester
-            academic_year   = session.academic_year
-
-        # NEW LOGIC — Map to attendance even if only exception_session matches
-        attendance = attendance_by_id.get(session_id)
-
-        date_str = today_date.strftime("%Y-%m-%d")
-
-        start_time = datetime.strptime(
-            f"{date_str} {start_time_str}", "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-
-        end_time = datetime.strptime(
-            f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-
-        # NEW FEATURE: Attendance ID if start_time < 15 minutes away
-        attendance_id = None
-
-        if attendance:
-            attendance_id = str(attendance.id)
-        else:
-            diff = (start_time - current_time).total_seconds()
-            if 0 <= diff <= 900:  # within 15 mins to start
-                attendance_id = "GENERATE_NOW"  # OR None → your choice
-
-        session_data = {
-            "session_id": session_id,
+        payload = {
+            "session_id": str(s.id),
             "attendance_id": attendance_id,
-            "date": date_str,
-            "start_time": start_time_str,
-            "end_time": end_time_str,
-            "subject_name": subject.subject_name,
-            "subject_code": subject.subject_code,
-            "component": subject.component,
-            "program": program,
-            "department": department,
-            "semester": semester,
-            "academic_year": academic_year,
-            "teacher_name": f"{teacher_obj.first_name} {teacher_obj.last_name}",
+            "date": today.strftime("%Y-%m-%d"),
+            "start_time": s.start_time,
+            "end_time": s.end_time,
+            "subject_name": s.subject.subject_name,
+            "subject_code": s.subject.subject_code,
+            "component": s.subject.component,
+            "program": s.program,
+            "department": s.department,
+            "semester": s.semester,
+            "academic_year": s.academic_year,
+            "teacher_name": f"{s.teacher.first_name} {s.teacher.last_name}"
         }
 
-        # Put into categories
-        if start_time <= current_time <= end_time:
-            current.append(session_data)
-        elif start_time > current_time:
-            upcoming.append(session_data)
+        if start_dt <= now <= end_dt:
+            current.append(payload)
+        elif start_dt > now:
+            upcoming.append(payload)
         else:
-            past.append(session_data)
+            past.append(payload)
 
-    # STEP 9 — Sort
-    for arr in (upcoming, current, past):
-        arr.sort(key=lambda x: datetime.strptime(
-            f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"
-        ))
-
-    # STEP 10 — Return Response
     return JSONResponse(
         status_code=200,
         content={
@@ -206,4 +169,328 @@ async def get_current_and_upcoming_sessions(request: Request):
                 "past": past
             }
         }
+    )
+
+
+async def fetch_teacher_request(request: Request):
+    logger.info("===== FETCH TEACHER REQUESTS (LIST) START =====")
+
+    user = request.state.user
+    if user.get("role") != "teacher":
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "message": "Only teachers can access"}
+        )
+
+    teacher_id = ObjectId(user["id"])
+    logger.info(f"Teacher ID → {teacher_id}")
+
+    # --------------------------------------------------
+    # 1️⃣ CREATED BY ME
+    # --------------------------------------------------
+    created_pipeline = [
+        {"$match": {"created_by.$id": teacher_id}},
+        {
+            "$lookup": {
+                "from": "sessions",
+                "localField": "session.$id",
+                "foreignField": "_id",
+                "as": "session_doc"
+            }
+        },
+        {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
+        {
+            "$lookup": {
+                "from": "subjects",
+                "localField": "session_doc.subject.$id",
+                "foreignField": "_id",
+                "as": "subject_doc"
+            }
+        },
+        {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
+        {
+            "$lookup": {
+                "from": "swap_approvals",
+                "localField": "swap_id.$id",
+                "foreignField": "_id",
+                "as": "swap"
+            }
+        },
+        {"$unwind": {"path": "$swap", "preserveNullAndEmptyArrays": True}},
+        {"$sort": {"created_at": -1}}
+    ]
+
+
+    created = await ExceptionSession.aggregate(created_pipeline).to_list(None)
+    logger.info(f"Created by me → {len(created)}")
+
+    # --------------------------------------------------
+    # 2️⃣ REQUESTED TO ME
+    # --------------------------------------------------
+    received_pipeline = [
+    {"$match": {"requested_to.$id": teacher_id}},
+    {
+        "$lookup": {
+            "from": "exception_sessions",
+            "localField": "exception.$id",
+            "foreignField": "_id",
+            "as": "exception"
+        }
+    },
+    {"$unwind": "$exception"},
+    {
+        "$lookup": {
+            "from": "sessions",
+            "localField": "exception.session.$id",
+            "foreignField": "_id",
+            "as": "session_doc"
+        }
+    },
+    {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
+    {
+        "$lookup": {
+            "from": "subjects",
+            "localField": "session_doc.subject.$id",
+            "foreignField": "_id",
+            "as": "subject_doc"
+        }
+    },
+    {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
+    {"$sort": {"created_at": -1}}
+]
+
+
+    received = await SwapApproval.aggregate(received_pipeline).to_list(None)
+    logger.info(f"Received by me → {len(received)}")
+
+    # --------------------------------------------------
+    # 3️⃣ NORMALIZE
+    # --------------------------------------------------
+    result = []
+    seen = set()
+
+    # Created by me
+    for doc in created:
+        exc_id = str(doc["_id"])
+        seen.add(exc_id)
+
+        swap = doc.get("swap")
+        status = swap["status"] if swap else "APPROVED"
+
+        request_type = (
+            "Swap"
+            if doc["action"] == "Reschedule" and swap
+            else doc["action"]
+        )
+
+        result.append({
+            "request_id": exc_id,
+            "request_type": request_type,
+            "status": status,
+            "subject_name": doc["subject_doc"]["subject_name"] if doc.get("subject_doc") else None,
+            "date_raised": doc["created_at"].isoformat(),
+            "created_by_me": True,
+            "received_by_me": False,
+            "can_take_action": False
+        })
+
+    # Received by me
+    for doc in received:
+        exc = doc["exception"]
+        exc_id = str(exc["_id"])
+
+        if exc_id in seen:
+            continue
+
+        result.append({
+            "request_id": exc_id,
+            "request_type": "Swap",
+            "status": doc["status"],
+            "subject_name": doc["subject_doc"]["subject_name"] if doc.get("subject_doc") else None,
+            "date_raised": exc["created_at"].isoformat(),
+            "created_by_me": False,
+            "received_by_me": True,
+            "can_take_action": doc["status"] == "PENDING"
+        })
+
+    logger.info(f"FINAL LIST COUNT → {len(result)}")
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "data": result
+        }
+    )
+
+async def fetch_detailed_teacher_request(
+    request: Request,
+    request_id: str
+):
+    logger.info("===== FETCH DETAILED TEACHER REQUEST START =====")
+
+    user = request.state.user
+    if user.get("role") != "teacher":
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "message": "Only teachers can access"}
+        )
+
+    teacher_id = ObjectId(user["id"])
+    exception_id = ObjectId(request_id)
+
+    # --------------------------------------------------
+    # AGGREGATION PIPELINE
+    # --------------------------------------------------
+    pipeline = [
+        {"$match": {"_id": exception_id}},
+
+        # swap
+        {
+            "$lookup": {
+                "from": "swap_approvals",
+                "localField": "swap_id.$id",
+                "foreignField": "_id",
+                "as": "swap"
+            }
+        },
+        {"$unwind": {"path": "$swap", "preserveNullAndEmptyArrays": True}},
+
+        # requested_by teacher
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "swap.requested_by.$id",
+                "foreignField": "_id",
+                "as": "requested_by_teacher"
+            }
+        },
+        {"$unwind": {"path": "$requested_by_teacher", "preserveNullAndEmptyArrays": True}},
+
+        # approver (requested_to)
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "swap.requested_to.$id",
+                "foreignField": "_id",
+                "as": "approved_by_teacher"
+            }
+        },
+        {"$unwind": {"path": "$approved_by_teacher", "preserveNullAndEmptyArrays": True}},
+
+        # session
+        {
+            "$lookup": {
+                "from": "sessions",
+                "localField": "session.$id",
+                "foreignField": "_id",
+                "as": "session_doc"
+            }
+        },
+        {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
+
+        # subject
+        {
+            "$lookup": {
+                "from": "subjects",
+                "localField": "session_doc.subject.$id",
+                "foreignField": "_id",
+                "as": "subject_doc"
+            }
+        },
+        {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
+
+        # creator
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "created_by.$id",
+                "foreignField": "_id",
+                "as": "created_by_teacher"
+            }
+        },
+        {"$unwind": "$created_by_teacher"},
+    ]
+
+    docs = await ExceptionSession.aggregate(pipeline).to_list(1)
+
+    if not docs:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "message": "Request not found"}
+        )
+
+    doc = docs[0]
+    swap = doc.get("swap")
+
+    # --------------------------------------------------
+    # DERIVED LOGIC
+    # --------------------------------------------------
+    status = swap["status"] if swap else "APPROVED"
+
+    request_type = (
+        "Swap"
+        if doc["action"] == "Reschedule" and swap
+        else doc["action"]
+    )
+
+    can_take_action = (
+        swap
+        and swap["status"] == "PENDING"
+        and doc["approved_by_teacher"]["_id"] == teacher_id
+    )
+
+    # --------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------
+    response = {
+        "request_id": str(doc["_id"]),
+        "request_type": request_type,
+        "status": status,
+        "reason": doc.get("reason"),
+        "date": doc["date"].isoformat(),
+        "start_time": doc.get("start_time"),
+        "end_time": doc.get("end_time"),
+        "created_at": doc["created_at"].isoformat(),
+        "created_by": {
+            "teacher_id": str(doc["created_by_teacher"]["_id"]),
+            "name": f"{doc['created_by_teacher']['first_name']} {doc['created_by_teacher']['last_name']}"
+        },
+        "subject": {
+            "subject_id": str(doc["subject_doc"]["_id"]) if doc.get("subject_doc") else None,
+            "subject_name": doc["subject_doc"]["subject_name"] if doc.get("subject_doc") else None,
+            "subject_code": doc["subject_doc"]["subject_code"] if doc.get("subject_doc") else None,
+            "component": doc["subject_doc"]["component"] if doc.get("subject_doc") else None
+        },
+        "swap": None,
+        "can_take_action": can_take_action
+    }
+
+    if swap:
+        response["swap"] = {
+            "swap_id": str(swap["_id"]),
+            "status": swap["status"],
+            "requested_by": {
+                "teacher_id": str(doc["requested_by_teacher"]["_id"]),
+                "name": f"{doc['requested_by_teacher']['first_name']} {doc['requested_by_teacher']['last_name']}"
+            },
+            "approved_by": (
+                {
+                    "teacher_id": str(doc["approved_by_teacher"]["_id"]),
+                    "name": f"{doc['approved_by_teacher']['first_name']} {doc['approved_by_teacher']['last_name']}"
+                }
+                if swap["status"] != "PENDING"
+                else None
+            ),
+            "responded_at": (
+                swap["responded_at"].isoformat()
+                if swap.get("responded_at") else None
+            )
+        }
+
+    logger.info("===== FETCH DETAILED TEACHER REQUEST END =====")
+
+    return JSONResponse(
+        status_code=200,
+        content={"success": True, "data": response}
     )

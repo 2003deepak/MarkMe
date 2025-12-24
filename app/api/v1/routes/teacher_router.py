@@ -6,12 +6,12 @@ import json
 from app.services.teacher_services.teacher_wise_student import class_based_teacher, get_students_by_teacher
 from app.services.teacher_services.recognize_students import recognize_students
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
-from app.services.teacher_services.create_session_exception import create_session_exception
+from app.services.teacher_services.manage_exception import create_session_exception, take_action_session_exception
 from app.services.teacher_services.update_teacher_profile import update_teacher_profile
 from app.services.teacher_services.mark_attendance import mark_student_attendance
-from app.services.teacher_services.get_current_and_upcoming_sessions import get_current_and_upcoming_sessions
+from app.services.teacher_services.get_current_and_upcoming_sessions import fetch_detailed_teacher_request, fetch_teacher_request, get_current_and_upcoming_sessions
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.models.allModel import AttendanceStudentRequest, StudentSelectionRequest, UpdateProfileRequest, CreateExceptionSession
+from app.models.allModel import AttendanceStudentRequest, StudentSelectionRequest, TakeSwapActionRequest, UpdateProfileRequest, CreateExceptionSession
 import logging
 from app.core.config import settings
 
@@ -112,3 +112,25 @@ async def class_teacher(
     request: Request,
 ):
     return await class_based_teacher(request)
+
+@router.post("/swap-approval")
+async def manage_swap_approval(
+    request : Request , 
+    swap_request : TakeSwapActionRequest
+):
+    
+    return await take_action_session_exception(request , swap_request)
+
+
+@router.get("/request")
+async def fetch_requests(
+    request : Request,
+):
+    return await fetch_teacher_request(request)
+
+@router.get("/request/{request_id}")
+async def fetch_teacher_detail_request(
+    request: Request,
+    request_id: str
+):
+    return await fetch_detailed_teacher_request(request, request_id)

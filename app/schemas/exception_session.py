@@ -1,52 +1,65 @@
-from pydantic import BaseModel, Field, model_validator
-from typing import Optional
+from pydantic import Field, model_validator
+from typing import Optional, Literal, TYPE_CHECKING
 from datetime import datetime
 from beanie import Document, Indexed, Link
+
 from app.schemas.session import Session
+from app.schemas.teacher import Teacher
+
+if TYPE_CHECKING:
+    from app.schemas.swap_approval import SwapApproval
 
 
-# Main ExceptionSession Document
 class ExceptionSession(Document):
+
     session: Optional[Link[Session]] = None
     date: Indexed(datetime)
-    action: str  # "Cancel", "Rescheduled", or "Add"
-    start_time: Optional[str] = Field(None)
-    end_time: Optional[str] = Field(None)
+
+    action: Literal["Cancel", "Reschedule", "Add"]
+    reason: str
+
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+    # swap linkage
+    swap_id: Optional[Link["SwapApproval"]] = None
+    swap_role: Optional[Literal["SOURCE", "TARGET"]] = None
+
+    created_by: Link[Teacher]
+
     created_at: Indexed(datetime) = Field(default_factory=datetime.utcnow)
     updated_at: Indexed(datetime) = Field(default_factory=datetime.utcnow)
 
     @model_validator(mode="after")
-    def validate_fields_based_on_action(self):
-        action = self.action
-        valid_actions = ["Cancel", "Rescheduled", "Add"]
-        
-        # Validate action
-        if action not in valid_actions:
-            raise ValueError(f"Action must be one of: {valid_actions}")
+    def validate_exception_session(self):
 
-        # Validate session for Cancel and Rescheduled
-        if action in ["Cancel", "Rescheduled"] and self.session is None:
-            raise ValueError("Field 'session' is required for Cancel and Rescheduled actions")
+        # session rules
+        if self.action in {"Cancel", "Reschedule"} and self.session is None:
+            raise ValueError("session is required")
 
-        # Validate start_time and end_time for Add and Rescheduled
-        if action in ["Add", "Rescheduled"]:
-            if not (self.start_time and self.end_time):
-                raise ValueError("Fields 'startTime' and 'endTime' are required for Add and Rescheduled actions")
+        # time rules
+        if self.action in {"Add", "Reschedule"}:
+            if not self.start_time or not self.end_time:
+                raise ValueError("start_time and end_time required")
 
-        # For Cancel action, start_time and end_time should be None
-        if action == "Cancel" and (self.start_time is not None or self.end_time is not None):
-            raise ValueError("Fields 'startTime' and 'endTime' should not be set for Cancel action")
+        if self.action == "Cancel":
+            if self.start_time or self.end_time:
+                raise ValueError("time not allowed for Cancel")
+
+        # swap rules
+        if self.swap_id is not None:
+            if self.action != "Reschedule":
+                raise ValueError("swap allowed only for Reschedule")
+            if self.swap_role not in {"SOURCE", "TARGET"}:
+                raise ValueError("swap_role must be SOURCE or TARGET")
 
         return self
 
     class Settings:
         name = "exception_sessions"
 
-
-        async def pre_save(self) -> None:
+        async def pre_save(self):
             self.updated_at = datetime.utcnow()
-            if not self.created_at:
-                self.created_at = self.updated_at
 
     class Config:
         arbitrary_types_allowed = True
