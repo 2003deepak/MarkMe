@@ -295,7 +295,7 @@ async def teacher_attendance_history(
 
         # First, find subjects and check if this teacher is assigned
         subject_docs = await Subject.find(
-            Subject.id.in_(subject_ids),
+            In(Subject.id, subject_ids),
             fetch_links=True
         ).to_list()
 
@@ -321,7 +321,7 @@ async def teacher_attendance_history(
         if len(subject_ids) == 1:
             query.append(SubjectSessionStats.subject.id == subject_ids[0])
         else:
-            query.append(SubjectSessionStats.subject.id.in_(subject_ids))
+            query.append(In(SubjectSessionStats.subject.id, subject_ids))
 
     logger.info(f"Final Query → {query}")
 

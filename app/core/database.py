@@ -4,6 +4,7 @@ from typing import Optional
 from app.core.config import settings
 from app.schemas.fcm import FCMToken
 from app.schemas.student import Student   
+from app.schemas.swap_approval import SwapApproval
 from app.schemas.teacher import Teacher
 from app.schemas.clerk import Clerk
 from app.schemas.subject import Subject
@@ -39,7 +40,8 @@ async def init_db():
         TeacherSubjectSummary,
         SubjectSessionStats,  
         Session,
-        FCMToken
+        FCMToken,
+        SwapApproval
 
 
 

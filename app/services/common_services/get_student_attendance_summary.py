@@ -10,9 +10,7 @@ from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.schemas.subject import Subject         
 from app.schemas.student import Student         
 
-# --------------------------------------------------------------------------- #
 # Custom JSON encoder for MongoDB types
-# --------------------------------------------------------------------------- #
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):
@@ -22,9 +20,7 @@ class MongoJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-# --------------------------------------------------------------------------- #
 # Endpoint
-# --------------------------------------------------------------------------- #
 async def get_student_attendance_summary(
     request: Request, student_id: Optional[str]
 ) -> JSONResponse:
@@ -46,9 +42,7 @@ async def get_student_attendance_summary(
             },
         )
 
-    # --------------------------------------------------------------- #
     # 1. Resolve the target student_id
-    # --------------------------------------------------------------- #
     if user_role == "student":
         student_id = user_id
         print(f"Student viewing own attendance → {student_id}")
@@ -63,9 +57,8 @@ async def get_student_attendance_summary(
     else:
         print(f"{user_role.capitalize()} fetching attendance for student → {student_id}")
 
-    # --------------------------------------------------------------- #
+
     # 2. Redis cache
-    # --------------------------------------------------------------- #
     cache_key = f"student_attendance_summary:{student_id}:{user_role}"
     cached_data = await redis_client.get(cache_key)
 
@@ -85,13 +78,11 @@ async def get_student_attendance_summary(
             await redis_client.delete(cache_key)
             logging.warning(f"Invalid cache data for key: {cache_key}, cleared.")
 
-    # --------------------------------------------------------------- #
+
     # 3. DB work
-    # --------------------------------------------------------------- #
     try:
-        # -----------------------------------------------------------
+        
         # 3.1 Get the student document (need program + semester)
-        # -----------------------------------------------------------
         student_doc = await Student.find_one(
             Student.id == ObjectId(student_id)
         )
@@ -111,9 +102,8 @@ async def get_student_attendance_summary(
                 detail={"success": False, "message": "Student program/semester missing"}
             )
 
-        # -----------------------------------------------------------
+        
         # 3.2 Fetch **ALL** subjects for this program + semester
-        # -----------------------------------------------------------
         all_subjects = await Subject.find(
             Subject.program == prog,
             Subject.semester == sem
@@ -125,9 +115,7 @@ async def get_student_attendance_summary(
                 detail={"success": False, "message": "No subjects defined for this program/semester"}
             )
 
-        # -----------------------------------------------------------
         # 3.3 Fetch existing attendance summaries (if any)
-        # -----------------------------------------------------------
         summaries = await StudentAttendanceSummary.find(
             StudentAttendanceSummary.student.id == ObjectId(student_id),
             fetch_links=True,
@@ -138,9 +126,8 @@ async def get_student_attendance_summary(
             str(s.subject.id): s for s in summaries if getattr(s, "subject", None)
         }
 
-        # -----------------------------------------------------------
+
         # 3.4 Build the response list
-        # -----------------------------------------------------------
         result = []
         total_classes = total_attended = 0
         lab_total = lab_attended = 0
@@ -179,9 +166,8 @@ async def get_student_attendance_summary(
                 lecture_total += total
                 lecture_attended += attended
 
-        # -----------------------------------------------------------
+        
         # 3.5 Final percentages
-        # -----------------------------------------------------------
         overall_percentage = (
             round((total_attended / total_classes * 100), 2) if total_classes > 0 else 0.0
         )
@@ -209,9 +195,7 @@ async def get_student_attendance_summary(
             },
         }
 
-        # -----------------------------------------------------------
         # 3.6 Cache for 30 min
-        # -----------------------------------------------------------
         await redis_client.setex(
             cache_key,
             1800,
@@ -228,9 +212,7 @@ async def get_student_attendance_summary(
             },
         )
 
-    # ------------------------------------------------------------------- #
     # Error handling
-    # ------------------------------------------------------------------- #
     except HTTPException:
         raise
     except Exception as e:

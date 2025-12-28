@@ -10,9 +10,7 @@ from app.models.allModel import StudentBasicView, StudentListingView, StudentSho
 from app.core.redis import redis_client
 
 
-# -------------------------------------------------------
 # Custom JSON Encoder
-# -------------------------------------------------------
 class JSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):
@@ -24,9 +22,7 @@ class JSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-# -------------------------------------------------------
 # MAIN CONTROLLER
-# -------------------------------------------------------
 async def fetch_class(
     request: Request,
     batch_year: int | None = None,
@@ -41,9 +37,9 @@ async def fetch_class(
     user_role = request.state.user.get("role")
     department = request.state.user.get("department")
 
-    # -------------------------------------------------------
+    
     # ROLE GUARD
-    # -------------------------------------------------------
+    
     if user_role not in {"teacher", "clerk"}:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -60,9 +56,9 @@ async def fetch_class(
                 }
             )
 
-    # -------------------------------------------------------
+    
     # BUILD QUERY
-    # -------------------------------------------------------
+    
     query = {"department": department}
 
     if program:
@@ -82,17 +78,17 @@ async def fetch_class(
             {"email": {"$regex": s, "$options": "i"}},
         ]
 
-    # -------------------------------------------------------
+    
     # MODE CONFIG
-    # -------------------------------------------------------
+    
     if mode == "attendance":
         projection_model = StudentListingView
     else:
         projection_model = StudentShortView
 
-    # -------------------------------------------------------
+    
     # CACHE (ONLY FOR student_listing)
-    # -------------------------------------------------------
+    
     cache_key = None
     if mode == "student_listing":
         cache_key = (
@@ -116,9 +112,9 @@ async def fetch_class(
                 }
             )
 
-    # -------------------------------------------------------
+    
     # DB FETCH
-    # -------------------------------------------------------
+    
     if mode == "attendance":
         # ❌ NO PAGINATION
         students_raw = (
@@ -140,9 +136,9 @@ async def fetch_class(
             .to_list()
         )
 
-    # -------------------------------------------------------
+    
     # FORMAT DATA
-    # -------------------------------------------------------
+    
     students_data = []
 
     for st in students_raw:
@@ -157,9 +153,9 @@ async def fetch_class(
         st_dict.pop("face_embedding", None)
         students_data.append(st_dict)
 
-    # -------------------------------------------------------
+    
     # CACHE SAVE (student_listing only)
-    # -------------------------------------------------------
+    
     if mode == "student_listing":
         total_pages = (total + limit - 1) // limit
 
@@ -201,9 +197,9 @@ async def fetch_class(
             },
         )
 
-    # -------------------------------------------------------
+    
     # ATTENDANCE MODE RESPONSE (NO PAGINATION DATA)
-    # -------------------------------------------------------
+    
     return JSONResponse(
         status_code=200,
         content={
