@@ -20,6 +20,8 @@ def decode_verification_token(token: str) -> str:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get("sub")
+        
+        print("Decoded email from token:", email)
         if email is None:
             raise JWTError("Invalid token payload")
         return email

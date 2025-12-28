@@ -66,6 +66,9 @@ class NotificationRequest(BaseModel):
     data: Optional[dict] = None
 
 
+class TakeSwapActionRequest(BaseModel):
+    swap_id: str
+    action: Literal["APPROVE", "REJECT"]
 
     
 
@@ -200,11 +203,13 @@ class TimeTableRequest(BaseModel):
 class CreateExceptionSession(BaseModel):
     session_id: Optional[str] = None
     date: date
-    action: str
+    action: str  # Cancel | Rescheduled | Add
+    reason : str
+    confirm_swap: Optional[bool] = False
 
-    # Only needed for Add / Reschedule
-    new_start_time: Optional[str] = None
-    new_end_time: Optional[str] = None
+    # Only for Add / Rescheduled
+    new_start_time: Optional[str] = None  
+    new_end_time: Optional[str] = None  
     
 class AttendanceStudentRequest(BaseModel):
     attendance_id: str
@@ -469,6 +474,7 @@ class TimeTableResponse(BaseModel):
         return v
     
 class SessionView(BaseModel):
+    session_id: Optional[str] = None
     program: str
     semester: str
     subject_name: str

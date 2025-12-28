@@ -13,9 +13,7 @@ async def get_tomorrow_bunk_safety(request: Request):
 
     print("\n===================== TOMORROW BUNK SAFETY START =====================")
 
-    # -------------------------------------------------------------------
     # STEP 1 — Validate Student
-    # -------------------------------------------------------------------
     user = request.state.user
     if user.get("role") != "student":
         print("❌ Not a student. Access denied.")
@@ -33,9 +31,7 @@ async def get_tomorrow_bunk_safety(request: Request):
     print(f"👤 Student ID: {student_id}")
     print(f"🎓 Program: {prog} | Sem: {sem} | Year: {ac_year} | Dept: {dept}")
 
-    # -------------------------------------------------------------------
     # STEP 2 — Compute Tomorrow's Date
-    # -------------------------------------------------------------------
     now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     tomorrow_date = now.date() + timedelta(days=1)
     tomorrow_weekday = (now + timedelta(days=1)).strftime("%A")
@@ -45,9 +41,8 @@ async def get_tomorrow_bunk_safety(request: Request):
     day_start = datetime.combine(tomorrow_date, datetime.min.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
     day_end = datetime.combine(tomorrow_date, datetime.max.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
 
-    # -------------------------------------------------------------------
+
     # STEP 3 — Fetch Base Sessions
-    # -------------------------------------------------------------------
     base_sessions = await Session.find(
         Session.day == tomorrow_weekday,
         Session.program == prog,
@@ -61,9 +56,8 @@ async def get_tomorrow_bunk_safety(request: Request):
     for s in base_sessions:
         print(f"   ➤ NORMAL SESSION: {s.subject.id} ({s.subject.component}) {s.start_time} - {s.end_time}")
 
-    # -------------------------------------------------------------------
+
     # STEP 4 — Exception Sessions
-    # -------------------------------------------------------------------
     exceptions = await ExceptionSession.find(
         {"date": {"$gte": day_start, "$lte": day_end}},
         fetch_links=True
@@ -90,9 +84,8 @@ async def get_tomorrow_bunk_safety(request: Request):
             print(f"   🔄 RESCHEDULE Exception for Subject: {sid}")
             cancel_resched_map[str(ex.session.id)] = ex
 
-    # -------------------------------------------------------------------
+    
     # STEP 5 — Apply Exceptions
-    # -------------------------------------------------------------------
     final_sessions = []
 
     for ses in base_sessions:
@@ -138,9 +131,8 @@ async def get_tomorrow_bunk_safety(request: Request):
         else:
             print(f"   ➤ FINAL NORMAL: {s.subject.id} ({s.subject.component}) {s.start_time} - {s.end_time}")
 
-    # -------------------------------------------------------------------
+
     # STEP 6 — Fetch Student Attendance Summary Per Subject ID
-    # -------------------------------------------------------------------
     attendance_stats_docs = await StudentAttendanceSummary.find(
         StudentAttendanceSummary.student.id == ObjectId(student_id),
         fetch_links=True
@@ -174,9 +166,8 @@ async def get_tomorrow_bunk_safety(request: Request):
         total_attended += attended
         total_conducted += conducted
 
-    # -------------------------------------------------------------------
+
     # STEP 7 — Identify Tomorrow Subjects By ID
-    # -------------------------------------------------------------------
     tomorrow_subjects = set()
 
     for ses in final_sessions:
@@ -199,9 +190,7 @@ async def get_tomorrow_bunk_safety(request: Request):
                 "attendance_now": 0.0
             }
 
-    # -------------------------------------------------------------------
     # STEP 8 — Simulate IF BUNK impact
-    # -------------------------------------------------------------------
     print("\n📉 Simulating IF BUNK Impact...")
     for sid in tomorrow_subjects:
         sub = subject_map[sid]
@@ -214,9 +203,7 @@ async def get_tomorrow_bunk_safety(request: Request):
 
         print(f"   ➤ {sid}: NOW={sub['attendance_now']:.2f}% | IF BUNK={after_bunk_pct:.2f}% | SAFE={sub['safe']}")
 
-    # -------------------------------------------------------------------
     # STEP 9 — Aggregate Simulation
-    # -------------------------------------------------------------------
     aggregate_now = (total_attended / total_conducted * 100) if total_conducted else 0
 
     total_if_bunk = total_conducted + len(final_sessions)
@@ -225,16 +212,14 @@ async def get_tomorrow_bunk_safety(request: Request):
     print(f"\n📊 Aggregate NOW: {aggregate_now:.2f}%")
     print(f"📉 Aggregate IF BUNK: {aggregate_if_bunk:.2f}%")
 
-    # -------------------------------------------------------------------
+    
     # STEP 10 — Decision
-    # -------------------------------------------------------------------
     safe_to_bunk = all(subject_map[sid]["safe"] for sid in tomorrow_subjects) and (aggregate_if_bunk >= 75)
 
     print(f"\n🟩 SAFE TO BUNK? {safe_to_bunk}")
 
-    # -------------------------------------------------------------------
+
     # STEP 11 — Build HTTP Response
-    # -------------------------------------------------------------------
     response_subjects = []
     for sid in sorted(tomorrow_subjects):
         sub = subject_map[sid]
@@ -269,19 +254,13 @@ async def get_tomorrow_bunk_safety(request: Request):
     )
 
 
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-from bson import ObjectId
-
 async def get_week_plan(request: Request):
 
     print("\n\n===================== WEEKLY BUNK SAFETY START =====================")
 
-    # -------------------------------------------------------------------
+
     # STEP 1 — VALIDATE STUDENT
-    # -------------------------------------------------------------------
+    
     user = request.state.user
     if user.get("role") != "student":
         return JSONResponse(
@@ -298,9 +277,9 @@ async def get_week_plan(request: Request):
     tz = ZoneInfo("Asia/Kolkata")
     today = datetime.now(tz=tz).date()
 
-    # -------------------------------------------------------------------
+    
     # STEP 2 — LOAD ATTENDANCE SUMMARY (OPTIONAL)
-    # -------------------------------------------------------------------
+    
     attendance_docs = await StudentAttendanceSummary.find(
         StudentAttendanceSummary.student.id == ObjectId(student_id),
         fetch_links=True
@@ -328,9 +307,9 @@ async def get_week_plan(request: Request):
 
     print(f"📊 Attendance summary loaded: {len(subject_map)} subjects")
 
-    # -------------------------------------------------------------------
+    
     # STEP 3 — LOAD WEEKLY BASE SESSIONS
-    # -------------------------------------------------------------------
+    
     weekly_sessions = await Session.find(
         Session.program == prog,
         Session.semester == sem,
@@ -345,18 +324,18 @@ async def get_week_plan(request: Request):
 
     print(f"📘 Weekly base sessions loaded: {len(weekly_sessions)}")
 
-    # -------------------------------------------------------------------
+    
     # STEP 4 — DETERMINE DAYS LEFT
-    # -------------------------------------------------------------------
+    
     weekday_index = today.weekday()  # Monday=0
     days_left = 0 if weekday_index == 6 else 6 - weekday_index
 
     week_start = today + timedelta(days=1)
     week_end = today + timedelta(days=days_left)
 
-    # -------------------------------------------------------------------
+    
     # STEP 5 — LOAD EXCEPTION SESSIONS
-    # -------------------------------------------------------------------
+    
     exceptions = await ExceptionSession.find(
         {
             "date": {
@@ -371,9 +350,9 @@ async def get_week_plan(request: Request):
     for ex in exceptions:
         exceptions_by_date.setdefault(ex.date.date(), []).append(ex)
 
-    # -------------------------------------------------------------------
+    
     # STEP 6 — BUILD WEEK PLAN
-    # -------------------------------------------------------------------
+    
     weekly_plan = []
 
     for i in range(1, days_left + 1):
@@ -418,9 +397,9 @@ async def get_week_plan(request: Request):
                 "end_time": ex.end_time
             })
 
-        # -------------------------------------------------------------------
+        
         # STEP 7 — COLLECT SUBJECT METADATA FROM SESSIONS (CRITICAL FIX)
-        # -------------------------------------------------------------------
+        
         todays_subjects = {}
 
         for ses in final_sessions:
@@ -444,9 +423,9 @@ async def get_week_plan(request: Request):
                     "attendance_now": 0.0
                 }
 
-        # -------------------------------------------------------------------
+        
         # STEP 8 — CALCULATE SAFETY
-        # -------------------------------------------------------------------
+        
         day_results = []
         safe_today = True
 

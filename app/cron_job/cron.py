@@ -44,7 +44,7 @@ async def generate_sessions_for_tomorrow():
     tomorrow_date = tomorrow.date()
     date_str = str(tomorrow_date)
     # weekday = tomorrow.strftime("%A")  # ✅ Fixed weekday calc
-    weekday = "Wednesday"
+    weekday = "Friday"
     print(f"📆 Target date: {date_str} ({weekday})")
 
     sessions = await Session.find(Session.day == weekday, fetch_links=True).to_list()
@@ -156,7 +156,7 @@ async def main():
 
     if settings.ENVIRONMENT == "production":
         # Schedule cron job daily at 00:05 IST
-        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour="00", minute="16")
+        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour="11", minute="22")
         scheduler.start()
     else:
         # For development/testing run immediately once

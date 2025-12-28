@@ -17,9 +17,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def create_teacher(request, request_model):
 
-    # ------------------------------------------------------------------
+
     # STEP 1 — AUTHORIZATION
-    # ------------------------------------------------------------------
     user_role = request.state.user.get("role")
     if user_role != "clerk":
         return JSONResponse(
@@ -31,9 +30,9 @@ async def create_teacher(request, request_model):
         )
 
     try:
-        # ------------------------------------------------------------------
+        
         # STEP 2 — CHECK DUPLICATE TEACHER
-        # ------------------------------------------------------------------
+        
         if await Teacher.find_one(Teacher.email == request_model.email):
             return JSONResponse(
                 status_code=409,
@@ -43,9 +42,9 @@ async def create_teacher(request, request_model):
                 }
             )
 
-        # ------------------------------------------------------------------
+        
         # STEP 3 — FETCH SUBJECTS USING SUBJECT _id
-        # ------------------------------------------------------------------
+        
         subjects_to_assign_to_teacher = []
 
         if request_model.subjects_assigned:
@@ -79,9 +78,9 @@ async def create_teacher(request, request_model):
                     }
                 )
 
-            # ------------------------------------------------------------------
+            
             # STEP 3.5 — PREVENT REASSIGNMENT (USER-FRIENDLY MESSAGE)
-            # ------------------------------------------------------------------
+            
             assigned_teacher_names = set()
 
             for subj in existing_subjects_docs:
@@ -116,23 +115,23 @@ async def create_teacher(request, request_model):
             subjects_to_assign_to_teacher = existing_subjects_docs
 
 
-        # ------------------------------------------------------------------
+        
         # STEP 4 — GENERATE UNIQUE TEACHER ID
-        # ------------------------------------------------------------------
+        
         while True:
             teacher_id = f"T{random.randint(100000, 999999)}"
             if not await Teacher.find_one(Teacher.teacher_id == teacher_id):
                 break
 
-        # ------------------------------------------------------------------
+        
         # STEP 5 — GENERATE PASSWORD
-        # ------------------------------------------------------------------
+        
         raw_password = str(random.randint(100000, 999999))
         hashed_password = get_password_hash(raw_password)
 
-        # ------------------------------------------------------------------
+        
         # STEP 6 — CREATE TEACHER DOCUMENT
-        # ------------------------------------------------------------------
+        
         teacher_data = Teacher(
             teacher_id=teacher_id,
             first_name=request_model.first_name,
@@ -147,16 +146,16 @@ async def create_teacher(request, request_model):
 
         await teacher_data.save()
 
-        # ------------------------------------------------------------------
+        
         # STEP 7 — ASSIGN TEACHER BACK TO SUBJECT
-        # ------------------------------------------------------------------
+        
         for subject_doc in subjects_to_assign_to_teacher:
             subject_doc.teacher_assigned = teacher_data
             await subject_doc.save()
 
-        # ------------------------------------------------------------------
+        
         # STEP 8 — CLEAR REDIS CACHE
-        # ------------------------------------------------------------------
+        
         cache_keys = set()
         for subj in subjects_to_assign_to_teacher:
             cache_keys.add(
@@ -168,9 +167,9 @@ async def create_teacher(request, request_model):
 
         await redis_client.delete(f"teacher:{request_model.department}")
 
-        # ------------------------------------------------------------------
+        
         # STEP 9 — SEND EMAIL VIA QUEUE
-        # ------------------------------------------------------------------
+        
         await send_to_queue(
             "email_queue",
             {
@@ -188,9 +187,9 @@ async def create_teacher(request, request_model):
             priority=5
         )
 
-        # ------------------------------------------------------------------
+        
         # STEP 10 — RESPONSE
-        # ------------------------------------------------------------------
+        
         return JSONResponse(
             status_code=201,
             content={
@@ -206,9 +205,9 @@ async def create_teacher(request, request_model):
             }
         )
 
-    # ------------------------------------------------------------------
+    
     # ERROR HANDLING
-    # ------------------------------------------------------------------
+    
     except ValidationError as e:
         return JSONResponse(
             status_code=422,
