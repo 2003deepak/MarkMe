@@ -125,8 +125,13 @@ async def manage_swap_approval(
 @router.get("/request")
 async def fetch_requests(
     request : Request,
+    year: int | None = None,
+    request_type: Optional[Literal["created_by_me", "recieved_to_me"]] = None,
+    status : Optional[Literal["pending", "approved", "rejected"]] = None,
+    page: int = 1,
+    limit: int = 10,
 ):
-    return await fetch_teacher_request(request)
+    return await fetch_teacher_request(request,year,request_type,status,page,limit)
 
 @router.get("/request/{request_id}")
 async def fetch_teacher_detail_request(

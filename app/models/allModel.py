@@ -467,6 +467,7 @@ class TimeTableResponse(BaseModel):
         return v
     
 class SessionView(BaseModel):
+    session_id: Optional[str] = None
     program: str
     semester: str
     subject_name: str

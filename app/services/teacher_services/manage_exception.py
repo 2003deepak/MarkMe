@@ -1,6 +1,5 @@
 from bson import ObjectId
 from datetime import datetime
-from typing import List, Optional
 from zoneinfo import ZoneInfo
 import logging
 
@@ -18,13 +17,13 @@ from app.schemas.session import Session
 from app.schemas.teacher import Teacher
 from app.services.common_services.notify_users import notify_users
 from app.utils.notify import notify_students_by_session, notify_students_for_two_sessions
+from app.utils.parse_data import overlap_error_response
 
 logger = logging.getLogger("session_exception")
 logger.setLevel(logging.INFO)
 
 IST = ZoneInfo("Asia/Kolkata")
 
-# ---------------- create exception ----------------
 
 async def create_session_exception(
     request: Request,
@@ -54,7 +53,6 @@ async def create_session_exception(
 
     # cancel
     if action == "Cancel":
-
         if not exception_request.session_id:
             return JSONResponse(
                 status_code=400,
@@ -86,16 +84,12 @@ async def create_session_exception(
                 "success": True,
                 "message": "Session cancelled successfully",
                 "data": {
-                    "exception_id": str(cancel_exception.id),
-                    "navigation": {
-                        "screen": "TEACHER_REQUEST_DETAIL",
-                        "params": {"request_id": str(cancel_exception.id)}
-                    }
+                    "exception_id": str(cancel_exception.id)
                 }
             }
         )
 
-    # common validation
+    # validation
     if not exception_request.new_start_time or not exception_request.new_end_time:
         return JSONResponse(
             status_code=400,
@@ -119,7 +113,9 @@ async def create_session_exception(
             fetch_links=True
         ).to_list()
 
-        if not overlapping_sessions:
+        overlap_count = len(overlapping_sessions)
+
+        if overlap_count == 0:
             add_exception = ExceptionSession(
                 session=None,
                 date=ex_date,
@@ -142,18 +138,16 @@ async def create_session_exception(
                 content={
                     "success": True,
                     "message": "Extra lecture added successfully",
-                    "data": {
-                        "exception_id": str(add_exception.id),
-                        "navigation": {
-                            "screen": "TEACHER_REQUEST_DETAIL",
-                            "params": {"request_id": str(add_exception.id)}
-                        }
-                    }
+                    "data": {"exception_id": str(add_exception.id)}
                 }
             )
 
+        if overlap_count > 1:
+            return overlap_error_response(overlap_count)
+
+        target = overlapping_sessions[0]
+
         if not confirm_swap:
-            target = overlapping_sessions[0]
             return JSONResponse(
                 status_code=409,
                 content={
@@ -168,8 +162,6 @@ async def create_session_exception(
                     }
                 }
             )
-
-        target = overlapping_sessions[0]
 
         add_exception = ExceptionSession(
             session=None,
@@ -203,11 +195,9 @@ async def create_session_exception(
                 title="Extra Lecture Swap Request",
                 message="You have received a swap request",
                 data={
-                    "route": f"/teacher/request/{ str(add_exception.id)}",
+                    "route": f"/teacher/request/{str(add_exception.id)}",
                     "type": "SWAP_REQUEST"
                 }
-                
-                
             )
         )
 
@@ -253,7 +243,12 @@ async def create_session_exception(
         if str(s.teacher.id) != str(requester.id)
     ]
 
-    if target_sessions and not confirm_swap:
+    overlap_count = len(target_sessions)
+
+    if overlap_count > 1:
+        return overlap_error_response(overlap_count)
+
+    if overlap_count == 1 and not confirm_swap:
         target = target_sessions[0]
         return JSONResponse(
             status_code=409,
@@ -282,7 +277,7 @@ async def create_session_exception(
     )
     await source_exception.insert()
 
-    if not target_sessions:
+    if overlap_count == 0:
         await notify_students_by_session(
             session=session_obj,
             title="Session Timing Updated",
@@ -294,13 +289,7 @@ async def create_session_exception(
             content={
                 "success": True,
                 "message": "Session rescheduled successfully",
-                "data": {
-                    "exception_id": str(source_exception.id),
-                    "navigation": {
-                        "screen": "TEACHER_REQUEST_DETAIL",
-                        "params": {"request_id": str(source_exception.id)}
-                    }
-                }
+                "data": {"exception_id": str(source_exception.id)}
             }
         )
 
@@ -326,10 +315,8 @@ async def create_session_exception(
             title="Session Swap Request",
             message="You have received a swap request",
             data={
-                
                 "route": f"/teacher/request/{str(source_exception.id)}",
                 "type": "SWAP_REQUEST"
-                
             }
         )
     )

@@ -3,7 +3,6 @@ from typing import Any, Dict
 from zoneinfo import ZoneInfo
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from beanie.operators import Or
 
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
@@ -12,14 +11,19 @@ from app.schemas.attendance import Attendance
 IST = ZoneInfo("Asia/Kolkata")
 
 
-async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str, Any]:
+async def get_todays_upcoming_sessions_for_student(
+    request: Request
+) -> Dict[str, Any]:
 
     # STEP 1 — Auth
     user = request.state.user
     if user.get("role") != "student":
         return JSONResponse(
             status_code=403,
-            content={"success": False, "message": "Only students can access this endpoint"}
+            content={
+                "success": False,
+                "message": "Only students can access this endpoint"
+            }
         )
 
     # STEP 2 — Date context
@@ -27,8 +31,8 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
     today = now.date()
     weekday = now.strftime("%A")
 
-    day_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=IST)
-    day_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=IST)
+    day_start = datetime.combine(today, datetime.min.time(), tzinfo=IST)
+    day_end = datetime.combine(today, datetime.max.time(), tzinfo=IST)
 
     # STEP 3 — Student scope
     program = user.get("program")
@@ -48,16 +52,16 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
 
     base_session_map = {str(s.id): s for s in base_sessions}
 
-    # STEP 5 — Exceptions (only today)
+    # STEP 5 — Exceptions (today only)
     exceptions = await ExceptionSession.find(
         ExceptionSession.date >= day_start,
         ExceptionSession.date <= day_end,
         fetch_links=True
     ).to_list()
 
-    cancel_map = {}
+    cancel_set = set()
     reschedule_map = {}
-    target_injections = []
+    target_exceptions = []
     add_exceptions = []
 
     # STEP 6 — Process exceptions
@@ -67,13 +71,13 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
         if ex.swap_id and ex.swap_id.status != "APPROVED":
             continue
 
+        # ADD
         if ex.action == "Add":
-            base = ex.session
-            if base and (
-                base.program == program and
-                base.semester == semester and
-                base.academic_year == academic_year and
-                base.department == department
+            if (
+                ex.program == program and
+                ex.semester == semester and
+                ex.academic_year == academic_year and
+                ex.department == department
             ):
                 add_exceptions.append(ex)
             continue
@@ -83,14 +87,16 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
 
         sid = str(ex.session.id)
 
+        # CANCEL
         if ex.action == "Cancel":
-            cancel_map[sid] = ex
+            cancel_set.add(sid)
 
+        # RESCHEDULE
         elif ex.action == "Reschedule":
             reschedule_map[sid] = ex
 
             if ex.swap_role == "TARGET":
-                target_injections.append(ex)
+                target_exceptions.append(ex)
 
     # STEP 7 — Apply base sessions
     final_sessions = []
@@ -98,7 +104,7 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
 
     for sid, session in base_session_map.items():
 
-        if sid in cancel_map:
+        if sid in cancel_set:
             continue
 
         if sid in reschedule_map:
@@ -109,8 +115,8 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
         final_sessions.append(session)
         added_ids.add(sid)
 
-    # STEP 8 — Inject TARGET swap sessions if missing
-    for ex in target_injections:
+    # STEP 8 — Inject TARGET swap sessions
+    for ex in target_exceptions:
         sid = str(ex.session.id)
         if sid not in added_ids:
             injected = ex.session
@@ -121,18 +127,17 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
 
     # STEP 9 — ADD virtual sessions
     for ex in add_exceptions:
-        base = ex.session
         final_sessions.append({
             "_is_added": True,
             "id": str(ex.id),
             "start_time": ex.start_time,
             "end_time": ex.end_time,
-            "subject": base.subject,
-            "teacher": base.teacher,
-            "program": base.program,
-            "department": base.department,
-            "semester": base.semester,
-            "academic_year": base.academic_year,
+            "subject": ex.subject,
+            "teacher": ex.created_by,
+            "program": ex.program,
+            "department": ex.department,
+            "semester": ex.semester,
+            "academic_year": ex.academic_year,
         })
 
     # STEP 10 — Attendance
@@ -149,7 +154,7 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
         elif a.exception_session:
             attendance_map[str(a.exception_session.id)] = a
 
-    # STEP 11 — Build response
+    # STEP 11 — Categorize sessions
     upcoming, current, past = [], [], []
 
     for s in final_sessions:
@@ -184,11 +189,10 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
         ).replace(tzinfo=IST)
 
         attendance = attendance_map.get(session_id)
-        attendance_id = str(attendance.id) if attendance else None
 
         payload = {
             "session_id": session_id,
-            "attendance_id": attendance_id,
+            "attendance_id": str(attendance.id) if attendance else None,
             "date": today.strftime("%Y-%m-%d"),
             "start_time": start_str,
             "end_time": end_str,
@@ -199,16 +203,19 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
             "department": department,
             "semester": semester,
             "academic_year": academic_year,
-            "teacher_name": f"{teacher.first_name} {teacher.last_name}" if teacher else None,
+            "teacher_name": (
+                f"{teacher.first_name} {teacher.last_name}"
+                if teacher else None
+            )
         }
 
         if start_dt <= now <= end_dt:
             current.append(payload)
         elif start_dt > now:
-            diff = start_dt - now
-            mins = int(diff.total_seconds() // 60)
+            mins = int((start_dt - now).total_seconds() // 60)
             payload["time_until_start_display"] = (
-                f"{mins//60}hr {mins%60}m" if mins >= 60 else f"{mins}m"
+                f"{mins//60}hr {mins%60}m"
+                if mins >= 60 else f"{mins}m"
             )
             upcoming.append(payload)
         else:
@@ -216,9 +223,12 @@ async def get_todays_upcoming_sessions_for_student(request: Request) -> Dict[str
 
     # STEP 12 — Sort
     for arr in (upcoming, current, past):
-        arr.sort(key=lambda x: datetime.strptime(
-            f"{x['date']} {x['start_time']}", "%Y-%m-%d %H:%M"
-        ))
+        arr.sort(
+            key=lambda x: datetime.strptime(
+                f"{x['date']} {x['start_time']}",
+                "%Y-%m-%d %H:%M"
+            )
+        )
 
     return JSONResponse(
         status_code=200,

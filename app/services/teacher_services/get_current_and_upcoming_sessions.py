@@ -4,13 +4,12 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
-
+from app.core.redis import redis_client
 from beanie.operators import Or
 from app.schemas.session import Session
 from app.schemas.attendance import Attendance
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.swap_approval import SwapApproval
-from app.utils.parse_data import _build_swap_payload
 
 logger = logging.getLogger("session_exception")
 IST = ZoneInfo("Asia/Kolkata")
@@ -171,10 +170,20 @@ async def get_current_and_upcoming_sessions(request: Request):
         }
     )
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from bson import ObjectId
+from datetime import datetime
+import json
 
-async def fetch_teacher_request(request: Request):
-    logger.info("===== FETCH TEACHER REQUESTS (LIST) START =====")
-
+async def fetch_teacher_request(
+    request: Request,
+    year: int | None,
+    request_type: str | None,
+    status: str | None,
+    page: int,
+    limit: int
+):
     user = request.state.user
     if user.get("role") != "teacher":
         return JSONResponse(
@@ -183,145 +192,202 @@ async def fetch_teacher_request(request: Request):
         )
 
     teacher_id = ObjectId(user["id"])
-    logger.info(f"Teacher ID → {teacher_id}")
+    skip = (page - 1) * limit
 
-    # --------------------------------------------------
-    # 1️⃣ CREATED BY ME
-    # --------------------------------------------------
-    created_pipeline = [
-        {"$match": {"created_by.$id": teacher_id}},
-        {
-            "$lookup": {
-                "from": "sessions",
-                "localField": "session.$id",
-                "foreignField": "_id",
-                "as": "session_doc"
-            }
-        },
-        {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
-        {
-            "$lookup": {
-                "from": "subjects",
-                "localField": "session_doc.subject.$id",
-                "foreignField": "_id",
-                "as": "subject_doc"
-            }
-        },
-        {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
-        {
-            "$lookup": {
-                "from": "swap_approvals",
-                "localField": "swap_id.$id",
-                "foreignField": "_id",
-                "as": "swap"
-            }
-        },
-        {"$unwind": {"path": "$swap", "preserveNullAndEmptyArrays": True}},
-        {"$sort": {"created_at": -1}}
-    ]
+    # cache
+    cache_key = (
+        f"teacher:requests:{teacher_id}:"
+        f"year={year}:type={request_type}:status={status}:"
+        f"page={page}:limit={limit}"
+    )
 
+    cached = await redis_client.get(cache_key)
+    if cached:
+        return JSONResponse(
+            status_code=200,
+            content=json.loads(cached)
+        )
 
-    created = await ExceptionSession.aggregate(created_pipeline).to_list(None)
-    logger.info(f"Created by me → {len(created)}")
-
-    # --------------------------------------------------
-    # 2️⃣ REQUESTED TO ME
-    # --------------------------------------------------
-    received_pipeline = [
-    {"$match": {"requested_to.$id": teacher_id}},
-    {
-        "$lookup": {
-            "from": "exception_sessions",
-            "localField": "exception.$id",
-            "foreignField": "_id",
-            "as": "exception"
-        }
-    },
-    {"$unwind": "$exception"},
-    {
-        "$lookup": {
-            "from": "sessions",
-            "localField": "exception.session.$id",
-            "foreignField": "_id",
-            "as": "session_doc"
-        }
-    },
-    {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
-    {
-        "$lookup": {
-            "from": "subjects",
-            "localField": "session_doc.subject.$id",
-            "foreignField": "_id",
-            "as": "subject_doc"
-        }
-    },
-    {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
-    {"$sort": {"created_at": -1}}
-]
-
-
-    received = await SwapApproval.aggregate(received_pipeline).to_list(None)
-    logger.info(f"Received by me → {len(received)}")
-
-    # --------------------------------------------------
-    # 3️⃣ NORMALIZE
-    # --------------------------------------------------
     result = []
     seen = set()
 
-    # Created by me
-    for doc in created:
-        exc_id = str(doc["_id"])
-        seen.add(exc_id)
-
-        swap = doc.get("swap")
-        status = swap["status"] if swap else "APPROVED"
-
-        request_type = (
-            "Swap"
-            if doc["action"] == "Reschedule" and swap
-            else doc["action"]
-        )
-
-        result.append({
-            "request_id": exc_id,
-            "request_type": request_type,
-            "status": status,
-            "subject_name": doc["subject_doc"]["subject_name"] if doc.get("subject_doc") else None,
-            "date_raised": doc["created_at"].isoformat(),
-            "created_by_me": True,
-            "received_by_me": False,
-            "can_take_action": False
-        })
-
-    # Received by me
-    for doc in received:
-        exc = doc["exception"]
-        exc_id = str(exc["_id"])
-
-        if exc_id in seen:
-            continue
-
-        result.append({
-            "request_id": exc_id,
-            "request_type": "Swap",
-            "status": doc["status"],
-            "subject_name": doc["subject_doc"]["subject_name"] if doc.get("subject_doc") else None,
-            "date_raised": exc["created_at"].isoformat(),
-            "created_by_me": False,
-            "received_by_me": True,
-            "can_take_action": doc["status"] == "PENDING"
-        })
-
-    logger.info(f"FINAL LIST COUNT → {len(result)}")
-
-    return JSONResponse(
-        status_code=200,
-        content={
-            "success": True,
-            "data": result
+    date_filter = {}
+    if year:
+        date_filter = {
+            "created_at": {
+                "$gte": datetime(year, 1, 1),
+                "$lt": datetime(year + 1, 1, 1)
+            }
         }
-    )
+
+    status_map = {
+        "pending": "PENDING",
+        "approved": "APPROVED",
+        "rejected": "REJECTED"
+    }
+    db_status = status_map.get(status) if status else None
+
+    # created_by_me
+    if request_type in (None, "created_by_me"):
+        created_pipeline = [
+            {"$match": {
+                "created_by.$id": teacher_id,
+                **date_filter
+            }},
+            {
+                "$lookup": {
+                    "from": "swap_approvals",
+                    "localField": "swap_id.$id",
+                    "foreignField": "_id",
+                    "as": "swap"
+                }
+            },
+            {"$unwind": {"path": "$swap", "preserveNullAndEmptyArrays": True}},
+        ]
+
+        if db_status:
+            created_pipeline.append({
+                "$match": {
+                    "$or": [
+                        {"swap.status": db_status},
+                        {
+                            "$and": [
+                                {"swap": {"$eq": None}},
+                                {"$expr": {"$eq": [db_status, "APPROVED"]}}
+                            ]
+                        }
+                    ]
+                }
+            })
+
+        created_pipeline += [
+            {
+                "$lookup": {
+                    "from": "sessions",
+                    "localField": "session.$id",
+                    "foreignField": "_id",
+                    "as": "session_doc"
+                }
+            },
+            {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
+            {
+                "$lookup": {
+                    "from": "subjects",
+                    "localField": "session_doc.subject.$id",
+                    "foreignField": "_id",
+                    "as": "subject_doc"
+                }
+            },
+            {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
+            {"$sort": {"created_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit}
+        ]
+
+        created = await ExceptionSession.aggregate(created_pipeline).to_list(None)
+
+        for doc in created:
+            exc_id = str(doc["_id"])
+            seen.add(exc_id)
+
+            swap = doc.get("swap")
+            final_status = swap["status"] if swap else "APPROVED"
+
+            req_type = (
+                "Swap"
+                if doc["action"] == "Reschedule" and swap
+                else doc["action"]
+            )
+
+            result.append({
+                "request_id": exc_id,
+                "request_type": req_type,
+                "status": final_status,
+                "subject_name": doc.get("subject_doc", {}).get("subject_name"),
+                "date_raised": doc["created_at"].isoformat(),
+                "created_by_me": True,
+                "received_by_me": False,
+                "can_take_action": False
+            })
+
+    # recieved_to_me
+    if request_type in (None, "recieved_to_me"):
+        received_pipeline = [
+            {"$match": {
+                "requested_to.$id": teacher_id,
+                **date_filter
+            }}
+        ]
+
+        if db_status:
+            received_pipeline.append({"$match": {"status": db_status}})
+
+        received_pipeline += [
+            {
+                "$lookup": {
+                    "from": "exception_sessions",
+                    "localField": "exception.$id",
+                    "foreignField": "_id",
+                    "as": "exception"
+                }
+            },
+            {"$unwind": "$exception"},
+            {
+                "$lookup": {
+                    "from": "sessions",
+                    "localField": "exception.session.$id",
+                    "foreignField": "_id",
+                    "as": "session_doc"
+                }
+            },
+            {"$unwind": {"path": "$session_doc", "preserveNullAndEmptyArrays": True}},
+            {
+                "$lookup": {
+                    "from": "subjects",
+                    "localField": "session_doc.subject.$id",
+                    "foreignField": "_id",
+                    "as": "subject_doc"
+                }
+            },
+            {"$unwind": {"path": "$subject_doc", "preserveNullAndEmptyArrays": True}},
+            {"$sort": {"created_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit}
+        ]
+
+        received = await SwapApproval.aggregate(received_pipeline).to_list(None)
+
+        for doc in received:
+            exc = doc["exception"]
+            exc_id = str(exc["_id"])
+
+            if exc_id in seen:
+                continue
+
+            result.append({
+                "request_id": exc_id,
+                "request_type": "Swap",
+                "status": doc["status"],
+                "subject_name": doc.get("subject_doc", {}).get("subject_name"),
+                "date_raised": exc["created_at"].isoformat(),
+                "created_by_me": False,
+                "received_by_me": True,
+                "can_take_action": doc["status"] == "PENDING"
+            })
+
+    response = {
+        "success": True,
+        "page": page,
+        "limit": limit,
+        "count": len(result),
+        "data": result
+    }
+
+    # cache save
+    await redis_client.setex(cache_key, 60, json.dumps(response, default=str))
+
+    return JSONResponse(status_code=200, content=response)
+
 
 async def fetch_detailed_teacher_request(
     request: Request,

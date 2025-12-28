@@ -52,6 +52,7 @@ async def get_teacher_based_time_table(request: Request) -> JSONResponse:
 
     for s in sessions:
         view = SessionView(
+            session_id=str(s.id),
             program=s.program,
             semester=s.semester,
             subject_name=s.subject.subject_name if s.subject else "N/A",
