@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 from beanie import Document, Indexed, Link
 
 from app.schemas.session import Session
+from app.schemas.subject import Subject
 from app.schemas.teacher import Teacher
 
 if TYPE_CHECKING:

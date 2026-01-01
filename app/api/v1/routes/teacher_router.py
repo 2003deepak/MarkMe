@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from typing import List, Literal, Optional
 import json
+from app.services.common_services.update_student_attendance import update_student_attendance
 from app.services.teacher_services.teacher_wise_student import class_based_teacher, get_students_by_teacher
 from app.services.teacher_services.recognize_students import recognize_students
 from app.services.teacher_services.get_teacher_detail import get_teacher_me
@@ -89,6 +90,14 @@ async def mark_attendance(
     attendance_request : AttendanceStudentRequest
 ):
     return await mark_student_attendance(request, attendance_request)
+
+@router.patch("/attendance")
+async def update_today_attendance(
+    request: Request,
+    attendance_request : AttendanceStudentRequest
+):
+    return await update_student_attendance(request, attendance_request)
+    
 
 
 @router.post("/create-exception")

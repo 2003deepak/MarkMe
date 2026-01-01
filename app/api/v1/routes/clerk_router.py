@@ -12,6 +12,7 @@ from typing import Literal, Optional
 from fastapi.responses import JSONResponse
 
 # --- Service Imports
+from app.services.clerk_services.get_analytics_data import get_teacher_session_compliance
 from app.services.clerk_services.get_clerk_profile import get_clerk_profile
 from app.services.clerk_services.create_teacher import create_teacher
 from app.services.clerk_services.create_subject import create_subject
@@ -113,6 +114,13 @@ async def get_teacher_route(
 ):
     return await get_teacher_subject_insights(request, teacher_id,subject_id)
 
+
+@router.get("/teacher/{teacher_id}/session-compliance")
+async def get_teacher_route(
+    request: Request,
+    teacher_id: str = Path(..., description="Teacher ID to fetch details for"),
+):
+    return await get_teacher_session_compliance(request, teacher_id)
 
 
 # ------------------- Clerk Routes -------------------

@@ -14,35 +14,27 @@ from app.schemas.student import Student
 
 async def get_attendance_by_id(request: Request, attendance_id: str):
 
-    # ------------------------------------------------------------------
     # STEP 1 — VALIDATION
-    # ------------------------------------------------------------------
     if not ObjectId.is_valid(attendance_id):
         return JSONResponse(
             status_code=400,
             content={"success": False, "message": "Invalid attendance ID"}
         )
 
-    # ------------------------------------------------------------------
     # STEP 2 — FETCH ATTENDANCE
-    # ------------------------------------------------------------------
     attendance = await Attendance.get(ObjectId(attendance_id), fetch_links=True)
-
     if not attendance:
         return JSONResponse(
             status_code=404,
             content={"success": False, "message": "Attendance not found"}
         )
 
-    # ------------------------------------------------------------------
-    # STEP 3 — RESOLVE EFFECTIVE SESSION
-    # ------------------------------------------------------------------
-    session: Session | None = None
-    exception: ExceptionSession | None = None
+    # STEP 3 — RESOLVE SESSION
+    session = None
+    exception = None
 
     if attendance.session:
         session = attendance.session
-
     elif attendance.exception_session:
         exception = await ExceptionSession.get(
             attendance.exception_session.id,
@@ -54,47 +46,35 @@ async def get_attendance_by_id(request: Request, attendance_id: str):
     if not session:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "message": "Unable to resolve session for this attendance"
-            }
+            content={"success": False, "message": "Unable to resolve session"}
         )
 
-    # ------------------------------------------------------------------
-    # STEP 4 — FETCH SUBJECT & TEACHER
-    # ------------------------------------------------------------------
+    # STEP 4 — SUBJECT & TEACHER
     subject = await Subject.get(session.subject.id)
     teacher = await Teacher.get(session.teacher.id)
 
     if not subject or not teacher:
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "message": "Subject or Teacher data missing"
-            }
+            content={"success": False, "message": "Subject or Teacher missing"}
         )
 
-    # ------------------------------------------------------------------
-    # STEP 5 — HANDLE EXCEPTION SESSION TIMING
-    # ------------------------------------------------------------------
+    # STEP 5 — TIMING (EXCEPTION AWARE)
+    actual_start = session.start_time
+    actual_end = session.end_time
     exception_data = None
-    actual_start_time = session.start_time
-    actual_end_time = session.end_time
 
     if exception:
+        actual_start = exception.start_time
+        actual_end = exception.end_time
         exception_data = {
             "action": exception.action,
-            "date": exception.date.date().isoformat(),
+            "date": exception.date.isoformat(),
             "start_time": exception.start_time,
             "end_time": exception.end_time,
         }
-        actual_start_time = exception.start_time
-        actual_end_time = exception.end_time
 
-    # ------------------------------------------------------------------
-    # STEP 6 — FETCH STUDENTS (ORDER IS CRITICAL)
-    # ------------------------------------------------------------------
+    # STEP 6 — STUDENTS (ORDER CRITICAL)
     students = await Student.find(
         Student.program == session.program,
         Student.department == session.department,
@@ -104,34 +84,29 @@ async def get_attendance_by_id(request: Request, attendance_id: str):
 
     bitmask = attendance.students or ""
 
-    present_students = []
-    absent_students = []
+    present = []
+    absent = []
 
     for idx, student in enumerate(students):
         is_present = idx < len(bitmask) and bitmask[idx] == "1"
-        
-        student_data = { 
-                        "id": str(student.student_id), 
-                        "name": student.first_name + " " + student.last_name, 
-                        "roll_no": student.roll_number, 
-                        "profile_picture" : student.profile_picture
-                    }
 
-        if is_present:
-            present_students.append(student_data)
-        else:
-            absent_students.append(student_data)
+        data = {
+            "id": str(student.student_id),
+            "name": f"{student.first_name} {student.last_name}",
+            "roll_no": student.roll_number,
+            "profile_picture": student.profile_picture,
+        }
 
-    # ------------------------------------------------------------------
-    # STEP 7 — BUILD FINAL RESPONSE
-    # ------------------------------------------------------------------
+        (present if is_present else absent).append(data)
+
+    # STEP 7 — RESPONSE
     return {
         "success": True,
         "message": "Attendance detail fetched successfully",
 
         "attendance": {
             "attendance_id": str(attendance.id),
-            "marked_date": attendance.date.date().isoformat(),
+            "marked_date": attendance.date.isoformat(),   # ✅ FIX
             "marked_time": attendance.created_at.astimezone(
                 timezone.utc
             ).strftime("%H:%M:%S"),
@@ -151,8 +126,8 @@ async def get_attendance_by_id(request: Request, attendance_id: str):
                 "end": session.end_time,
             },
             "actual_time": {
-                "start": actual_start_time,
-                "end": actual_end_time,
+                "start": actual_start,
+                "end": actual_end,
             },
             "exception": exception_data,
         },
@@ -165,9 +140,9 @@ async def get_attendance_by_id(request: Request, attendance_id: str):
 
         "students": {
             "total": len(students),
-            "present_count": len(present_students),
-            "absent_count": len(absent_students),
-            "present": present_students,
-            "absent": absent_students,
+            "present_count": len(present),
+            "absent_count": len(absent),
+            "present": present,
+            "absent": absent,
         }
     }
