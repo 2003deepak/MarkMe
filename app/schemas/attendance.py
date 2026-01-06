@@ -1,5 +1,4 @@
-from sqlite3 import Date
-from pydantic import Field, field_validator
+from pydantic import Field
 from typing import Optional
 from datetime import datetime
 from beanie import Document, Indexed, Link
@@ -10,7 +9,7 @@ from app.schemas.subject import Subject
 class Attendance(Document):
     session: Optional[Link[Session]] = None
     exception_session: Optional[Link[ExceptionSession]] = None
-    date: Indexed(Date)
+    date: Indexed(datetime)
     students: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
