@@ -1,3 +1,4 @@
+import json
 from bson import ObjectId
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -36,7 +37,7 @@ async def get_current_and_upcoming_sessions(request: Request):
     day_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=IST)
     day_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=IST)
 
-    # 1️⃣ base sessions
+    # 1️⃣ BASE SESSIONS
     base_sessions = await Session.find(
         Session.day == weekday,
         Session.teacher.id == teacher_id,
@@ -45,7 +46,7 @@ async def get_current_and_upcoming_sessions(request: Request):
 
     base_session_map = {str(s.id): s for s in base_sessions}
 
-    # 2️⃣ exceptions
+    # 2️⃣ EXCEPTIONS
     exceptions = await ExceptionSession.find(
         ExceptionSession.date >= day_start,
         ExceptionSession.date <= day_end,
@@ -58,11 +59,9 @@ async def get_current_and_upcoming_sessions(request: Request):
 
     cancel_map = {}
     reschedule_map = {}
-    target_swap_sessions = {}
+    target_swap_map = {}
 
-    # 3️⃣ process exceptions
     for ex in exceptions:
-        # swap must be approved
         if ex.swap_id and ex.swap_id.status != "APPROVED":
             continue
 
@@ -72,16 +71,14 @@ async def get_current_and_upcoming_sessions(request: Request):
             cancel_map[sid] = ex
 
         elif ex.action == "Reschedule":
-            # SOURCE and TARGET both mean RESCHEDULE now
             reschedule_map[sid] = ex
-
             if ex.swap_role == "TARGET":
-                target_swap_sessions[sid] = ex
+                target_swap_map[sid] = ex
 
+    # 3️⃣ BUILD FINAL SESSION LIST
     final_sessions = []
-    added_session_ids = set()
+    added_ids = set()
 
-    # 4️⃣ apply to base sessions
     for sid, session in base_session_map.items():
 
         if sid in cancel_map:
@@ -93,35 +90,38 @@ async def get_current_and_upcoming_sessions(request: Request):
             session.end_time = ex.end_time
 
         final_sessions.append(session)
-        added_session_ids.add(sid)
+        added_ids.add(sid)
 
-    # 5️⃣ inject TARGET swap sessions if missing
-    for sid, ex in target_swap_sessions.items():
-        if sid not in added_session_ids:
-            injected = ex.session
-            injected.start_time = ex.start_time
-            injected.end_time = ex.end_time
-            final_sessions.append(injected)
-            added_session_ids.add(sid)
+    # inject TARGET swap sessions
+    for sid, ex in target_swap_map.items():
+        if sid not in added_ids:
+            s = ex.session
+            s.start_time = ex.start_time
+            s.end_time = ex.end_time
+            final_sessions.append(s)
+            added_ids.add(sid)
 
-    # 6️⃣ attendance
+    # 4️⃣ ATTENDANCE FETCH
     attendance_list = await Attendance.find(
         Attendance.date >= day_start,
         Attendance.date <= day_end,
         fetch_links=True
     ).to_list()
 
-    attendance_map = {
-        str(a.session.id): a
-        for a in attendance_list
-        if a.session
-    }
+    attendance_by_session = {}
+    attendance_by_exception = {}
+
+    for a in attendance_list:
+        if a.session:
+            attendance_by_session[str(a.session.id)] = a
+        elif a.exception_session:
+            attendance_by_exception[str(a.exception_session.id)] = a
 
     upcoming = []
     current = []
     past = []
 
-    # 7️⃣ classify
+    # 5️⃣ CLASSIFICATION
     for s in final_sessions:
         start_dt = datetime.strptime(
             f"{today} {s.start_time}", "%Y-%m-%d %H:%M"
@@ -131,12 +131,21 @@ async def get_current_and_upcoming_sessions(request: Request):
             f"{today} {s.end_time}", "%Y-%m-%d %H:%M"
         ).replace(tzinfo=IST)
 
-        attendance = attendance_map.get(str(s.id))
+        # attendance resolution (FIX)
+        attendance = attendance_by_session.get(str(s.id))
+
+        if not attendance:
+            ex = reschedule_map.get(str(s.id))
+            if ex:
+                attendance = attendance_by_exception.get(str(ex.id))
+
         attendance_id = str(attendance.id) if attendance else None
+        attendance_marked = bool(attendance and attendance.students)
 
         payload = {
             "session_id": str(s.id),
             "attendance_id": attendance_id,
+            "attendance_marked": attendance_marked,
             "date": today.strftime("%Y-%m-%d"),
             "start_time": s.start_time,
             "end_time": s.end_time,
@@ -169,12 +178,6 @@ async def get_current_and_upcoming_sessions(request: Request):
             }
         }
     )
-
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from bson import ObjectId
-from datetime import datetime
-import json
 
 async def fetch_teacher_request(
     request: Request,

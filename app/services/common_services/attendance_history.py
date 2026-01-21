@@ -360,7 +360,8 @@ async def clerk_attendance_history(
     year: int,
     subject: Optional[List[str]] = None,
     program: Optional[List[str]] = None,
-    batch_year: Optional[List[int]] = None
+    batch_year: Optional[List[int]] = None,
+    semester: Optional[List[int]] = None
 ):
     logger.info("CLERK ATTENDANCE HISTORY API CALLED")
     logger.info(f"Params → month={month}, year={year}, subject={subject}, program={program}, batch_year={batch_year}")
@@ -453,6 +454,13 @@ async def clerk_attendance_history(
             match_stage["subject_data.academic_year"] = batch_years_str[0]
         else:
             match_stage["subject_data.academic_year"] = {"$in": batch_years_str}
+            
+    # Handle Semester Filter
+    if semester:
+        semester_input = [semester] if isinstance(semester, int) else semester
+        match_stage["subject_data.semester"] = (
+            semester_input[0] if len(semester_input) == 1 else {"$in": semester_input}
+        )
     
     # Add match stage if any filters were provided
     if match_stage:

@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from fastapi.responses import JSONResponse
 from app.services.common_services.attendance_history import clerk_attendance_history, student_attendance_history, teacher_attendance_history
+from app.services.common_services.detailed_attendance import get_attendance_by_id
 from app.services.common_services.get_heatmap import get_heatmap
 from app.services.common_services.subject_wise_attendance import subject_wise_attendance
 from app.services.common_services.get_critical_students import get_critical_students
@@ -153,5 +154,17 @@ async def get_department_heatmap(
 
     if role == "clerk":
         return await clerk_attendance_history(
-            request, month, year, subject_list, program_list, batch_year_list
+            request, month, year, subject_list, program_list, batch_year_list,semester_list
+        )
+        
+@router.get("/{attendance_id}")
+async def deatiled_attendance(
+    request: Request,
+    attendance_id: str = Path(..., description="Teacher ID to fetch details for")
+    
+):
+    
+        return await get_attendance_by_id(
+            request,
+            attendance_id
         )

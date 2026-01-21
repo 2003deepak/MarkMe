@@ -16,19 +16,17 @@ router = APIRouter()
 
 
 @router.post("/")
-async def register_student_route(request : StudentRegisterRequest):
+async def register_student_route(student_data : StudentRegisterRequest ,  request: Request):
     try:
-        return await register_student(
-            student_data=request,   
-        )
+         return await register_student(student_data, request)
 
     except ValidationError as e:
-        raise HTTPException(success_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
     except HTTPException as e:
         raise e
     except Exception as e:
         print(e)
-        raise HTTPException(success_code=500, detail=f"Server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
 @router.get("/me")

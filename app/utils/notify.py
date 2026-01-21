@@ -9,7 +9,7 @@ async def notify_students_by_session(session: Session, title: str, message: str)
         Student.department == session.department,
         Student.program == session.program,
         Student.semester == session.semester,
-        Student.academic_year == session.academic_year
+        Student.batch_year == session.academic_year
     ).project(StudentListingView).to_list()
 
     student_ids = [str(s.student_id) for s in students]

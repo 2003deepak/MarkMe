@@ -1,4 +1,4 @@
-from pydantic import Field, field_validator
+from pydantic import Field
 from typing import Optional
 from datetime import datetime
 from beanie import Document, Indexed, Link

@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+import json
 from bson import ObjectId
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from zoneinfo import ZoneInfo
+from app.core.redis import redis_client
 
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
@@ -31,10 +33,18 @@ async def get_tomorrow_bunk_safety(request: Request):
     print(f"👤 Student ID: {student_id}")
     print(f"🎓 Program: {prog} | Sem: {sem} | Year: {ac_year} | Dept: {dept}")
 
+
     # STEP 2 — Compute Tomorrow's Date
     now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
     tomorrow_date = now.date() + timedelta(days=1)
     tomorrow_weekday = (now + timedelta(days=1)).strftime("%A")
+    
+    
+    cache_key = f"student:{student_id}:bunk:tomorrow:{tomorrow_date}"
+    
+    cached = await redis_client.get(cache_key)
+    if cached:
+        return JSONResponse(status_code=200, content=json.loads(cached))
 
     print(f"\n📅 Tomorrow Date: {tomorrow_date} ({tomorrow_weekday})")
 
@@ -235,23 +245,30 @@ async def get_tomorrow_bunk_safety(request: Request):
             "safe": sub["safe"]
         })
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "success": True,
-            "message": "Tomorrow bunk safety calculated",
-            "data": {
-                "date": str(tomorrow_date),
-                "safe_to_bunk": safe_to_bunk,
-                "subjects": response_subjects,
-                "aggregate": {
-                    "current": round(aggregate_now, 2),
-                    "if_bunk": round(aggregate_if_bunk, 2),
-                    "tomorrow_session_count": len(final_sessions)
-                }
+        response = {
+        "success": True,
+        "message": "Tomorrows bunk safety calculated",
+        "data": {
+            "date": str(tomorrow_date),
+            "safe_to_bunk": safe_to_bunk,
+            "subjects": response_subjects,
+            "aggregate": {
+                "current": round(aggregate_now, 2),
+                "if_bunk": round(aggregate_if_bunk, 2),
+                "tomorrow_session_count": len(final_sessions)
             }
         }
+    }
+
+    #store cache 12 hours
+    await redis_client.setex(
+        cache_key,
+        12 * 60 * 60,
+        json.dumps(response)
     )
+
+    return JSONResponse(status_code=200, content=response)
+
 
 
 async def get_week_plan(request: Request):
@@ -276,6 +293,14 @@ async def get_week_plan(request: Request):
 
     tz = ZoneInfo("Asia/Kolkata")
     today = datetime.now(tz=tz).date()
+    
+    week_end = today + timedelta(days=(6 - today.weekday()))
+    cache_key = f"student:{student_id}:bunk:week:{week_end}"
+
+    cached = await redis_client.get(cache_key)
+    if cached:
+        return JSONResponse(status_code=200, content=json.loads(cached))
+    
 
     
     # STEP 2 — LOAD ATTENDANCE SUMMARY (OPTIONAL)
@@ -480,14 +505,23 @@ async def get_week_plan(request: Request):
 
     print("\n===================== WEEK PLAN COMPLETE =====================")
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "success": True,
-            "message": "Weekly bunk safety calculated",
-            "data": {
-                "week_plan": weekly_plan,
-                "summary": summary
-            }
+    response = {
+        "success": True,
+        "message": "Weekly bunk safety calculated",
+        "data": {
+            "week_plan": weekly_plan,
+            "summary": summary
         }
+    }
+
+    #ttl till week end (approx 24h * remaining days)
+    ttl = max(6 - today.weekday(), 1) * 24 * 60 * 60
+
+    await redis_client.setex(
+        cache_key,
+        ttl,
+        json.dumps(response)
     )
+
+    return JSONResponse(status_code=200, content=response)
+

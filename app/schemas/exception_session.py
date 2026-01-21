@@ -1,9 +1,11 @@
 from pydantic import Field, model_validator
 from typing import Optional, Literal, TYPE_CHECKING
 from datetime import datetime
+from pydantic import Field, model_validator
 from beanie import Document, Indexed, Link
 
 from app.schemas.session import Session
+from app.schemas.subject import Subject
 from app.schemas.teacher import Teacher
 
 if TYPE_CHECKING:
@@ -13,6 +15,9 @@ if TYPE_CHECKING:
 class ExceptionSession(Document):
 
     session: Optional[Link[Session]] = None
+    subject: Optional[Link[Subject]] = None
+    teacher: Optional[Link[Teacher]] = None
+
     date: Indexed(datetime)
 
     action: Literal["Cancel", "Reschedule", "Add"]

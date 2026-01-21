@@ -125,8 +125,6 @@ async def mark_student_attendance(request: Request, attendance_request: Attendan
     department = session.department 
     semester = session.semester
     
-    print(program , batch_year , department , semester)
-    
     
     students = await Student.find_many(
             Student.program == program,
@@ -134,9 +132,7 @@ async def mark_student_attendance(request: Request, attendance_request: Attendan
             Student.department == department,
             Student.batch_year == int(batch_year)
         ).project(StudentListingView).sort("roll_no").to_list()
-    
-    print(len(students))
-    
+
     # Safety check
     if len(attendance_request.attendance_student) != len(students):
         return JSONResponse(

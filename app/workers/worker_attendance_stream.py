@@ -433,25 +433,42 @@ async def handle_attendance_update(attendance: Attendance, old_bitstr: str, new_
 
 
 async def resolve_session_context(attendance: Attendance) -> Optional[tuple]:
-    """Resolve session context from attendance"""
+    """
+    Resolve session context from attendance.
+    Returns None for CANCEL / ADD exceptions (no session exists).
+    """
     try:
         session = None
+
+        # Case 1: Normal attendance
         if attendance.session:
             session = attendance.session
             if isinstance(session, Link):
                 session = await session.fetch_link()
-            await session.fetch_all_links()
+
+        # Case 2: Exception-based attendance
         elif attendance.exception_session:
             exception_session = attendance.exception_session
             if isinstance(exception_session, Link):
                 exception_session = await exception_session.fetch_link()
+
+            # 🚨 IMPORTANT: exception may not have a session
+            if not exception_session.session:
+                logger.info(
+                    f"⏭️ Skipping attendance {attendance.id} "
+                    f"(exception action={exception_session.action}, no session)"
+                )
+                return None
+
             session = exception_session.session
             if isinstance(session, Link):
                 session = await session.fetch_link()
-            await session.fetch_all_links()
 
         if not session:
             return None
+
+        # Fetch linked entities
+        await session.fetch_all_links()
 
         subject = session.subject
         program = session.program
@@ -460,6 +477,7 @@ async def resolve_session_context(attendance: Attendance) -> Optional[tuple]:
         teacher = session.teacher
 
         return subject, program, department, semester, teacher
+
     except Exception as e:
         logger.error(f"🚨 Error resolving session context: {e}")
         return None
@@ -506,7 +524,6 @@ async def get_attendance_category_counts(subject_id: ObjectId) -> tuple[int, int
 #############################################
 # 👂 Change Stream Watcher (unchanged)
 #############################################
-
 async def watch_attendance_changes():
     logger.info("🚀 Initializing DB connection...")
     try:
@@ -524,30 +541,28 @@ async def watch_attendance_changes():
     try:
         async with collection.watch(
             pipeline,
-            full_document="updateLookup",
-            full_document_before_change="required"
+            full_document="updateLookup"
         ) as stream:
             async for change in stream:
                 doc_id = change["documentKey"]["_id"]
                 logger.info(f"🔔 Update detected: {doc_id}")
 
-                new_doc = change.get("fullDocument")
-                old_doc = change.get("fullDocumentBeforeChange")
-
-                if not new_doc or not old_doc:
-                    logger.warning(f"⚠️ Missing document data for {doc_id}")
-                    continue
-
-                new_bitstr = new_doc.get("students", "")
-                old_bitstr = old_doc.get("students", "")
-
                 try:
                     attendance = await Attendance.get(doc_id, fetch_links=True)
                     if not attendance:
-                        logger.error(f"❌ Attendance {doc_id} not found")
+                        logger.warning(f"⚠️ Attendance {doc_id} not found")
                         continue
 
-                    await handle_attendance_update(attendance, old_bitstr, new_bitstr)
+                    # We do NOT rely on MongoDB pre-images
+                    new_bitstr = attendance.students or ""
+                    old_bitstr = ""  # let handler detect initial vs update
+
+                    await handle_attendance_update(
+                        attendance,
+                        old_bitstr,
+                        new_bitstr
+                    )
+
                 except Exception as e:
                     logger.error(f"🚨 Error processing update for {doc_id}: {e}")
                     continue
