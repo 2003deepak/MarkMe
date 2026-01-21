@@ -11,7 +11,7 @@ class StudentRegisterRequest(BaseModel):
     first_name: str 
     last_name: str 
     email: EmailStr 
-    password: str = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
+    password: Optional[str] = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
 
 class TeacherRegisterRequest(BaseModel):
     first_name: str

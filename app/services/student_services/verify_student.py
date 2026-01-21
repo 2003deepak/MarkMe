@@ -50,6 +50,8 @@ async def verify_student_email(request: Request):
 
         # ✅ Update to verified
         student.is_verified = True
+        student.verification_expires_at = None
+        
         await student.save()
 
         return JSONResponse(

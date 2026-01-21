@@ -10,8 +10,10 @@ from fastapi import (
 from typing import Literal, Optional
 
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 # --- Service Imports
+from app.services.clerk_services.defaulter_students import defaulter_students
 from app.services.clerk_services.get_analytics_data import get_teacher_session_compliance
 from app.services.clerk_services.get_clerk_profile import get_clerk_profile
 from app.services.clerk_services.create_teacher import create_teacher
@@ -19,6 +21,7 @@ from app.services.clerk_services.create_subject import create_subject
 from app.services.clerk_services.update_clerk import update_clerk
 from app.services.clerk_services.update_teacher import update_teacher_data
 from app.services.clerk_services.get_all_teachers import get_all_teachers
+from app.services.student_services.register_student import register_student
 from app.services.teacher_services.get_teacher_detail import get_teacher_by_id, get_teacher_subject_insights, get_teacher_subject_performance
 from app.services.teacher_services.fetch_class_list import fetch_class
 from app.services.clerk_services.add_timetable import add_timetable
@@ -26,6 +29,7 @@ from app.services.clerk_services.get_subject_detail import get_subject_detail, g
 
 # --- Pydantic Imports
 from app.models.allModel import (
+    StudentRegisterRequest,
     TeacherUpdateRequest,
     UpdateClerkRequest,
     CreateSubjectRequest,
@@ -131,7 +135,7 @@ async def get_clerk_profile_route(request: Request):
     return await get_clerk_profile(request)
 
     
-# ------------------- Student Routes -------------------
+# ------------------- Me Routes -------------------
 
 
 @router.put("/me")
@@ -185,6 +189,23 @@ async def update_clerk_route(
     )
 # ------------------- Student Routes -------------------
 
+@router.post("/student")
+async def register_student_route(student_data : StudentRegisterRequest ,  request: Request):
+    try:
+        return await register_student(
+            student_data ,
+            request
+        )
+
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+    
+    
 @router.get("/students")
 async def get_students_route(
     request: Request,
@@ -200,5 +221,19 @@ async def get_students_route(
         request, batch_year, program, semester, mode, page, limit, search
     )
 
+
+@router.get("/defaulters")
+async def get_defaulters_students(
+    request: Request,
+    page: int = 1,
+    limit: int = 10,
+    search: str | None = None,
+    subject_id: str | None = None,
+    program: str | None = None,
+    semester: int | None = None,
+    threshold: int = 75
+    
+):
+    return await defaulter_students(request,page,limit,search,subject_id,program,semester,threshold)
 
 
