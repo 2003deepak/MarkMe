@@ -40,3 +40,12 @@ async def delete_clerk_route(
     request: Request = None
 ):
     return await delete_clerk(request,email_id)
+
+
+@router.get("/teacher/defaulters")
+async def get_teacher_defaulters(
+    request: Request,
+    page: int = 1,
+    limit: int = 10,
+):
+    return await teacher_defaulters(request, page, limit)

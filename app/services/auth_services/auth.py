@@ -96,7 +96,7 @@ async def login_user(request):
 
     access_token = create_access_token(access_payload)
 
-    # Refresh token → minimal but sufficient
+    # Refresh token 
     refresh_token = create_refresh_token({
         "id": str(user.id),
         "email": user.email,
@@ -180,27 +180,75 @@ async def logout_user(request,request_model):
     )
   
 
-async def refresh_access_token(request):
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from bson import ObjectId
 
+from app.schemas.student import Student
+from app.schemas.teacher import Teacher
+from app.schemas.clerk import Clerk
+from app.utils.security import decode_token, create_access_token
+
+
+async def refresh_access_token(request: Request):
+
+    # ---------------- READ REFRESH TOKEN ----------------
     auth_header = request.headers.get("x-internal-token")
     if not auth_header:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "Refresh token missing"}
+            content={
+                "success": False,
+                "message": "Refresh token missing"
+            }
         )
 
-    token = auth_header.split(" ")[1]
-    payload = decode_token(token)
+    # Expecting: "Bearer <token>"
+    try:
+        token = auth_header.split(" ")[1]
+    except IndexError:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "message": "Invalid refresh token format"
+            }
+        )
 
+    payload = decode_token(token)
     if not payload:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "Invalid refresh token"}
+            content={
+                "success": False,
+                "message": "Invalid or expired refresh token"
+            }
         )
 
     role = payload.get("role")
+    email = payload.get("email")
     user_id = payload.get("id")
 
+    # ---------------- ADMIN (NO DB LOOKUP) ----------------
+    if role == "admin":
+        new_access_token = create_access_token({
+            "email": email,
+            "role": "admin"
+        })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Access token refreshed",
+                "data": {
+                    "access_token": new_access_token,
+                    "token_type": "bearer"
+                }
+            }
+        )
+
+    # ---------------- ROLE → MODEL MAP ----------------
     role_model_map = {
         "student": Student,
         "teacher": Teacher,
@@ -208,23 +256,36 @@ async def refresh_access_token(request):
     }
 
     model = role_model_map.get(role)
-
     if not model:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "Invalid role in token"}
+            content={
+                "success": False,
+                "message": "Invalid role in refresh token"
+            }
         )
 
-    # 🔥 FETCH USER AGAIN FROM DB
-    user = await model.find_one(model.id == ObjectId(user_id))
+    if not user_id:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "message": "User ID missing in refresh token"
+            }
+        )
 
+    # ---------------- FETCH USER FROM DB ----------------
+    user = await model.find_one(model.id == ObjectId(user_id))
     if not user:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "User no longer exists"}
+            content={
+                "success": False,
+                "message": "User no longer exists"
+            }
         )
 
-    # 🔥 REBUILD ACCESS TOKEN (ROLE AWARE)
+    # ---------------- BUILD NEW ACCESS TOKEN ----------------
     if role == "student":
         access_payload = {
             "id": str(user.id),
@@ -257,6 +318,7 @@ async def refresh_access_token(request):
             }
         }
     )
+
 
 async def request_password_reset(request):
     otp = str(random.randint(100000, 999999))

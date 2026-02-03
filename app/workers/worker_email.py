@@ -12,7 +12,7 @@ async def email_worker():
     queue = await channel.declare_queue(
         settings.email_queue,
         durable=True,
-        arguments={"x-max-priority": 10}  
+        arguments={"x-max-priority": 10}
     )
 
     print(f"[email_worker] Listening on queue: {settings.email_queue}")
@@ -27,16 +27,21 @@ async def email_worker():
                     subject = data.get("subject")
                     email_to = data.get("to")
                     body = data.get("body")
+                    is_html = data.get("is_html", False) or True
 
                     if subject and email_to and body:
-                        await send_email(subject=subject, email_to=email_to, body=body)
+                        await send_email(
+                            subject=subject,
+                            email_to=email_to,
+                            body=body,
+                            is_html=is_html
+                        )
                         print(f"[email_worker] Email sent to: {email_to}")
                     else:
                         print(f"[email_worker] Invalid payload: {payload}")
 
                 except Exception as e:
                     print(f"[email_worker] Error: {str(e)}")
-
 
 if __name__ == "__main__":
     asyncio.run(email_worker())
