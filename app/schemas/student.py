@@ -29,9 +29,6 @@ class Student(Document):
 
     face_embedding: Optional[List[float]] = None
 
-    password_reset_otp: Optional[str] = None
-    password_reset_otp_expires: Optional[datetime] = None
-
     is_verified: bool = False
 
     # timestamps

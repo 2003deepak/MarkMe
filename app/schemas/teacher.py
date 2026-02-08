@@ -19,8 +19,6 @@ class Teacher(Document):
     mobile_number: int
     department: Indexed(str)  # type: ignore
     subjects_assigned: List[Link["Subject"]] = []  # Use string-based forward reference
-    password_reset_otp: Optional[str] = None
-    password_reset_otp_expires: Optional[datetime] = None
     created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
     updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 

@@ -49,7 +49,7 @@ class ForgotPasswordRequest(BaseModel):
 class OtpRequest(BaseModel):
     email: EmailStr
     role: Literal["student", "teacher", "clerk"]
-    otp: str
+    otp: Optional[str] = None
     
 class NotificationFilter(BaseModel):
     dept: Optional[str] = None
@@ -106,8 +106,7 @@ class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    mobile_number: Optional[str] = None
     dob: Optional[date] = None
     roll_number: Optional[int] = None
     program: Optional[str] = None

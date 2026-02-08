@@ -9,6 +9,7 @@ from app.core.redis import redis_client
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
+from app.utils.parse_data import validate_student_academic
 
 
 async def get_tomorrow_bunk_safety(request: Request):
@@ -32,6 +33,18 @@ async def get_tomorrow_bunk_safety(request: Request):
 
     print(f"👤 Student ID: {student_id}")
     print(f"🎓 Program: {prog} | Sem: {sem} | Year: {ac_year} | Dept: {dept}")
+    
+    missing = validate_student_academic(user)
+    
+    if missing:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "Student academic details are incomplete",
+                "missing_fields": missing
+            }
+        )
 
 
     # STEP 2 — Compute Tomorrow's Date
@@ -244,8 +257,9 @@ async def get_tomorrow_bunk_safety(request: Request):
             "attendance_if_bunk": round(sub["attendance_if_bunk"], 2),
             "safe": sub["safe"]
         })
+    
 
-        response = {
+    response = {
         "success": True,
         "message": "Tomorrows bunk safety calculated",
         "data": {
@@ -290,6 +304,17 @@ async def get_week_plan(request: Request):
     sem = str(user.get("semester"))
     ac_year = str(user.get("batch_year"))
     dept = user.get("department")
+    
+    missing = validate_student_academic(user)
+    if missing:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "Student academic details are incomplete",
+                "missing_fields": missing
+            }
+        )
 
     tz = ZoneInfo("Asia/Kolkata")
     today = datetime.now(tz=tz).date()

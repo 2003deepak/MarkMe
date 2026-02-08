@@ -14,9 +14,7 @@ class Clerk(Document):
     program: Optional[str] = None
     phone: Optional[int] = Field(None, alias="phone")
     profile_picture: Optional[str] = None
-    profile_picture_id: Optional[str] = None 
-    password_reset_otp: Optional[str] = None
-    password_reset_otp_expires: Optional[datetime] = None
+    profile_picture_id: Optional[str] = None
     created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
     updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
 

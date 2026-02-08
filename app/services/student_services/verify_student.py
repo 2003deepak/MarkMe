@@ -1,8 +1,16 @@
 from fastapi import Request
-from fastapi.responses import HTMLResponse
-from jose import JWTError
-from app.utils.token_utils import decode_verification_token
-from app.schemas.student import Student
+from fastapi.responses import HTMLResponse, RedirectResponse
+from jose import JWTError, ExpiredSignatureError
+from datetime import datetime
+
+from app.utils.send_otp import verify_otp
+from app.models.allModel import OtpRequest
+from fastapi.responses import JSONResponse
+
+
+# ─────────────────────────────
+# HTML FALLBACK (Desktop users)
+# ─────────────────────────────
 
 SUCCESS_HTML = """
 <!DOCTYPE html>
@@ -56,54 +64,70 @@ ERROR_HTML = """
 </html>
 """
 
-async def verify_student_email(request: Request):
+
+# ─────────────────────────────
+# VERIFY EMAIL ENDPOINT
+# ─────────────────────────────
+
+async def verify_student_email(request_data: OtpRequest):
     try:
-        # 1️⃣ Get token
-        token = request.query_params.get("token")
-        if not token:
-            return HTMLResponse(
-                ERROR_HTML.format(message="Verification token is missing."),
-                status_code=400
+        email = request_data.email
+        otp = request_data.otp
+
+        # 1. Verify OTP
+        is_valid, message = await verify_otp(email, otp)
+
+        if not is_valid:
+             return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "message": message
+                }
             )
 
-        # 2️⃣ Decode token
-        email = decode_verification_token(token)
-
-        # 3️⃣ Find student
+        # 2. Find Student
         student = await Student.find_one(Student.email == email)
         if not student:
-            return HTMLResponse(
-                ERROR_HTML.format(message="Student not found."),
-                status_code=404
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "message": "Student not found"
+                }
             )
 
-        # 4️⃣ Already verified
+        # 3. Already verified
         if student.is_verified:
-            return HTMLResponse(
-                SUCCESS_HTML,
-                status_code=200
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": True,
+                    "message": "Email already verified"
+                }
             )
 
-        # 5️⃣ Verify student
+    
+
+        # 5. Mark Verified
         student.is_verified = True
         student.verification_expires_at = None
         await student.save()
 
-        # 6️⃣ Success page
-        return HTMLResponse(
-            SUCCESS_HTML,
-            status_code=200
-        )
-
-    except JWTError:
-        return HTMLResponse(
-            ERROR_HTML.format(message="Invalid or expired verification link."),
-            status_code=400
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Email verified successfully"
+            }
         )
 
     except Exception as e:
         print(f"[verify_student_email] Error: {str(e)}")
-        return HTMLResponse(
-            ERROR_HTML.format(message="Something went wrong. Please try again later."),
-            status_code=500
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "message": f"Server error: {str(e)}"
+            }
         )

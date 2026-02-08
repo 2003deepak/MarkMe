@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.attendance import Attendance
+from app.utils.parse_data import validate_student_academic
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -39,6 +40,17 @@ async def get_todays_upcoming_sessions_for_student(
     semester = str(user.get("semester"))
     academic_year = str(user.get("batch_year"))
     department = user.get("department")
+    
+    missing = validate_student_academic(user)
+    if missing:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "Student academic details are incomplete",
+                "missing_fields": missing
+            }
+        )
 
     # STEP 4 — Base sessions
     base_sessions = await Session.find(

@@ -1,3 +1,4 @@
+from random import random
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.core.database import get_db
@@ -12,6 +13,7 @@ from typing import List
 from app.utils.publisher import send_to_queue  
 from app.models.allModel import StudentRegisterRequest
 from uuid import uuid4
+from app.utils.send_otp import generate_and_store_otp
 
 
 async def register_student(student_data: StudentRegisterRequest, request: Request):
@@ -80,40 +82,38 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
 
         #email only for self registration
         if not is_verified:
-            token = create_verification_token(student_data.email)
-            verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
+
+            try:
+                otp = await generate_and_store_otp(student_data.email)
+            except ValueError as e:
+              
+                 return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "message": str(e)
+                    }
+                )
+
 
             html_body = f"""
             <html>
-                <body style="font-family: Arial, sans-serif;">
-                    <p>Hello <b>{student_data.first_name}</b>,</p>
+            <body style="font-family: Arial, sans-serif;">
+                <p>Hello <b>{student_data.first_name}</b>,</p>
 
-                    <p>Thanks for registering on <b>MarkMe</b>!</p>
+                <p>Thanks for registering on <b>MarkMe</b>!</p>
 
-                    <p>Please verify your email by clicking the button below:</p>
+                <p>Your email verification OTP is:</p>
 
-                    <p>
-                        <a href="{verification_link}"
-                        style="
-                            display: inline-block;
-                            padding: 10px 16px;
-                            background-color: #4CAF50;
-                            color: white;
-                            text-decoration: none;
-                            border-radius: 4px;
-                            font-weight: bold;
-                        ">
-                            Verify Email
-                        </a>
-                    </p>
+                <h2 style="letter-spacing: 4px;">{otp}</h2>
 
-                    <p>This link will expire in <b>30 minutes</b>.</p>
+                <p>This OTP will expire in <b>10 minutes</b>.</p>
 
-                    <p>If you didn’t create this account, please report to the admin.</p>
+                <p>If you didn’t create this account, please report to the admin.</p>
 
-                    <br />
-                    <p>Regards,<br />MarkMe Team</p>
-                </body>
+                <br />
+                <p>Regards,<br />MarkMe Team</p>
+            </body>
             </html>
             """
 

@@ -11,19 +11,7 @@ from app.utils.publisher import send_to_queue
 from app.utils.token_utils import create_verification_token
 from app.core.config import settings
 import base64
-
-class UpdateProfileRequest(BaseModel):
-    first_name: Optional[str] = None
-    middle_name: Optional[str] = None
-    last_name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    dob: Optional[date] = None
-    roll_number: Optional[int] = None
-    program: Optional[str] = None
-    department: Optional[str] = None
-    semester: Optional[int] = None
-    batch_year: Optional[int] = None
+from app.models.allModel import UpdateProfileRequest
 
 async def update_student_profile(
     request: Request, 
@@ -61,19 +49,6 @@ async def update_student_profile(
                 }
             )
 
-        # Check if email is being updated and already exists
-        email_changed = False
-        if request_data.email and request_data.email != student_email:
-            if await Student.find_one(Student.email == request_data.email):
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                       "success": False, 
-                        "message": "Email already in use"
-                    }
-                )
-            email_changed = True
-
         update_data = {}
         image_paths = []
         # Handle images for face embedding
@@ -89,7 +64,7 @@ async def update_student_profile(
                             "message": "Files must be images"
                         }
                     )
-                path = f"/tmp/{str(student.id)}_{image.filename}"
+                path = f"C:/Users/deepa/AppData/Local/Temp/{str(student.id)}_{image.filename}"
                 with open(path, "wb") as f:
                     f.write(await image.read())
                 image_paths.append(path)
@@ -150,10 +125,8 @@ async def update_student_profile(
             update_data["middle_name"] = request_data.middle_name
         if request_data.last_name is not None:
             update_data["last_name"] = request_data.last_name
-        if request_data.email is not None:
-            update_data["email"] = request_data.email
-        if request_data.phone is not None:
-            update_data["phone"] = request_data.phone
+        if request_data.mobile_number is not None:
+            update_data["mobile_number"] = request_data.mobile_number
         if request_data.dob is not None:
             update_data["dob"] = request_data.dob
         if request_data.roll_number is not None:
@@ -178,26 +151,6 @@ async def update_student_profile(
             cache_key_student = f"student:{student_email}"
             await redis_client.delete(cache_key_student)
 
-            # # Send verification email if email was changed
-            # if email_changed:
-            #     print(f"Email changed to {request_data.email}. Sending verification email.")
-            #     token = create_verification_token(request_data.email)
-            #     verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
-            #     await send_to_queue("email_queue", {
-            #         "type": "send_email",
-            #         "data": {
-            #             "to": request_data.email,
-            #             "subject": "Verify your new email - MarkMe",
-            #             "body": (
-            #                 f"Hello {request_data.first_name or student.first_name},\n\n"
-            #                 f"You've updated your email on MarkMe. Please verify your new email by clicking the link below:\n\n"
-            #                 f"{verification_link}\n\n"
-            #                 "This link will expire in 30 minutes.\n\n"
-            #                 "If you didn't update your email, please contact support."
-            #             )
-            #         }
-            #     }, priority=5)
-
         else:
             print("No fields to update for student.")
 
@@ -210,8 +163,7 @@ async def update_student_profile(
                     "student_id": str(student.id),
                     "name": f"{update_data.get('first_name', student.first_name)} "
                             f"{update_data.get('middle_name', student.middle_name) or ''} "
-                            f"{update_data.get('last_name', student.last_name)}".strip(),
-                    "email": update_data.get("email", student.email)
+                            f"{update_data.get('last_name', student.last_name)}".strip()
                 }
             }
         )
