@@ -7,6 +7,7 @@ class RabbitMQSettings(BaseSettings):
     face_recog_queue: str = "face_recog_queue"
     session_queue : str = "session_queue"
     notification_queue : str = "notification_queue"
+    cleanup_queue : str = "cleanup_queue"
 
     model_config = SettingsConfigDict(
         env_file=".env",

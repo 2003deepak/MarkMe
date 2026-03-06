@@ -6,11 +6,13 @@ from app.services.student_services.get_upcoming_session import get_todays_upcomi
 from app.services.student_services.register_student import register_student
 from app.services.student_services.get_student_detail import get_student_detail
 from app.services.student_services.update_student_profile import update_student_profile
+from app.services.student_services.resend_verification import resend_verification_otp
 from app.services.student_services.verify_student import verify_student_email
 from typing import List, Optional
 from datetime import datetime
+
 # -- Pydantic Model Import
-from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest 
+from app.models.allModel import StudentRegisterRequest, UpdateProfileRequest, OtpRequest 
 
 router = APIRouter()
 
@@ -46,8 +48,8 @@ async def update_profile(
     middle_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
     # email: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),
-    dob: Optional[str] = Form(None, description="Date of birth in YYYY-MM-DD format"),
+    mobile_number: Optional[str] = Form(None),
+    dob: Optional[str] = Form(None, description="Date of birth in DD-MM-YYYY format"),
     roll_number: Optional[str] = Form(None),
     program: Optional[str] = Form(None),
     department: Optional[str] = Form(None),
@@ -61,13 +63,13 @@ async def update_profile(
     dob_date = None
     if dob:
         try:
-            dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
+            dob_date = datetime.strptime(dob, "%d-%m-%Y").date()
         except ValueError:
             return JSONResponse(
-                success_code=422,
+                status_code=422,
                 content={
                     "success": False, 
-                    "message": "Invalid date format for dob. Use YYYY-MM-DD."
+                    "message": "Invalid date format for dob. Use DD-MM-YYYY."
                 }
             )
 
@@ -78,7 +80,7 @@ async def update_profile(
             roll_number_int = int(roll_number)
         except ValueError:
             return JSONResponse(
-                success_code=422,
+                status_code=422,
                 content={
                     "success": False, 
                     "message": "Invalid roll number format"
@@ -91,7 +93,7 @@ async def update_profile(
             semester_int = int(semester)
         except ValueError:
             return JSONResponse(
-                success_code=422,
+                status_code=422,
                 content={
                     "success": False, 
                     "message": "Invalid semester format"
@@ -104,7 +106,7 @@ async def update_profile(
             batch_year_int = int(batch_year)
         except ValueError:
             return JSONResponse(
-                success_code=422,
+                status_code=422,
                 content={
                     "success": False, 
                     "message": "Invalid batch year format"
@@ -115,7 +117,7 @@ async def update_profile(
         first_name=first_name,
         middle_name=middle_name,
         last_name=last_name,
-        phone=phone,
+        mobile_number=mobile_number,
         dob=dob_date,
         roll_number=roll_number_int,
         program=program,
@@ -131,9 +133,15 @@ async def update_profile(
         profile_picture=profile_picture
     )
     
+
 @router.post("/verify-email")
-async def verify_email(request: Request):
+async def verify_email(request: OtpRequest):
     return await verify_student_email(request)
+
+
+@router.post("/resend-verify-email")
+async def resend_verify_email(request: OtpRequest):
+    return await resend_verification_otp(request)
 
 
 @router.get("/tomorrow-bunk-safety")

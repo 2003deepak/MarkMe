@@ -157,7 +157,6 @@ async def update_clerk_route(
 
     # Clean inputs
     first_name = clean(first_name)
-    middle_name = clean(middle_name)
     last_name = clean(last_name)
    
 
@@ -187,6 +186,8 @@ async def update_clerk_route(
         request_data=update_request_data,
         profile_picture=profile_picture
     )
+    
+    
 # ------------------- Student Routes -------------------
 
 @router.post("/student")

@@ -13,6 +13,8 @@ import random
 from app.utils.publisher import send_to_queue
 from fastapi.responses import JSONResponse
 import logging
+from app.utils.send_otp import generate_and_store_otp, verify_otp
+from app.core.redis import redis_client
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +59,7 @@ async def login_user(request):
 
     if not user or not verify_password(request.password, user.password):
         return JSONResponse(
-            status_code=404,
+            status_code=401,
             content={"success": False, "message": "Invalid credentials"}
         )
 
@@ -96,7 +98,7 @@ async def login_user(request):
 
     access_token = create_access_token(access_payload)
 
-    # Refresh token → minimal but sufficient
+    # Refresh token 
     refresh_token = create_refresh_token({
         "id": str(user.id),
         "email": user.email,
@@ -180,27 +182,75 @@ async def logout_user(request,request_model):
     )
   
 
-async def refresh_access_token(request):
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from bson import ObjectId
 
+from app.schemas.student import Student
+from app.schemas.teacher import Teacher
+from app.schemas.clerk import Clerk
+from app.utils.security import decode_token, create_access_token
+
+
+async def refresh_access_token(request: Request):
+
+    # ---------------- READ REFRESH TOKEN ----------------
     auth_header = request.headers.get("x-internal-token")
     if not auth_header:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "Refresh token missing"}
+            content={
+                "success": False,
+                "message": "Refresh token missing"
+            }
         )
 
-    token = auth_header.split(" ")[1]
-    payload = decode_token(token)
+    # Expecting: "Bearer <token>"
+    try:
+        token = auth_header.split(" ")[1]
+    except IndexError:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "message": "Invalid refresh token format"
+            }
+        )
 
+    payload = decode_token(token)
     if not payload:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "Invalid refresh token"}
+            content={
+                "success": False,
+                "message": "Invalid or expired refresh token"
+            }
         )
 
     role = payload.get("role")
+    email = payload.get("email")
     user_id = payload.get("id")
 
+    # ---------------- ADMIN (NO DB LOOKUP) ----------------
+    if role == "admin":
+        new_access_token = create_access_token({
+            "email": email,
+            "role": "admin"
+        })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Access token refreshed",
+                "data": {
+                    "access_token": new_access_token,
+                    "token_type": "bearer"
+                }
+            }
+        )
+
+    # ---------------- ROLE → MODEL MAP ----------------
     role_model_map = {
         "student": Student,
         "teacher": Teacher,
@@ -208,23 +258,36 @@ async def refresh_access_token(request):
     }
 
     model = role_model_map.get(role)
-
     if not model:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "Invalid role in token"}
+            content={
+                "success": False,
+                "message": "Invalid role in refresh token"
+            }
         )
 
-    # 🔥 FETCH USER AGAIN FROM DB
-    user = await model.find_one(model.id == ObjectId(user_id))
+    if not user_id:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "message": "User ID missing in refresh token"
+            }
+        )
 
+    # ---------------- FETCH USER FROM DB ----------------
+    user = await model.find_one(model.id == ObjectId(user_id))
     if not user:
         return JSONResponse(
             status_code=401,
-            content={"success": False, "message": "User no longer exists"}
+            content={
+                "success": False,
+                "message": "User no longer exists"
+            }
         )
 
-    # 🔥 REBUILD ACCESS TOKEN (ROLE AWARE)
+    # ---------------- BUILD NEW ACCESS TOKEN ----------------
     if role == "student":
         access_payload = {
             "id": str(user.id),
@@ -258,9 +321,9 @@ async def refresh_access_token(request):
         }
     )
 
+
 async def request_password_reset(request):
-    otp = str(random.randint(100000, 999999))
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+
 
     role_model_map = {
         "student": Student,
@@ -283,33 +346,26 @@ async def request_password_reset(request):
     model = role_model_map[role]
     print(f"Searching in {role} for email: {email}")
 
-    try:
-        user = await model.find_one(model.email == email)
-        if not user:
-            print(f"{role} not found with email: {email}")
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "success": False,
-                    "message": "Email not found"
-                }
-            )
-
-        await user.update({
-            "$set": {
-                "password_reset_otp": otp,
-                "password_reset_otp_expires": expires_at
-            }
-        })
-        print(f"Updated {role} with OTP: {otp}, expires: {expires_at}")
-
-    except Exception as e:
-        print(f"Error updating {role}: {e}")
+    user = await model.find_one(model.email == email)
+    if not user:
+        print(f"{role} not found with email: {email}")
         return JSONResponse(
-            status_code=500,
+            status_code=404,
             content={
                 "success": False,
-                "message": f"Error updating {role} record: {str(e)}"
+                "message": "Email not found"
+            }
+        )
+
+    # Generate and store OTP in Redis
+    try:
+        otp = await generate_and_store_otp(email)
+    except ValueError as e:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "message": str(e)
             }
         )
 
@@ -320,7 +376,7 @@ async def request_password_reset(request):
             "data": {
                 "to": email,
                 "subject": "Your OTP for Password Reset",
-                "body": f"<p>Your OTP is <strong>{otp}</strong>. It will expire in 5 minutes.</p>"
+                "body": f"<p>Your OTP is <strong>{otp}</strong>. It will expire in 10 minutes.</p>"
             }
         }, priority=10)
         print(f"OTP email sent to {email}")
@@ -363,36 +419,21 @@ async def verify_reset_otp(request):
         )
 
     model = role_model_map[role]
-    user = await model.find_one(
-        model.email == email,
-        model.password_reset_otp == otp
-    )
+    
+    # Verify OTP using utility
+    is_valid, message = await verify_otp(email, otp)
 
-    if not user:
-        return JSONResponse(
-            status_code=404,
-            content={
-                "success": False,
-                "message": "Invalid OTP or user not found"
-            }
-        )
-
-    if not user.password_reset_otp_expires or datetime.utcnow() > user.password_reset_otp_expires:
+    if not is_valid:
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
-                "message": "Expired OTP"
+                "message": message
             }
         )
 
-    # If OTP is correct, you may "flag" OTP as verified instead of deleting it immediately
-    await user.update({
-        "$set": {
-            "password_reset_otp": None,
-            "password_reset_otp_expires": None
-        }
-    })
+    # Set verification flag in Redis for 10 minutes
+    await redis_client.setex(f"reset_verified:{email}", 600, "1")
 
     return JSONResponse(
         status_code=200,
@@ -434,6 +475,17 @@ async def reset_user_password(request):
             }
         )
 
+    # Check if user is verified via Redis
+    is_verified = await redis_client.get(f"reset_verified:{email}")
+    if not is_verified:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "Email not verified or verification expired. Please verify OTP again."
+            }
+        )
+
     # Ensure new password is different
     if verify_password(new_password, user.password):
         return JSONResponse(
@@ -458,6 +510,9 @@ async def reset_user_password(request):
             "message": "Password reset successfully"
         }
     )
+    
+    # Clean up verification flag
+    await redis_client.delete(f"reset_verified:{email}")
 
 async def change_current_password(
     request_model: ChangePasswordRequest, 

@@ -2,7 +2,7 @@ from fastapi import HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse
 from app.core.redis import redis_client
 from app.models.allModel import UpdateProfileRequest
-from app.utils.imagekit_uploader import upload_image_to_imagekit, delete_file
+from app.utils.imagekit_uploader import upload_file_to_imagekit, delete_file
 from datetime import datetime
 from typing import Optional
 import base64
@@ -66,9 +66,10 @@ async def update_teacher_profile(
                 print(f"Failed to delete existing profile picture: {str(e)}")
 
         try:
-            profile_picture_result = await upload_image_to_imagekit(
+            profile_picture_result = await upload_file_to_imagekit(
                 file=encoded, 
-                folder="profile_image"
+                folder="profile_image",
+                filename=profile_picture.filename
             )
             
             if "url" not in profile_picture_result or "fileId" not in profile_picture_result:

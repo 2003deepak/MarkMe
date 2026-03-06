@@ -8,7 +8,8 @@ from datetime import datetime
 from app.core.redis import redis_client
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.schemas.subject import Subject         
-from app.schemas.student import Student         
+from app.schemas.student import Student
+from app.utils.parse_data import validate_student_academic         
 
 # Custom JSON encoder for MongoDB types
 class MongoJSONEncoder(json.JSONEncoder):
@@ -30,8 +31,6 @@ async def get_student_attendance_summary(
     program = user.get("program")
     semester = user.get("semester")
 
-    print("The user is =", user)
-
     allowed_roles = {"student", "clerk", "admin", "teacher"}
     if user_role not in allowed_roles:
         raise HTTPException(
@@ -46,6 +45,7 @@ async def get_student_attendance_summary(
     if user_role == "student":
         student_id = user_id
         print(f"Student viewing own attendance → {student_id}")
+        
     elif not student_id:
         raise HTTPException(
             status_code=400,
@@ -96,10 +96,16 @@ async def get_student_attendance_summary(
         prog = getattr(student_doc, "program", program)
         sem = getattr(student_doc, "semester", semester)
 
-        if not prog or not sem:
-            raise HTTPException(
+        missing = validate_student_academic(user)
+        
+        if missing:
+            return JSONResponse(
                 status_code=400,
-                detail={"success": False, "message": "Student program/semester missing"}
+                content={
+                    "success": False,
+                    "message": "Student academic details are incomplete",
+                    "missing_fields": missing
+                }
             )
 
         

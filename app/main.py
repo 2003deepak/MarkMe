@@ -20,7 +20,8 @@ WHITELIST = [
     "/api/v1/auth/verify-otp",
     "/api/v1/reset-password",
     "/api/v1/student/",
-    "/api/v1/student/verify-email"
+    "/api/v1/student/verify-email",
+    "/api/v1/student/resend-verify-email"
 ]
 
 @asynccontextmanager

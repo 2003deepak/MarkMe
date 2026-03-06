@@ -36,8 +36,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM]
             )
-            
-            print("The user logged in is :- " , payload.get("email"))
 
             # Check token expiration
             if datetime.utcnow() > datetime.fromtimestamp(payload["exp"]):

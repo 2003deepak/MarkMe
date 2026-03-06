@@ -1,3 +1,4 @@
+from random import random
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.core.database import get_db
@@ -12,6 +13,7 @@ from typing import List
 from app.utils.publisher import send_to_queue  
 from app.models.allModel import StudentRegisterRequest
 from uuid import uuid4
+from app.utils.send_otp import generate_and_store_otp
 
 
 async def register_student(student_data: StudentRegisterRequest, request: Request):
@@ -80,23 +82,55 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
 
         #email only for self registration
         if not is_verified:
-            token = create_verification_token(student_data.email)
-            verification_link = f"{settings.BACKEND_URL}/verify-email?token={token}"
 
-            await send_to_queue("email_queue", {
-                "type": "send_email",
-                "data": {
-                    "to": student_data.email,
-                    "subject": "Verify your email - MarkMe",
-                    "body": (
-                        f"Hello {student_data.first_name},\n\n"
-                        f"Thanks for registering on MarkMe! Please verify your email by clicking the link below:\n\n"
-                        f"{verification_link}\n\n"
-                        "This link will expire in 30 minutes.\n\n"
-                        "If you didn’t create this account, please report to the admin."
-                    )
-                }
-            }, priority=5)
+            try:
+                otp = await generate_and_store_otp(student_data.email)
+            except ValueError as e:
+              
+                 return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "message": str(e)
+                    }
+                )
+
+
+            html_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif;">
+                <p>Hello <b>{student_data.first_name}</b>,</p>
+
+                <p>Thanks for registering on <b>MarkMe</b>!</p>
+
+                <p>Your email verification OTP is:</p>
+
+                <h2 style="letter-spacing: 4px;">{otp}</h2>
+
+                <p>This OTP will expire in <b>10 minutes</b>.</p>
+
+                <p>If you didn’t create this account, please report to the admin.</p>
+
+                <br />
+                <p>Regards,<br />MarkMe Team</p>
+            </body>
+            </html>
+            """
+
+            await send_to_queue(
+                "email_queue",
+                {
+                    "type": "send_email",
+                    "data": {
+                        "to": student_data.email,
+                        "subject": "Verify your email - MarkMe",
+                        "body": html_body,
+                        "is_html": True   
+                    }
+                },
+                priority=5
+            )
+
 
         #response
         message = (

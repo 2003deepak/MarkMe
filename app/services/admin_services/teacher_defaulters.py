@@ -1,50 +1,32 @@
-from fastapi import Request, Query
-from fastapi.encoders import jsonable_encoder
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from typing import Optional
+from app.core.redis import redis_client
+from datetime import datetime
+from fastapi.encoders import jsonable_encoder
 from bson import ObjectId
 
-from app.core.database import db
-from app.core.redis import redis_client
-from app.schemas.student_attendance_summary import StudentAttendanceSummary
+from app.schemas.attendance import Attendance
 
 
-async def defaulter_students(
-    request: Request,
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
-
-    search: Optional[str] = None,
-    subject_id: Optional[str] = None,
-    program: Optional[str] = None,
-    semester: Optional[int] = None,
-    threshold: int = Query(75, ge=0, le=100)
-):
-    #auth
+async def teacher_defaulters(request : Request , page: int =1 , limit: int =10):
+    
     user_role = request.state.user.get("role")
-    if user_role not in ["clerk", "admin", "teacher"]:
-        return JSONResponse(
-            status_code=403,
-            content={"success": False, "message": "Access denied"}
-        )
 
-    department = request.state.user.get("department")
-    if not department:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": "Department not found"}
-        )
+    if user_role != "admin":
 
+        return JSONResponse(
+        status_code=403,
+        content={
+            "success": False,
+            "message": "Only Admin can access this route",
+            
+        }
+    )
+        
+        
     skip = (page - 1) * limit
 
     pipeline = []
-
-    #base filter
-    pipeline.append({
-        "$match": {
-            "percentage": {"$lt": threshold}
-        }
-    })
 
     #student join
     pipeline.append({
@@ -72,28 +54,6 @@ async def defaulter_students(
         {"$unwind": "$subject_data"}
     ]
 
-    #department restriction for clerk
-    pipeline.append({
-        "$match": {
-            "student_data.department": department
-        }
-    })
-
-    #program filter
-    if program:
-        pipeline.append({
-            "$match": {
-                "student_data.program": program
-            }
-        })
-
-    #semester filter
-    if semester:
-        pipeline.append({
-            "$match": {
-                "student_data.semester": semester
-            }
-        })
 
     #group by student
     pipeline.append({
@@ -132,38 +92,27 @@ async def defaulter_students(
         }
     })
 
-    #search by student name
-    if search:
-        pipeline.append({
-            "$match": {
-                "name": {
-                    "$regex": search,
-                    "$options": "i"
-                }
-            }
-        })
+    # #subject filter inside grouped result
+    # if subject_id:
+    #     pipeline.append({
+    #         "$addFields": {
+    #             "defaulter_subjects": {
+    #                 "$filter": {
+    #                     "input": "$defaulter_subjects",
+    #                     "as": "sub",
+    #                     "cond": {
+    #                         "$eq": ["$$sub.id", ObjectId(subject_id)]
+    #                     }
+    #                 }
+    #             }
+    #         }
+    #     })
 
-    #subject filter inside grouped result
-    if subject_id:
-        pipeline.append({
-            "$addFields": {
-                "defaulter_subjects": {
-                    "$filter": {
-                        "input": "$defaulter_subjects",
-                        "as": "sub",
-                        "cond": {
-                            "$eq": ["$$sub.id", ObjectId(subject_id)]
-                        }
-                    }
-                }
-            }
-        })
-
-        pipeline.append({
-            "$match": {
-                "defaulter_subjects.0": {"$exists": True}
-            }
-        })
+    #     pipeline.append({
+    #         "$match": {
+    #             "defaulter_subjects.0": {"$exists": True}
+    #         }
+    #     })
 
     #risk calculation
     pipeline.append({
@@ -213,12 +162,6 @@ async def defaulter_students(
     }
 })
 
-    pipeline.append({
-        "$sort": {
-            "_id": 1
-        }
-    })
-
     #pagination facet
     pipeline.append({
         "$facet": {
@@ -232,19 +175,21 @@ async def defaulter_students(
         }
     })
 
-    result = await StudentAttendanceSummary.aggregate(pipeline).to_list(None)
+    result = await Attendance.aggregate(pipeline).to_list(None)
 
     data = result[0]["data"]
     total = result[0]["total"][0]["count"] if result[0]["total"] else 0
 
+    
+  
     return JSONResponse(
         status_code=200,
-        content=jsonable_encoder({
+        content={
             "success": True,
-            "page": page,
-            "limit": limit,
-            "total": total,
-            "students": data
+            "message": "Clerk fetched successfully",
+            "data": jsonable_encoder(
+                result,
+                custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
+            )
+            
         })
-)
-

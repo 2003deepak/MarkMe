@@ -84,3 +84,16 @@ async def enqueue_exception_session(
         payload,
         delay_ms=int(delay * 1000)
     )
+    
+
+
+def validate_student_academic(user):
+    fields = {
+        "program": user.get("program"),
+        "department": user.get("department"),
+        "semester": user.get("semester"),
+        "academic_year": user.get("batch_year")
+    }
+    missing = [k for k, v in fields.items() if not v]
+    return missing
+

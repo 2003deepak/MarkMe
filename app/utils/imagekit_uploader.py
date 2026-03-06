@@ -1,37 +1,39 @@
-import os
-import uuid
+#imagekit uploader
+
+import base64
 from imagekitio import ImageKit
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 from app.core.config import settings
 
-# Initialize ImageKit
+
 imagekit = ImageKit(
     public_key=settings.IMAGEKIT_PUBLIC_KEY,
     private_key=settings.IMAGEKIT_PRIVATE_KEY,
     url_endpoint=settings.IMAGEKIT_URL_ENDPOINT
 )
 
-async def upload_image_to_imagekit(file: bytes, folder: str):
+
+async def upload_file_to_imagekit(
+    file: bytes,
+    filename: str,
+    folder: str,
+    tags: list = None
+):
     try:
-        filename = f"{uuid.uuid4().hex}.jpg"
+        # convert to base64 to avoid file corruption
+        encoded_file = base64.b64encode(file).decode("utf-8")
 
         upload = imagekit.upload_file(
-            file=file,
+            file=encoded_file,
             file_name=filename,
             options=UploadFileRequestOptions(
                 folder=f"/{folder}",
-                is_private_file=False,
-                tags=["profile", "student"]
+                use_unique_file_name=False,
+                tags=tags or []
             )
         )
 
-        if not hasattr(upload, "response_metadata"):
-            raise Exception("No response metadata from ImageKit")
-
         metadata = upload.response_metadata.raw
-
-        if not metadata.get("url") or not metadata.get("fileId"):
-            raise Exception(f"Upload failed: {metadata.get('message', 'Unknown error')}")
 
         return {
             "url": metadata["url"],
@@ -39,17 +41,14 @@ async def upload_image_to_imagekit(file: bytes, folder: str):
         }
 
     except Exception as e:
-        print(f"ImageKit upload error: {str(e)}")
+        print(f"[ImageKit Upload Error]: {str(e)}")
         raise
 
 
 async def delete_file(file_id: str):
     try:
-        # Step 2: Delete the file using file_id
-        delete_response = imagekit.delete_file(file_id=file_id)
-
-        return {"status": "success", "message": f"File with ID {file_id} deleted successfully"}
-
+        imagekit.delete_file(file_id=file_id)
+        return {"status": "success"}
     except Exception as e:
-        print(f"ImageKit delete error: {str(e)}")
+        print(f"[ImageKit Delete Error]: {str(e)}")
         raise

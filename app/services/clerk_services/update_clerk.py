@@ -8,7 +8,7 @@ from app.schemas.clerk import Clerk
 from app.core.redis import redis_client
 from app.core.config import settings  
 from app.models.allModel import UpdateClerkRequest
-from app.utils.imagekit_uploader import upload_image_to_imagekit, delete_file
+from app.utils.imagekit_uploader import upload_file_to_imagekit, delete_file
 
 async def update_clerk(request: Request, request_data: UpdateClerkRequest, profile_picture: Optional[UploadFile] = None):
     
@@ -90,8 +90,9 @@ async def update_clerk(request: Request, request_data: UpdateClerkRequest, profi
             encoded = base64.b64encode(file_bytes).decode("utf-8")
 
             try:
-                profile_picture_result = await upload_image_to_imagekit(
+                profile_picture_result = await upload_file_to_imagekit(
                     file=encoded,
+                    filename=profile_picture.filename,
                     folder="profile_image",
                 )
                 if "url" not in profile_picture_result or "fileId" not in profile_picture_result:

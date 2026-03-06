@@ -1,0 +1,84 @@
+import json
+import secrets
+from typing import Tuple
+from app.core.redis import redis_client
+
+
+OTP_LENGTH = 6
+OTP_TTL_SECONDS = 300           # 5 minutes
+MAX_VERIFY_ATTEMPTS = 5
+
+SEND_WINDOW_SECONDS = 3600      # 1 hour
+MAX_OTP_SENDS = 5
+
+
+# HELPERS
+def _otp_key(email: str) -> str:
+    return f"email_otp:{email}"
+
+
+def _send_key(email: str) -> str:
+    return f"email_otp_send:{email}"
+
+
+def generate_6_digit_otp() -> str:
+    return f"{secrets.randbelow(10 ** OTP_LENGTH):0{OTP_LENGTH}d}"
+
+
+# OTP SEND (RATE LIMITED)
+async def generate_and_store_otp(email: str) -> str:
+  
+    send_key = _send_key(email)
+
+    # rate limit send
+    send_count = await redis_client.incr(send_key)
+    if send_count == 1:
+        await redis_client.expire(send_key, SEND_WINDOW_SECONDS)
+
+    if send_count > MAX_OTP_SENDS:
+        raise ValueError("Too many OTP requests. Please try again later.")
+
+    otp = generate_6_digit_otp()
+
+    otp_data = {
+        "otp": otp,
+        "attempts": 0
+    }
+
+    await redis_client.setex(
+        _otp_key(email),
+        OTP_TTL_SECONDS,
+        json.dumps(otp_data)
+    )
+
+    return otp
+
+# OTP VERIFY
+async def verify_otp(email: str, submitted_otp: str) -> Tuple[bool, str]:
+
+    key = _otp_key(email)
+    raw = await redis_client.get(key)
+
+    if not raw:
+        return False, "OTP expired or not found"
+
+    data = json.loads(raw)
+
+    # too many attempts
+    if data["attempts"] >= MAX_VERIFY_ATTEMPTS:
+        await redis_client.delete(key)
+        return False, "Too many invalid attempts. OTP locked."
+
+    # match
+    if data["otp"] != submitted_otp:
+        data["attempts"] += 1
+        await redis_client.setex(
+            key,
+            OTP_TTL_SECONDS,
+            json.dumps(data)
+        )
+        return False, "Invalid OTP"
+
+    # success
+    await redis_client.delete(key)
+    return True, "OTP verified successfully"
