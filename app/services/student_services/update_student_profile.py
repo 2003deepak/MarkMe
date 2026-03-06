@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from app.core.database import get_db
 from app.core.redis import redis_client
 from datetime import datetime, date
-from app.utils.imagekit_uploader import upload_image_to_imagekit, delete_file
+from app.utils.imagekit_uploader import upload_file_to_imagekit, delete_file
 from typing import Optional, List
 from app.schemas.student import Student
 from pydantic import BaseModel, ValidationError, EmailStr
@@ -100,10 +100,12 @@ async def update_student_profile(
             encoded = base64.b64encode(file_bytes).decode("utf-8")
             
             try:
-                profile_picture_result = await upload_image_to_imagekit(
+                profile_picture_result = await upload_file_to_imagekit(
                     file=encoded,
+                    filename=profile_picture.filename,
                     folder="profile_image",
                 )
+                
                 if "url" not in profile_picture_result or "fileId" not in profile_picture_result:
                     raise ValueError("Invalid response from image upload service")
                 update_data["profile_picture"] = profile_picture_result["url"]

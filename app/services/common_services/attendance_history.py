@@ -363,7 +363,7 @@ async def clerk_attendance_history(
     batch_year: Optional[List[int]] = None,
     semester: Optional[List[int]] = None
 ):
-    logger.info("CLERK ATTENDANCE HISTORY API CALLED")
+    
     logger.info(f"Params → month={month}, year={year}, subject={subject}, program={program}, batch_year={batch_year}")
 
     user = request.state.user
@@ -406,6 +406,20 @@ async def clerk_attendance_history(
         {
             "$unwind": "$subject_data"
         },
+
+        # Teacher Data Joined
+
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "subject_data.teacher_assigned.$id",
+                "foreignField": "_id",
+                "as": "teacher_data"
+            }
+        },
+        {
+            "$unwind": "$teacher_data"
+        }
     ]
 
     # 3️⃣ Optional filters - handle multiple values with $in
@@ -483,6 +497,8 @@ async def clerk_attendance_history(
             "date": stat["date"].date().isoformat(),
             "day": stat["date"].strftime("%A"),
             "subject": stat["subject_data"]["subject_name"],
+            "semester": stat["subject_data"]["semester"],
+            "teacher": stat["teacher_data"]["first_name"] + " " + stat["teacher_data"]["last_name"],
             "component": stat["subject_data"]["component"],
             "present_count": stat["present_count"],
             "absent_count": stat["absent_count"],

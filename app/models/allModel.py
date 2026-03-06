@@ -85,8 +85,57 @@ class CreateClerkRequest(BaseModel):
     mobile_number: int
     department: str
     program : str
+    
+    
+class CreateProgramRequest(BaseModel):
+    program_code: str
+    full_name: str
+    duration_years: int
+
+    @field_validator("duration_years")
+    @classmethod
+    def validate_duration_years(cls, v: int) -> int:
+        if v < 1 or v > 5:
+            raise ValueError("Duration years must be between 1 and 5")
+        return v
 
 
+
+class UpdateProgramRequest(BaseModel):
+    program_code: Optional[str] = None
+    full_name: Optional[str] = None
+    duration_years: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class CreateDepartmentRequest(BaseModel):
+    department_code: str
+    full_name: str
+    program_code: str
+
+class UpdateDepartmentRequest(BaseModel):
+    department_code: Optional[str] = None
+    full_name: Optional[str] = None
+    program_code: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class DepartmentResponse(BaseModel):
+    id: str
+    department_code: str
+    full_name: str
+    program_code: str
+    is_active: bool
+
+class ProgramResponse(BaseModel):
+    id: str
+    program_code: str
+    full_name: str
+    duration_years: int
+    is_active: bool
+
+class MetadataListingResponse(BaseModel):
+    departments: List[str]
+    semesters: List[int]
+    programs: List[str]
 
 class CreateSubjectRequest(BaseModel):
     subject_code: str 
@@ -155,17 +204,15 @@ class TimeTableRequest(BaseModel):
         if invalid:
             raise ValueError(f"Invalid days: {invalid}")
         return v
+    
 
     @field_validator("schedule")
     @classmethod
     def validate_no_overlap(cls, v: Dict[str, List[ScheduleEntry]]) -> Dict[str, List[ScheduleEntry]]:
         def to_minutes(t: str) -> int:
             h, m = map(int, t.split(":"))
-            return h * 60 + m
-
-        for day, sessions in v.items():
             if len(sessions) < 2:
-                continue
+                return
             sorted_sessions = sorted(sessions, key=lambda s: s.start_time)
             for i in range(1, len(sorted_sessions)):
                 if to_minutes(sorted_sessions[i].start_time) < to_minutes(sorted_sessions[i-1].end_time):
@@ -278,9 +325,10 @@ class TeacherShortView(BaseModel):
     mobile_number: Optional[int] = None 
     department: Optional[str] = None
     profile_picture: Optional[HttpUrl] = None
-    profile_picture_id: Optional[str] = None # Make sure this is also handled
+    profile_picture_id: Optional[str] = None 
 
     subjects_assigned: List[SubjectOutputDetail] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         populate_by_name = True
@@ -298,7 +346,7 @@ class TeacherShortViewForSubject(BaseModel):
     email: EmailStr
     department: str
     profile_picture: Optional[HttpUrl] = None
-    profile_picture_id: Optional[str] = None # Make sure this is also handled
+    profile_picture_id: Optional[str] = None 
 
 
     class Config:
@@ -480,3 +528,10 @@ class SessionView(BaseModel):
     start_time: str
     end_time: str
     component: str
+
+class TeacherLeaderboardRequest(BaseModel):
+    department: Optional[str] = None
+    program: Optional[str] = None
+    semester: Optional[int] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None

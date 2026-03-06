@@ -213,6 +213,12 @@ async def defaulter_students(
     }
 })
 
+    pipeline.append({
+        "$sort": {
+            "_id": 1
+        }
+    })
+
     #pagination facet
     pipeline.append({
         "$facet": {

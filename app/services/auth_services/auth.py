@@ -59,7 +59,7 @@ async def login_user(request):
 
     if not user or not verify_password(request.password, user.password):
         return JSONResponse(
-            status_code=404,
+            status_code=401,
             content={"success": False, "message": "Invalid credentials"}
         )
 

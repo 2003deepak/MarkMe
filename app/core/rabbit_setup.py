@@ -6,7 +6,8 @@ QUEUE_PRIORITY_CONFIG = {
     settings.email_queue: 10,
     settings.embedding_queue: 10,
     settings.session_queue: 10,
-    settings.notification_queue: 10
+    settings.notification_queue: 10,
+    settings.cleanup_queue: 10
 }
 
 async def setup_rabbitmq():

@@ -92,38 +92,27 @@ async def teacher_defaulters(request : Request , page: int =1 , limit: int =10):
         }
     })
 
-    #search by student name
-    if search:
-        pipeline.append({
-            "$match": {
-                "name": {
-                    "$regex": search,
-                    "$options": "i"
-                }
-            }
-        })
+    # #subject filter inside grouped result
+    # if subject_id:
+    #     pipeline.append({
+    #         "$addFields": {
+    #             "defaulter_subjects": {
+    #                 "$filter": {
+    #                     "input": "$defaulter_subjects",
+    #                     "as": "sub",
+    #                     "cond": {
+    #                         "$eq": ["$$sub.id", ObjectId(subject_id)]
+    #                     }
+    #                 }
+    #             }
+    #         }
+    #     })
 
-    #subject filter inside grouped result
-    if subject_id:
-        pipeline.append({
-            "$addFields": {
-                "defaulter_subjects": {
-                    "$filter": {
-                        "input": "$defaulter_subjects",
-                        "as": "sub",
-                        "cond": {
-                            "$eq": ["$$sub.id", ObjectId(subject_id)]
-                        }
-                    }
-                }
-            }
-        })
-
-        pipeline.append({
-            "$match": {
-                "defaulter_subjects.0": {"$exists": True}
-            }
-        })
+    #     pipeline.append({
+    #         "$match": {
+    #             "defaulter_subjects.0": {"$exists": True}
+    #         }
+    #     })
 
     #risk calculation
     pipeline.append({
