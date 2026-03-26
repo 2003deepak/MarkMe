@@ -29,67 +29,162 @@ class MongoJSONEncoder(json.JSONEncoder):
             return str(obj)
         if isinstance(obj, datetime):
             return obj.isoformat()
-        if isinstance(obj, HttpUrl):  # Handle HttpUrl
-            return str(obj)  # Convert HttpUrl to string
+        if isinstance(obj, HttpUrl):
+            return str(obj)
         return super().default(obj)
 
+
 async def get_teacher_me(request: Request):
-    user_role = request.state.user.get("role")
-    if user_role != "teacher":
+
+    user = request.state.user
+
+    if user.get("role") != "teacher":
         return JSONResponse(
             status_code=403,
             content={
-                "success": False, 
+                "success": False,
                 "message": "Only teachers can access this route"
             }
         )
 
-    teacher_email = request.state.user.get("email")
-    cache_key = f"teacher:{teacher_email}"
+    teacher_email = user.get("email")
 
-    cached_data = await redis_client.get(cache_key)
-    if cached_data:
-        print(f"✅ Found data in Redis cache: {cache_key}")
+    cache_key = f"teacher:profile:{teacher_email}"
+
+    cached = await redis_client.get(cache_key)
+
+    if cached:
         return JSONResponse(
             status_code=200,
             content={
-                "success": True, 
-                "message" : "Teacher details fetched successfully",
-                "data": json.loads(cached_data)
+                "success": True,
+                "message": "Teacher details fetched successfully",
+                "data": json.loads(cached)
             }
         )
 
-    print(f"ℹ️ No cached data found — fetching from DB for {teacher_email}...")
-    
-    teacher = await Teacher.find_one(
-        Teacher.email == teacher_email, 
-        fetch_links=True
-    ).project(TeacherShortView)
+    # ---------------- AGGREGATION PIPELINE ----------------
 
-    if not teacher:
-        print(f"❌ Teacher not found: {teacher_email}")
+    pipeline = [
+
+        #find teacher
+        {
+            "$match": {
+                "email": teacher_email
+            }
+        },
+
+        #join subjects taught by teacher
+        {
+            "$lookup": {
+                "from": "subjects",
+                "localField": "_id",
+                "foreignField": "teacher_assigned.$id",
+                "as": "subjects"
+            }
+        },
+
+        {
+            "$unwind": {
+                "path": "$subjects",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+
+        #fetch program information
+        {
+            "$lookup": {
+                "from": "programs",
+                "localField": "subjects.program",
+                "foreignField": "_id",
+                "as": "program_info"
+            }
+        },
+
+        {
+            "$unwind": {
+                "path": "$program_info",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+
+        #group everything
+        {
+            "$group": {
+
+                "_id": "$_id",
+
+                "teacher_id": {"$first": "$teacher_id"},
+                "first_name": {"$first": "$first_name"},
+                "middle_name": {"$first": "$middle_name"},
+                "last_name": {"$first": "$last_name"},
+                "email": {"$first": "$email"},
+                "mobile_number": {"$first": "$mobile_number"},
+                "profile_picture": {"$first": "$profile_picture"},
+
+                #subjects list
+                "subjects": {
+                    "$addToSet": {
+                        "subject_id": {"$toString": "$subjects._id"},
+                        "subject_code": "$subjects.subject_code",
+                        "subject_name": "$subjects.subject_name",
+                        "program": "$subjects.program",
+                        "department": "$subjects.department",
+                        "semester": "$subjects.semester",
+                        "component": "$subjects.component"
+                    }
+                },
+
+                #scope (program + department)
+                "scope": {
+                    "$addToSet": {
+                        "program": "$subjects.program",
+                        "department": "$subjects.department"
+                    }
+                }
+            }
+        },
+
+        {
+            "$project": {
+                "_id": 0,
+                "teacher_id": 1,
+                "first_name": 1,
+                "middle_name": 1,
+                "last_name": 1,
+                "email": 1,
+                "mobile_number": 1,
+                "profile_picture": 1,
+                "subjects": 1,
+                "scope": 1
+            }
+        }
+
+    ]
+
+    result = await Teacher.aggregate(pipeline).to_list(length=1)
+
+    if not result:
         return JSONResponse(
             status_code=404,
             content={
-                "success": False, 
+                "success": False,
                 "message": "Teacher not found"
             }
         )
 
-    # Convert to dict and serialize with custom encoder
-    teacher_dict = teacher.dict()
-    teacher_json = json.dumps(teacher_dict, cls=MongoJSONEncoder)
-    
-    # Cache for 1 hour (3600 seconds)
-    await redis_client.setex(cache_key, 3600, teacher_json)
-    print(f"📥 Saved teacher {teacher_email} to Redis (TTL 1h)")
+    teacher_data = result[0]
 
-    # Return response 
+    teacher_json = json.dumps(teacher_data, cls=MongoJSONEncoder)
+
+    #cache for 1 hour
+    await redis_client.setex(cache_key, 3600, teacher_json)
+
     return JSONResponse(
         status_code=200,
         content={
-            "success": True, 
-            "message" : "Teacher details fetched successfully",
+            "success": True,
+            "message": "Teacher details fetched successfully",
             "data": json.loads(teacher_json)
         }
     )

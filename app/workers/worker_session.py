@@ -96,14 +96,6 @@ async def process_session(message: aio_pika.IncomingMessage):
                         logger.info("⏸️ Swap pending → skipping execution")
                         return
 
-            # session fetch (skip for ADD extra lecture)
-            session = None
-            if not session_id.startswith("EXTRA"):
-                session = await Session.get(ObjectId(session_id))
-                if not session:
-                    logger.error("❌ Session not found")
-                    return
-
             # subject
             subject_id = payload.get("subject")
             subject = None
@@ -129,7 +121,7 @@ async def process_session(message: aio_pika.IncomingMessage):
                 )
             else:
                 attendance = Attendance(
-                    session=session.id,
+                    session=session_id,
                     **attendance_data
                 )
 

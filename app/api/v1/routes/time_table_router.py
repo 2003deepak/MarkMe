@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from app.services.clerk_services.get_subject_detail import get_timetable_subjects
 from app.services.student_services.get_student_detail import get_student_detail
 from app.services.clerk_services.add_timetable import add_timetable
 from app.models.allModel import TimeTableRequest, TimeTableResponse
@@ -15,6 +16,23 @@ async def create_timetable_route(
 ):
     return await add_timetable(request, request_model)
 
+# @router.put("/")
+# async def update_timetable_route(
+#     request_model: TimeTableRequest,
+#     request: Request
+# ):
+#     return await update_timetable(request, request_model)
+
+
+@router.get("/subject")
+async def get_subject_for_timetable(
+    request: Request,
+    program: str,
+    department: str,
+    semester: str
+):
+    print(f"➡️ Request received for subjects in {department}, {program}, Semester {semester}")
+    return await get_timetable_subjects(request, department, program, semester)
 
 @router.get("/{program}/{department}/{semester}/{academic_year}")
 async def get_timetable(

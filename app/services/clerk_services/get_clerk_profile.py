@@ -1,15 +1,18 @@
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.schemas.clerk import Clerk
 from app.core.redis import redis_client
 import json
 
+
 async def get_clerk_profile(request: Request):
+
     try:
-        # Get user email from request state
-        user_email = request.state.user.get("email")
-        user_role = request.state.user.get("role")
-        
+
+        user = request.state.user
+        user_email = user.get("email")
+        user_role = user.get("role")
+
         if not user_email:
             return JSONResponse(
                 status_code=401,
@@ -18,7 +21,7 @@ async def get_clerk_profile(request: Request):
                     "message": "User email not found in request"
                 }
             )
-        
+
         if user_role != "clerk":
             return JSONResponse(
                 status_code=403,
@@ -28,26 +31,24 @@ async def get_clerk_profile(request: Request):
                 }
             )
 
-        # Check cache first
-        cache_key = f"clerk:{user_email}"
+        #redis cache
+        cache_key = f"clerk:profile:{user_email}"
+
         cached_data = await redis_client.get(cache_key)
-        
+
         if cached_data:
-            print(f"✅ Found clerk profile in cache: {cache_key}")
             return JSONResponse(
                 status_code=200,
                 content={
                     "success": True,
-                    "message" : "Clerk profile fetched successfully",
+                    "message": "Clerk profile fetched successfully",
                     "data": json.loads(cached_data)
                 }
             )
 
-        print(f"ℹ️ No cached data found — fetching from DB for {user_email}...")
-        
-        # Fetch clerk from database
+        #fetch clerk
         clerk = await Clerk.find_one(Clerk.email == user_email)
-        
+
         if not clerk:
             return JSONResponse(
                 status_code=404,
@@ -57,7 +58,16 @@ async def get_clerk_profile(request: Request):
                 }
             )
 
-        # Prepare response data
+        #format academic scopes
+        scopes = []
+
+        if clerk.academic_scopes:
+            for scope in clerk.academic_scopes:
+                scopes.append({
+                    "program_id": scope.program_id,
+                    "department_id": scope.department_id
+                })
+
         clerk_data = {
             "clerk_id": str(clerk.id),
             "first_name": clerk.first_name,
@@ -65,33 +75,33 @@ async def get_clerk_profile(request: Request):
             "last_name": clerk.last_name,
             "email": clerk.email,
             "phone": clerk.phone,
-            "department": clerk.department,
-            "program": clerk.program,
             "profile_picture": clerk.profile_picture,
             "profile_picture_id": clerk.profile_picture_id,
+            "academic_scopes": scopes,
             "created_at": clerk.created_at.isoformat() if clerk.created_at else None,
             "updated_at": clerk.updated_at.isoformat() if clerk.updated_at else None
         }
 
-        # Cache the data for 1 hour
+        #save cache
         await redis_client.setex(
             cache_key,
             3600,
             json.dumps(clerk_data)
         )
-        print(f"📥 Saved clerk profile for {user_email} to Redis (TTL 1h)")
 
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "message" : "Clerk profile fetched successfully",
+                "message": "Clerk profile fetched successfully",
                 "data": clerk_data
             }
         )
 
     except Exception as e:
-        print(f"❌ Error fetching clerk profile: {str(e)}")
+
+        print(f"Clerk profile error: {str(e)}")
+
         return JSONResponse(
             status_code=500,
             content={

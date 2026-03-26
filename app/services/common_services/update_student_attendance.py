@@ -93,6 +93,9 @@ async def update_student_attendance(
         )
 
     old_binary = attendance_doc.get("students", "")
+    
+    print("Old Binary:", old_binary)
+    print("New Binary:", new_binary)
 
     if len(old_binary) != len(new_binary):
         return JSONResponse(
@@ -102,10 +105,23 @@ async def update_student_attendance(
 
     # clerk rules
     if role == "clerk":
-        if user.get("department") != session.get("department"):
+        
+        
+        scopes = user.get("academic_scopes", [])
+
+        allowed = any(
+            scope["program_id"] == session.get("program") and
+            scope["department_id"] == session.get("department")
+            for scope in scopes
+        )
+
+        if not allowed:
             return JSONResponse(
                 status_code=403,
-                content={"success": False, "message": "Department mismatch"}
+                content={
+                    "success": False,
+                    "message": "You are not authorized for this academic scope"
+                }
             )
 
     # teacher rules

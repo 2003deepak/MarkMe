@@ -132,7 +132,7 @@ async def generate_sessions_for_tomorrow():
         job_id = str(uuid.uuid4())
 
         payload = {
-            "session_id": f"EXTRA-{ex.id}",
+            "session_id": str(ex.id),
             "date": date_str,
             "day": weekday,
             "start_time_timestamp": start_time.timestamp(),
@@ -175,7 +175,7 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
     if settings.ENVIRONMENT == "production":
-        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour=0, minute=5)
+        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour=0, minute=0)
         scheduler.start()
     else:
         await generate_sessions_for_tomorrow()

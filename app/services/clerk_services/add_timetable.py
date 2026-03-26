@@ -12,16 +12,7 @@ from app.utils.redis_key_deletion import invalidate_redis_keys
 
 async def add_timetable(request: Request, request_model: TimeTableRequest) -> dict:
     try:
-        # Get department from request state user
-        department = request.state.user.get("department")
-        if not department:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    'message': 'Department not found in user information'
-                }
-            )
+        
 
         # Validate request fields
         if not all([request_model.academic_year, request_model.program, request_model.semester]):
@@ -128,7 +119,7 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     subject=subject,
                     teacher=teacher_doc,
                     academic_year=request_model.academic_year,
-                    department=department,  # Use department from request state
+                    department=request_model.department, 
                     program=request_model.program,
                     semester=request_model.semester
                 )

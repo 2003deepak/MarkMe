@@ -9,53 +9,109 @@ from app.core.redis import redis_client
 import json
 
 
+# TODO:
+# Currently subjects do not store academic_year or batch information.
+# So students are matched using only:
+#   program + department + semester
+#
+# When academic_year is introduced in the Subject schema,
+# the filter should be updated to include:
+#
+#   program + department + semester + academic_year
+#
+# Example future filter:
+#
+# {
+#   "program": s.program,
+#   "department": s.department,
+#   "semester": s.semester,
+#   "academic_year": s.academic_year
+# }
+#
+# This will prevent teachers from seeing students from old batches.
+
 async def get_students_by_teacher(request: Request, student_request: StudentSelectionRequest):
 
-    # 1. Auth check
-    user_role = request.state.user.get("role")
-    if user_role != "teacher":
+    #auth check
+    if request.state.user.get("role") != "teacher":
         return JSONResponse(
             status_code=403,
             content={"success": False, "message": "Only teachers can access this route"}
         )
 
-    teacher_email = request.state.user.get("email")
+    teacher_id = request.state.user.get("id")
 
-    # Create cache key based on request filters
     cache_key = (
-        f"teacher_students:{teacher_email}:"
-        f"{student_request.batch_year}:"
-        f"{student_request.program}:"
-        f"{student_request.semester}:"
-        f"{student_request.name}:"
+        f"teacher_students:{teacher_id}:"
+        f"{student_request.batch_year}:{student_request.program}:"
+        f"{student_request.semester}:{student_request.name}:"
         f"{student_request.page}:{student_request.limit}"
     )
 
-    # 2. Redis cache check
     cached = await redis_client.get(cache_key)
+
     if cached:
         data = json.loads(cached)
-        return JSONResponse(status_code=200, content={
-            "success": True,
-            "message": "Students fetched from cache",
-            "data": data["records"],
-            "total": data["total"],
-            "source": "cache"
-        })
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Students fetched from cache",
+                "data": data["records"],
+                "total": data["total"],
+                "source": "cache"
+            }
+        )
 
-    # 3. Fetch teacher
-    teacher = await Teacher.find_one(Teacher.email == teacher_email)
+    #fetch teacher
+    teacher = await Teacher.find_one(Teacher.id == ObjectId(teacher_id))
+
     if not teacher:
         return JSONResponse(
             status_code=404,
             content={"success": False, "message": "Teacher not found"}
         )
 
-    department = teacher.department
+    #fetch subjects taught by teacher
+    teacher_subjects = await Subject.find(
+        {"teacher_assigned.$id": teacher.id}
+    ).to_list()
 
-    # 4. Build filter query
+    if not teacher_subjects:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": [],
+                "total": 0
+            }
+        )
+
+    #extract program + department + semester combinations
+    class_filters = []
+
+    subject_map = {}
+
+    for s in teacher_subjects:
+
+        class_filters.append({
+            "program": s.program,
+            "department": s.department,
+            "semester": s.semester
+        })
+
+        key = (s.program, s.department, s.semester)
+
+        subject_map.setdefault(key, []).append({
+            "subject_code": s.subject_code,
+            "subject_name": s.subject_name
+        })
+
+    #remove duplicate filters
+    class_filters = [dict(t) for t in {tuple(d.items()) for d in class_filters}]
+
     filters = {
-        "department": department,
+        "$or": class_filters,
         "is_verified": True
     }
 
@@ -71,14 +127,12 @@ async def get_students_by_teacher(request: Request, student_request: StudentSele
     if student_request.name:
         filters["first_name"] = {"$regex": student_request.name, "$options": "i"}
 
-    # 5. Pagination
+    #pagination
     skip = (student_request.page - 1) * student_request.limit
     limit = student_request.limit
 
-    # 6. Total count
     total_students = await Student.find(filters).count()
 
-    # 7. Fetch paginated students
     students = (
         await Student.find(filters)
         .project(StudentBasicView)
@@ -88,70 +142,62 @@ async def get_students_by_teacher(request: Request, student_request: StudentSele
         .to_list()
     )
 
-    # 8. Subjects taught by teacher
-    teacher_subjects = await Subject.find(
-        {"teacher_assigned.$id": teacher.id}
-    ).to_list()
-
-    subject_map = {
-        (s.program, s.semester): {
-            "subject_code": s.subject_code,
-            "subject_name": s.subject_name
-        }
-        for s in teacher_subjects
-    }
-
-    # 9. Add subjects taught by teacher
     enriched_students = []
+
     for student in students:
+
         student_dict = json.loads(student.json())
 
-        key = (student.program, student.semester)
-        student_dict["subjects_taught_by_teacher"] = (
-            [subject_map[key]] if key in subject_map else []
-        )
+        key = (student.program, student.department, student.semester)
+
+        student_dict["subjects_taught_by_teacher"] = subject_map.get(key, [])
 
         enriched_students.append(student_dict)
 
-    # 10. Save result in Redis (30 minutes)
+    #cache for 30 minutes
     await redis_client.setex(
-        cache_key, 1800,
-        json.dumps({"records": enriched_students, "total": total_students})
+        cache_key,
+        1800,
+        json.dumps({
+            "records": enriched_students,
+            "total": total_students
+        })
     )
 
-    # 11. Response
-    return JSONResponse(status_code=200, content={
-        "success": True,
-        "message": "Students fetched successfully",
-        "data": enriched_students,
-        "total": total_students,
-        "source": "database"
-    })
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "message": "Students fetched successfully",
+            "data": enriched_students,
+            "total": total_students,
+            "source": "database"
+        }
+    )
 
 
 async def class_based_teacher(request: Request):
 
-    # 1. Auth Check
     user = request.state.user
+
     if not user or user.get("role") != "teacher":
         return JSONResponse(
             status_code=403,
-            content={"success": False, "message": "Only teachers can access this route"}
+            content={
+                "success": False,
+                "message": "Only teachers can access this route"
+            }
         )
 
     teacher_id = user.get("id")
-    teacher_dept = user.get("department")  
 
     if not teacher_id:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "message": "Teacher ID not found in token"}
-        )
-
-    if not teacher_dept:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": "Department missing in token"}
+            content={
+                "success": False,
+                "message": "Teacher ID missing in token"
+            }
         )
 
     try:
@@ -159,87 +205,82 @@ async def class_based_teacher(request: Request):
     except Exception:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "message": "Invalid teacher ID format"}
+            content={
+                "success": False,
+                "message": "Invalid teacher ID"
+            }
         )
 
-    # 2. Mongo Pipeline
     pipeline = [
+
+        # find subjects assigned to teacher
         {
             "$match": {
                 "teacher_assigned.$id": teacher_oid
             }
         },
-        {
-            "$lookup": {
-                "from": "students",
-                "let": {"prog": "$program", "sem": "$semester"},
-                "pipeline": [
-                    {
-                        "$match": {
-                            "$expr": {
-                                "$and": [
-                                    {"$eq": ["$program", "$$prog"]},
-                                    {"$eq": ["$semester", "$$sem"]}
-                                ]
-                            }
-                        }
-                    }
-                ],
-                "as": "students_in_class"
-            }
-        },
+
+        # group by program + department + semester
         {
             "$group": {
                 "_id": {
                     "program": "$program",
+                    "department": "$department",
                     "semester": "$semester"
                 },
+
                 "subjects": {
                     "$push": {
-                        "subject_id": {"$toString": "$_id"},  
+                        "subject_id": {"$toString": "$_id"},
                         "subject_name": "$subject_name",
                         "subject_code": "$subject_code",
                         "component": "$component"
                     }
-                },
-                "students_in_class": {"$first": "$students_in_class"}
+                }
             }
         },
+
         {
             "$project": {
                 "_id": 0,
                 "program": "$_id.program",
+                "department": "$_id.department",
                 "semester": "$_id.semester",
-                "subjects": 1,
-                "student_count": {"$size": "$students_in_class"}
+                "subjects": 1
             }
         },
-        {"$sort": {"program": 1, "semester": 1}}
+
+        {
+            "$sort": {
+                "program": 1,
+                "semester": 1
+            }
+        }
+
     ]
 
-    # 3. Execute pipeline
     try:
-        cursor = Subject.aggregate(pipeline)
-        class_list = await cursor.to_list(length=100)
 
-        # 4. Inject department into every class object
-        for cls in class_list:
-            cls["department"] = teacher_dept   # <-- insert here
+        classes = await Subject.aggregate(pipeline).to_list(length=100)
 
-        # 5. Return response
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "message": "Classes fetched successfully",
-                "total_classes": len(class_list),
-                "data": class_list
+                "message": "Teacher classes fetched successfully",
+                "total_classes": len(classes),
+                "data": classes
             }
         )
 
     except Exception as e:
-        print(f"Error fetching teacher classes: {e}")
+
+        print("Teacher class fetch error:", e)
+
         return JSONResponse(
             status_code=500,
-            content={"success": False, "message": "Failed to fetch classes"}
+            content={
+                "success": False,
+                "message": "Failed to fetch classes"
+            }
         )

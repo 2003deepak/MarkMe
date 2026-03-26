@@ -25,12 +25,12 @@ async def get_live_classes(request: Request) -> JSONResponse:
 
     try:
         now = datetime.now(tz=IST)
-        # current_time_str = now.strftime("%H:%M")
-        current_time_str = "23:10"
+        current_time_str = now.strftime("%H:%M")
+        # current_time_str = "23:10"
 
         #date should match stored UTC midnight
-        # today_date = datetime.combine(now.date(), datetime.min.time())
-        today_date = datetime(2025, 6, 11, 0, 0, 0)
+        today_date = datetime.combine(now.date(), datetime.min.time())
+        # today_date = datetime(2025, 6, 11, 0, 0, 0)
 
         pipeline = [
             #match today's attendance

@@ -6,12 +6,16 @@ import re
 from datetime import datetime , date , time
 from bson.objectid import ObjectId
 from beanie import PydanticObjectId
+from requests import sessions
 
 class StudentRegisterRequest(BaseModel):
     first_name: str 
     last_name: str 
     email: EmailStr 
     password: Optional[str] = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
+    program : str 
+    department : str 
+    semester : int
 
 class TeacherRegisterRequest(BaseModel):
     first_name: str
@@ -19,7 +23,6 @@ class TeacherRegisterRequest(BaseModel):
     last_name: str 
     email: EmailStr
     mobile_number: int
-    department: str
     subjects_assigned: List[str] = []
     
     
@@ -77,14 +80,18 @@ class ResetPasswordRequest(BaseModel):
     role : Literal["student", "teacher", "clerk"]
     new_password: str = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
 
+class AcademicScopeRequest(BaseModel):
+    program_id: str
+    department_id: str
+
+
 class CreateClerkRequest(BaseModel):
-    first_name: str 
+    first_name: str
     middle_name: Optional[str] = None
-    last_name: str 
+    last_name: str
     email: EmailStr
     mobile_number: int
-    department: str
-    program : str
+    academic_scopes: List[AcademicScopeRequest]
     
     
 class CreateProgramRequest(BaseModel):
@@ -155,6 +162,7 @@ class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
     last_name: Optional[str] = None
+    phone: Optional[str] = None
     mobile_number: Optional[str] = None
     dob: Optional[date] = None
     roll_number: Optional[int] = None
@@ -188,6 +196,7 @@ class TimeTableRequest(BaseModel):
     academic_year: str = Field(..., pattern=r"^\d{4}$")
     program: str = Field(..., min_length=2, max_length=50)
     semester: str = Field(..., pattern=r"^(1|2|3|4|5|6|7|8)$")
+    department: str = Field(..., min_length=2, max_length=50)
 
     schedule: Dict[DayOfWeek, List[ScheduleEntry]] = Field(
         ..., description="Map of weekday to list of sessions"
@@ -216,7 +225,7 @@ class TimeTableRequest(BaseModel):
             sorted_sessions = sorted(sessions, key=lambda s: s.start_time)
             for i in range(1, len(sorted_sessions)):
                 if to_minutes(sorted_sessions[i].start_time) < to_minutes(sorted_sessions[i-1].end_time):
-                    raise ValueError(f"Overlapping sessions on {day}")
+                    raise ValueError(f"Overlapping sessions on {Day}")
         return v
 
     model_config = {
@@ -245,9 +254,13 @@ class TimeTableRequest(BaseModel):
         }
     }
 
+class UpdateAcademicScopesRequest(BaseModel):
+    academic_scopes: List[AcademicScopeRequest]
+
 
 class CreateExceptionSession(BaseModel):
     session_id: Optional[str] = None
+    subject_id: Optional[str] = None
     date: date
     action: str  # Cancel | Rescheduled | Add
     reason : str
@@ -281,14 +294,41 @@ class EntityIdView(BaseModel):
         "populate_by_name": True
     }
 class ClerkShortView(BaseModel):
-    email : str
+    id : str|ObjectId = Field(..., alias="_id")
     first_name : str
     last_name : str
     middle_name : Optional[str]
-    department: str
-    program: str
-    phone : int
+    email : EmailStr
     profile_picture : Optional[str] 
+    
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        json_encoders={
+            ObjectId: str,
+            HttpUrl: str,
+        }
+    )
+    
+class ClerkFullView(BaseModel):
+    id : str|ObjectId = Field(..., alias="_id")
+    first_name : Optional[str]
+    last_name : Optional[str]
+    middle_name : Optional[str]
+    email : Optional[EmailStr]
+    phone : Optional[int]
+    academic_scopes : List[AcademicScopeRequest]
+    created_at: Optional[datetime] = None
+    profile_picture : Optional[str] 
+    
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        json_encoders={
+            ObjectId: str,
+            HttpUrl: str,
+        }
+    )
 
 class SubjectOutputDetail(BaseModel):
     subject_code: str
@@ -356,19 +396,6 @@ class TeacherShortViewForSubject(BaseModel):
            
         }
         
-class SubjectListingView(BaseModel):
-    subject_id : str | ObjectId = Field(..., alias="_id") 
-    subject_name: str
-    component: str
-    
-    class Config:
-        populate_by_name = True 
-        arbitrary_types_allowed = True 
-        json_encoders = {
-            ObjectId: str 
-        }
-        
-
 class SubjectShortView(BaseModel):
     subject_id : str | ObjectId = Field(..., alias="_id") 
     subject_code: str
@@ -402,6 +429,17 @@ class StudentListingView(BaseModel):
             ObjectId: str,
             HttpUrl: str 
         }
+
+class StudentProjection(BaseModel):
+    id: Optional[ObjectId] = Field(alias="_id")
+    first_name: Optional[str]
+    last_name: Optional[str]
+    roll_number: Optional[int]
+    face_embedding: Optional[List[float]]
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
         
 
 class StudentBasicView(BaseModel):
@@ -467,6 +505,7 @@ class SessionShortView(BaseModel):
     start_time: str
     end_time: str
     subject_name: str
+    subject_id : Optional[str] = None
     teacher_name: str
     component: Optional[Literal["Lab", "Lecture"]] = None 
 

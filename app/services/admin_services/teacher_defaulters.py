@@ -1,195 +1,234 @@
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse
-from app.core.redis import redis_client
-from datetime import datetime
 from fastapi.encoders import jsonable_encoder
 from bson import ObjectId
+from datetime import datetime
 
-from app.schemas.attendance import Attendance
+from app.schemas.session import Session
 
 
-async def teacher_defaulters(request : Request , page: int =1 , limit: int =10):
-    
+async def teacher_defaulters(
+    request: Request,
+    page: int = 1,
+    limit: int = 10,
+    department: str | None = None,
+    program: str | None = None,
+    semester: str | None = None
+):
+
+    #auth
     user_role = request.state.user.get("role")
 
     if user_role != "admin":
-
         return JSONResponse(
-        status_code=403,
-        content={
-            "success": False,
-            "message": "Only Admin can access this route",
-            
-        }
-    )
-        
-        
+            status_code=403,
+            content={
+                "success": False,
+                "message": "Only Admin can access this route"
+            }
+        )
+
     skip = (page - 1) * limit
+
+    match_stage = {}
+
+    if department:
+        match_stage["department"] = department
+
+    if program:
+        match_stage["program"] = program
+
+    if semester:
+        match_stage["semester"] = semester
 
     pipeline = []
 
-    #student join
-    pipeline.append({
-    
-        "$lookup": {
-            "from": "students",
-            "localField": "student.$id",
-            "foreignField": "_id",
-            "as": "student_data"
-        }
-    })
+    if match_stage:
+        pipeline.append({"$match": match_stage})
 
-    #subject join
-    pipeline.append({
-        "$lookup": {
-            "from": "subjects",
-            "localField": "subject.$id",
-            "foreignField": "_id",
-            "as": "subject_data"
-        }
-    })
+    pipeline.extend([
+        {
+            "$lookup": {
+                "from": "exception_sessions",
+                "localField": "_id",
+                "foreignField": "session.$id",
+                "as": "exceptions"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "attendances",
+                "localField": "_id",
+                "foreignField": "session.$id",
+                "as": "attendance"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "subject_session_stats",
+                "localField": "_id",
+                "foreignField": "session_id.$id",
+                "as": "stats"
+            }
+        },
+        {
+            "$group": {
+                "_id": "$teacher.$id",
 
-    pipeline += [
-        {"$unwind": "$student_data"},
-        {"$unwind": "$subject_data"}
-    ]
+                "total_sessions": {"$sum": 1},
 
+                "cancelled_sessions": {
+                    "$sum": {
+                        "$size": {
+                            "$filter": {
+                                "input": "$exceptions",
+                                "as": "ex",
+                                "cond": {"$eq": ["$$ex.action", "Cancel"]}
+                            }
+                        }
+                    }
+                },
 
-    #group by student
-    pipeline.append({
-        "$group": {
-            "_id": "$student_data._id",
+                "total_exceptions": {
+                    "$sum": {"$size": "$exceptions"}
+                },
 
-            "name": {
-                "$first": {
-                    "$concat": [
-                        "$student_data.first_name",
-                        " ",
-                        "$student_data.last_name"
+                "swap_sessions": {
+                    "$sum": {
+                        "$size": {
+                            "$filter": {
+                                "input": "$exceptions",
+                                "as": "ex",
+                                "cond": {"$ne": ["$$ex.swap_id", None]}
+                            }
+                        }
+                    }
+                },
+
+                "low_attendance_sessions": {
+                    "$sum": {
+                        "$size": {
+                            "$filter": {
+                                "input": "$stats",
+                                "as": "st",
+                                "cond": {"$lt": ["$$st.percentage_present", 40]}
+                            }
+                        }
+                    }
+                },
+
+                "total_stats": {"$sum": {"$size": "$stats"}}
+            }
+        },
+
+        {
+            "$addFields": {
+
+                "cancellation_rate": {
+                    "$cond": [
+                        {"$eq": ["$total_sessions", 0]},
+                        0,
+                        {"$divide": ["$cancelled_sessions", "$total_sessions"]}
+                    ]
+                },
+
+                "exception_rate": {
+                    "$cond": [
+                        {"$eq": ["$total_sessions", 0]},
+                        0,
+                        {"$divide": ["$total_exceptions", "$total_sessions"]}
+                    ]
+                },
+
+                "swap_rate": {
+                    "$cond": [
+                        {"$eq": ["$total_sessions", 0]},
+                        0,
+                        {"$divide": ["$swap_sessions", "$total_sessions"]}
+                    ]
+                },
+
+                "low_attendance_rate": {
+                    "$cond": [
+                        {"$eq": ["$total_stats", 0]},
+                        0,
+                        {"$divide": ["$low_attendance_sessions", "$total_stats"]}
                     ]
                 }
-            },
-            
-            "profile_picture" : { "$first" : "$student_data.profile_picture"},
-
-            "roll": {"$first": "$student_data.roll_number"},
-
-            "program": {"$first": "$student_data.program"},
-            "semester": {"$first": "$student_data.semester"},
-
-            "overall_percentage": {
-                "$avg": "$percentage"
-            },
-
-            "defaulter_subjects": {
-                "$push": {
-                    "id": "$subject_data._id",
-                    "name": "$subject_data.subject_name",
-                    "percentage": "$percentage",
-                    "code": "$subject_data.subject_code"
-                }
             }
-        }
-    })
-
-    # #subject filter inside grouped result
-    # if subject_id:
-    #     pipeline.append({
-    #         "$addFields": {
-    #             "defaulter_subjects": {
-    #                 "$filter": {
-    #                     "input": "$defaulter_subjects",
-    #                     "as": "sub",
-    #                     "cond": {
-    #                         "$eq": ["$$sub.id", ObjectId(subject_id)]
-    #                     }
-    #                 }
-    #             }
-    #         }
-    #     })
-
-    #     pipeline.append({
-    #         "$match": {
-    #             "defaulter_subjects.0": {"$exists": True}
-    #         }
-    #     })
-
-    #risk calculation
-    pipeline.append({
-        "$addFields": {
-            "risk": {
-                "$cond": [
-                    {"$lt": ["$overall_percentage", 65]},
-                    "HIGH",
-                    "MEDIUM"
-                ]
-            }
-        }
-    })
-
-    #projection
-    pipeline.append({
-    "$project": {
-        "_id": 0,
-
-        "student_id": {
-            "$toString": "$_id"
-        },
-        "profile_picture" : 1 ,
-        "name": 1,
-        "roll": 1,
-        "program": 1,
-        "semester": 1,
-
-        "overall_percentage": {
-            "$round": ["$overall_percentage", 2]
         },
 
-        "defaulter_subjects": {
-            "$map": {
-                "input": "$defaulter_subjects",
-                "as": "s",
-                "in": {
-                    "id": { "$toString": "$$s.id" },
-                    "name": "$$s.name",
-                    "percentage": "$$s.percentage",
-                    "code": "$$s.code"
+        {
+            "$addFields": {
+
+                "score": {
+                    "$add": [
+                        {"$multiply": [0.30, "$cancellation_rate"]},
+                        {"$multiply": [0.20, "$exception_rate"]},
+                        {"$multiply": [0.25, "$low_attendance_rate"]},
+                        {"$multiply": [0.10, "$swap_rate"]}
+                    ]
                 }
             }
         },
 
-        "risk": 1
-    }
-})
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "_id",
+                "foreignField": "_id",
+                "as": "teacher"
+            }
+        },
 
-    #pagination facet
-    pipeline.append({
-        "$facet": {
-            "data": [
-                {"$skip": skip},
-                {"$limit": limit}
-            ],
-            "total": [
-                {"$count": "count"}
-            ]
-        }
-    })
+        {"$unwind": "$teacher"},
 
-    result = await Attendance.aggregate(pipeline).to_list(None)
+        {
+            "$addFields": {
+                "status": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$gt": ["$score", 0.40]}, "then": "DEFAULTER"},
+                            {"case": {"$gt": ["$score", 0.20]}, "then": "MONITOR"}
+                        ],
+                        "default": "GOOD"
+                    }
+                }
+            }
+        },
 
-    data = result[0]["data"]
-    total = result[0]["total"][0]["count"] if result[0]["total"] else 0
+        {
+            "$project": {
+                "_id": 0,
+                "teacher_id": "$teacher.teacher_id",
+                "name": {
+                    "$concat": ["$teacher.first_name", " ", "$teacher.last_name"]
+                },
+                "department": "$teacher.department",
+                "total_sessions": 1,
+                "cancellation_rate": {"$round": ["$cancellation_rate", 2]},
+                "exception_rate": {"$round": ["$exception_rate", 2]},
+                "low_attendance_rate": {"$round": ["$low_attendance_rate", 2]},
+                "swap_rate": {"$round": ["$swap_rate", 2]},
+                "score": {"$round": ["$score", 3]}
+            }
+        },
 
-    
-  
+        {"$sort": {"score": -1}},
+        {"$skip": skip},
+        {"$limit": limit}
+    ])
+
+    result = await Session.aggregate(pipeline).to_list()
+
     return JSONResponse(
         status_code=200,
         content={
             "success": True,
-            "message": "Clerk fetched successfully",
+            "message": "Teacher defaulters fetched successfully",
             "data": jsonable_encoder(
                 result,
                 custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()}
             )
-            
-        })
+        }
+    )

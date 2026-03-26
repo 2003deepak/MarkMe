@@ -359,15 +359,14 @@ async def clerk_attendance_history(
     month: int,
     year: int,
     subject: Optional[List[str]] = None,
+    department: Optional[List[str]] = None,
     program: Optional[List[str]] = None,
     batch_year: Optional[List[int]] = None,
     semester: Optional[List[int]] = None
 ):
-    
-    logger.info(f"Params → month={month}, year={year}, subject={subject}, program={program}, batch_year={batch_year}")
 
     user = request.state.user
-    
+
     if user.get("role") != "clerk":
         return JSONResponse(
             status_code=401,
@@ -375,7 +374,9 @@ async def clerk_attendance_history(
         )
 
     # ---------------- DATE RANGE ----------------
+
     start_date = datetime(year, month, 1, tzinfo=timezone.utc)
+
     end_date = (
         datetime(year + 1, 1, 1, tzinfo=timezone.utc)
         if month == 12
@@ -383,8 +384,9 @@ async def clerk_attendance_history(
     )
 
     # ---------------- AGGREGATION PIPELINE ----------------
+
     pipeline = [
-        # 1️⃣ Filter by date first (cheap)
+
         {
             "$match": {
                 "date": {
@@ -394,7 +396,6 @@ async def clerk_attendance_history(
             }
         },
 
-        # 2️⃣ Join → Subject
         {
             "$lookup": {
                 "from": "subjects",
@@ -403,11 +404,87 @@ async def clerk_attendance_history(
                 "as": "subject_data"
             }
         },
+
         {
             "$unwind": "$subject_data"
-        },
+        }
+    ]
 
-        # Teacher Data Joined
+    # ---------------- CLERK SCOPE FILTER ----------------
+
+    scopes = user.get("academic_scopes", [])
+
+    if scopes:
+
+        scope_conditions = []
+
+        for scope in scopes:
+            scope_conditions.append({
+                "subject_data.program": scope["program_id"],
+                "subject_data.department": scope["department_id"]
+            })
+
+        pipeline.append({
+            "$match": {
+                "$or": scope_conditions
+            }
+        })
+
+    # ---------------- OPTIONAL FILTERS ----------------
+
+    match_stage = {}
+
+    # Subject filter
+    if subject:
+
+        subject_ids = [
+            ObjectId(sub_id)
+            for sub_id in subject
+            if sub_id and ObjectId.is_valid(sub_id)
+        ]
+
+        if subject_ids:
+            match_stage["subject_data._id"] = (
+                subject_ids[0] if len(subject_ids) == 1
+                else {"$in": subject_ids}
+            )
+
+    # Program filter
+    if program:
+        match_stage["subject_data.program"] = (
+            program[0] if len(program) == 1
+            else {"$in": program}
+        )
+
+    # Department filter
+    if department:
+        match_stage["subject_data.department"] = (
+            department[0] if len(department) == 1
+            else {"$in": department}
+        )
+
+    # Batch year filter
+    if batch_year:
+        years_str = [str(y) for y in batch_year]
+
+        match_stage["subject_data.academic_year"] = (
+            years_str[0] if len(years_str) == 1
+            else {"$in": years_str}
+        )
+
+    # Semester filter
+    if semester:
+        match_stage["subject_data.semester"] = (
+            semester[0] if len(semester) == 1
+            else {"$in": semester}
+        )
+
+    if match_stage:
+        pipeline.append({"$match": match_stage})
+
+    # ---------------- JOIN TEACHER ----------------
+
+    pipeline.extend([
 
         {
             "$lookup": {
@@ -417,81 +494,27 @@ async def clerk_attendance_history(
                 "as": "teacher_data"
             }
         },
+
         {
             "$unwind": "$teacher_data"
+        },
+
+        {
+            "$sort": {"date": 1}
         }
-    ]
 
-    # 3️⃣ Optional filters - handle multiple values with $in
-    match_stage = {}
-    
-    # Handle subject filter (can be string or list)
-    if subject:
-        # Convert to list if it's a string
-        if isinstance(subject, str):
-            subject_input = [subject]
-        else:
-            subject_input = subject
-        
-        # Filter valid ObjectIds
-        subject_ids = [ObjectId(sub_id) for sub_id in subject_input if sub_id and ObjectId.is_valid(sub_id)]
-        if subject_ids:
-            if len(subject_ids) == 1:
-                match_stage["subject_data._id"] = subject_ids[0]
-            else:
-                match_stage["subject_data._id"] = {"$in": subject_ids}
-    
-    # Handle program filter
-    if program:
-        # Convert to list if it's a string
-        if isinstance(program, str):
-            program_input = [program]
-        else:
-            program_input = program
-        
-        if len(program_input) == 1:
-            match_stage["subject_data.program"] = program_input[0]
-        else:
-            match_stage["subject_data.program"] = {"$in": program_input}
-    
-    # Handle batch_year filter
-    if batch_year:
-        # Convert to list if it's a single integer
-        if isinstance(batch_year, int):
-            batch_year_input = [batch_year]
-        else:
-            batch_year_input = batch_year
-        
-        # Convert batch_year to strings for comparison
-        batch_years_str = [str(year) for year in batch_year_input]
-        if len(batch_years_str) == 1:
-            match_stage["subject_data.academic_year"] = batch_years_str[0]
-        else:
-            match_stage["subject_data.academic_year"] = {"$in": batch_years_str}
-            
-    # Handle Semester Filter
-    if semester:
-        semester_input = [semester] if isinstance(semester, int) else semester
-        match_stage["subject_data.semester"] = (
-            semester_input[0] if len(semester_input) == 1 else {"$in": semester_input}
-        )
-    
-    # Add match stage if any filters were provided
-    if match_stage:
-        pipeline.append({"$match": match_stage})
+    ])
 
-    # 4️⃣ Sort
-    pipeline.append({
-        "$sort": {"date": 1}
-    })
+    # ---------------- EXECUTE PIPELINE ----------------
 
     stats_docs = await SubjectSessionStats.aggregate(pipeline).to_list()
-    logger.info(f"Found {len(stats_docs)} records")
 
     # ---------------- BUILD RESPONSE ----------------
+
     records = []
 
     for stat in stats_docs:
+
         records.append({
             "attendance_id": str(stat["session_id"].id),
             "date": stat["date"].date().isoformat(),

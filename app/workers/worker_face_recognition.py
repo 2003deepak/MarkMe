@@ -1,31 +1,40 @@
 import asyncio
 import aio_pika
 import json
+from app.utils.imagekit_uploader import upload_file_to_imagekit
+import uuid
 import base64
 import numpy as np
 import cv2
 import faiss
+from app.models.allModel import StudentProjection
 from app.schemas.student import Student
 from app.core.database import init_db
 from insightface.app import FaceAnalysis
 from app.core.rabbitmq_config import settings
 from app.core.redis import redis_client
 from app.utils.redis_pub_sub import publish_to_channel
+from app.core.faiss_cache import faiss_cache, get_cache_key
 import onnxruntime as ort
 import logging
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Auto-select provider
+# GPU / CPU auto selection
 available_providers = ort.get_available_providers()
 if "CUDAExecutionProvider" in available_providers:
     providers = ["CUDAExecutionProvider"]
     ctx_id = 0
-    logger.info("✅ Using GPU for face recognition with CUDAExecutionProvider")
+    logger.info("Using GPU")
 else:
     providers = ["CPUExecutionProvider"]
     ctx_id = -1
-    logger.warning("⚠️ CUDA not available, falling back to CPUExecutionProvider")
+    logger.warning("Using CPU")
+
+
+# lock for cache build
+faiss_locks = {}
 
 # Initialize ArcFace Model
 face_app = FaceAnalysis(name='buffalo_l', providers=providers)
@@ -34,94 +43,97 @@ logger.info("[face_worker] Initialized ArcFace model with providers: %s", provid
 
 EMBEDDING_DIM = 512
 
-async def load_student_data(semester, department, program, academic_year, attendance_id):
-    """Load and prepare student data for face recognition"""
-    logger.debug("[face_worker] Loading student data for filters: semester=%s, department=%s, program=%s, academic_year=%s", 
-                semester, department, program, academic_year)
-    
-    # Use the same query structure as the working single image version
-    query_filters = {
-        "semester": semester,
-        "department": department,
-        "program": program
-    }
-    
-    logger.debug("[face_worker] Query filters: %s", query_filters)
-    student_query = Student.find(query_filters)
-    
-    student_docs = [doc async for doc in student_query]
-    logger.info("[face_worker] Fetched %d students for attendance_id: %s with filters: %s", 
-               len(student_docs), attendance_id, query_filters)
+# =========================
+# LOAD STUDENTS + FAISS CACHE
+# =========================
+async def load_student_data(semester, department, program):
 
-    if not student_docs:
-        logger.error("[face_worker] No students found for filters: %s", query_filters)
-        return None
+    cache_key = get_cache_key(semester, department, program)
 
-    # Validate embeddings exist
-    valid_students = []
-    invalid_embeddings = []
-    no_embeddings = []
-    
-    for doc in student_docs:
-        logger.debug("[face_worker] Checking student: %s %s (ID: %s)", 
-                    doc.first_name, doc.last_name, str(doc.id))
+    # return cache
+    if cache_key in faiss_cache:
+        logger.info(f"Using cached FAISS for {cache_key}")
+        return faiss_cache[cache_key]
+
+    lock = faiss_locks.setdefault(cache_key, asyncio.Lock())
+
+    async with lock:
+
+        if cache_key in faiss_cache:
+            return faiss_cache[cache_key]
+
+        logger.info(f"Building FAISS index for {cache_key}")
+
+        query_filters = {
+            "semester": semester,
+            "department": department,
+            "program": program
+        }
+
+        student_docs = await Student.find(query_filters).project(StudentProjection).to_list()
+
+        if not student_docs:
+            return None
+
+        valid_students = [
+            doc for doc in student_docs
+            if doc.face_embedding and len(doc.face_embedding) == EMBEDDING_DIM
+        ]
+
+        if not valid_students:
+            return None
+
+        embeddings = np.array(
+            [doc.face_embedding for doc in valid_students],
+            dtype="float32"
+        )
+
+        faiss.normalize_L2(embeddings)
+
+        index = faiss.IndexFlatIP(EMBEDDING_DIM)
+        index.add(embeddings)
         
-        if hasattr(doc, 'face_embedding') and doc.face_embedding is not None:
-            if len(doc.face_embedding) == EMBEDDING_DIM:
-                valid_students.append(doc)
-                logger.debug("[face_worker] ✅ Valid embedding for student: %s", doc.first_name + " " + doc.last_name)
-            else:
-                logger.warning("[face_worker] ❌ Invalid embedding dimension for student %s: %d", 
-                             str(doc.id), len(doc.face_embedding))
-                invalid_embeddings.append(str(doc.id))
-        else:
-            logger.warning("[face_worker] ❌ No face embedding found for student %s", str(doc.id))
-            no_embeddings.append(str(doc.id))
-    
-    logger.info("[face_worker] Embedding summary - Valid: %d, Invalid dim: %d, No embedding: %d", 
-               len(valid_students), len(invalid_embeddings), len(no_embeddings))
-    
-    if not valid_students:
-        logger.error("[face_worker] No students with valid embeddings found")
-        return None
-    
-    logger.info("[face_worker] Found %d students with valid embeddings", len(valid_students))
-    
-    # Prepare data arrays - FIX: Use doc.id (MongoDB _id) instead of non-existent student_id
-    student_embeddings = np.array([doc.face_embedding for doc in valid_students], dtype="float32")
-    student_names = [f"{doc.first_name} {doc.last_name}".strip() for doc in valid_students]
-    student_rolls = [doc.roll_number for doc in valid_students]
-    student_ids = [str(doc.id) for doc in valid_students]  # Use MongoDB _id as string
-    
-    logger.debug("[face_worker] First 3 student IDs: %s", student_ids[:3])
-    logger.debug("[face_worker] First 3 student names: %s", student_names[:3])
-    logger.debug("[face_worker] First 3 student rolls: %s", student_rolls[:3])
-    logger.debug("[face_worker] Embeddings shape: %s", student_embeddings.shape)
+        # 🔥 9. ADD FAISS INDEX LOG
+        logger.info(
+            "[FAISS] vectors=%d dim=%d",
+            index.ntotal,
+            EMBEDDING_DIM
+        )
 
-    # Normalize embeddings and create FAISS index
-    faiss.normalize_L2(student_embeddings)
-    index = faiss.IndexFlatIP(EMBEDDING_DIM)
-    index.add(student_embeddings)
-    logger.info("[face_worker] Built FAISS index with %d embeddings", len(student_embeddings))
-    
-    return {
-        'embeddings': student_embeddings,
-        'names': student_names,
-        'rolls': student_rolls,
-        'ids': student_ids,
-        'index': index,
-        'docs': valid_students
-    }
+        data = {
+            "index": index,
+            "names": [f"{doc.first_name} {doc.last_name}" for doc in valid_students],
+            "rolls": [doc.roll_number for doc in valid_students],
+            "ids": [str(doc.id) for doc in valid_students],
+            "docs": valid_students
+        }
 
-async def process_single_image(img, current_image, student_data, recognized_set_key, attendance_id):
+        faiss_cache[cache_key] = data
+        
+        MAX_CACHE = 10
+
+        if len(faiss_cache) > MAX_CACHE:
+            faiss_cache.pop(next(iter(faiss_cache)))
+            logger.info(f"Cached FAISS for {cache_key}")
+
+        return data
+
+async def process_single_image(
+    img, current_image, student_data, recognized_set_key, attendance_id, recognized_ids
+):
     """Process a single image and return results"""
     logger.debug("[face_worker] Processing image %d for attendance_id: %s", current_image, attendance_id)
     
     # Detect faces
-    faces = face_app.get(img)
-    if not faces:
-        logger.warning("[face_worker] No faces detected in image %d", current_image)
+    raw_faces = face_app.get(img)
+    if not raw_faces:
         return [], img, 0
+
+    faces = sorted(
+        raw_faces,
+        key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]),
+        reverse=True
+    )
     
     logger.info("[face_worker] Detected %d faces in image %d", len(faces), current_image)
     
@@ -138,24 +150,59 @@ async def process_single_image(img, current_image, student_data, recognized_set_
     for idx, face in enumerate(faces):
         logger.debug("[face_worker] Processing face %d/%d in image %d", idx + 1, len(faces), current_image)
         
+        # 🔥 5. ADD FACE SIZE FILTER
+        bbox = face.bbox.astype(int)
+        x1, y1, x2, y2 = bbox
+        face_area = (x2 - x1) * (y2 - y1)
+        
+        if face_area < 5000:
+            logger.warning(
+                "[SKIP] Small face img=%d face=%d area=%d",
+                current_image,
+                idx + 1,
+                face_area
+            )
+            continue
+        
         # Get face embedding
         emb = face.embedding.reshape(1, -1).astype("float32")
         faiss.normalize_L2(emb)
         
-        # Search in FAISS index
-        D, I = index.search(emb, 1)
+        # 🔥 8. ADD EMBEDDING HEALTH LOG
+        logger.debug(
+            "[EMB] min=%.3f max=%.3f mean=%.3f",
+            float(emb.min()),
+            float(emb.max()),
+            float(emb.mean())
+        )
+        
+        # 🔥 1. CHANGE FAISS SEARCH → TOP 3
+        D, I = index.search(emb, 3)
+        
+        # 🔥 2. ADD TOP-3 LOGGING
+        logger.info(
+            "[TOP3] img=%d face=%d scores=%s",
+            current_image,
+            idx + 1,
+            [round(float(x), 4) for x in D[0]]
+        )
+        
         sim_score = float(D[0][0])
         match_idx = int(I[0][0])
         confidence = round(sim_score * 100, 2)
         
-        logger.debug("[face_worker] Face %d similarity score: %.3f, confidence: %.1f%%", 
-                    idx + 1, sim_score, confidence)
+        # 🔥 3. ADD MATCH DEBUG
+        logger.info(
+            "[MATCH] img=%d face=%d sim=%.4f conf=%.2f student=%s",
+            current_image,
+            idx + 1,
+            sim_score,
+            confidence,
+            student_ids[match_idx] if match_idx < len(student_ids) else "INVALID"
+        )
         
-        # Get bounding box
-        bbox = face.bbox.astype(int)
-        x1, y1, x2, y2 = bbox
-        
-        if sim_score > 0.50:  # Recognition threshold
+        # 🔥 7. FIX THRESHOLD (TEMPORARY BUT NEEDED)
+        if sim_score > 0.45:  # Recognition threshold (changed from 0.60 to 0.45)
             student_id = student_ids[match_idx]
             name = student_names[match_idx]
             roll = student_rolls[match_idx]
@@ -163,39 +210,25 @@ async def process_single_image(img, current_image, student_data, recognized_set_
             logger.debug("[face_worker] Potential match - Student ID: %s, Name: %s, Roll: %s", 
                         student_id, name, roll)
             
-            # Check if student already recognized (handle Redis bytes vs string)
-            recognized_members = await redis_client.smembers(recognized_set_key)
-            recognized_ids = {member.decode('utf-8') if isinstance(member, bytes) else str(member) 
-                            for member in recognized_members}
-            
-            logger.debug("[face_worker] Already recognized IDs: %s", list(recognized_ids))
-            
             if student_id not in recognized_ids:
-                # New recognition
+                recognized_ids.add(student_id)
                 await redis_client.sadd(recognized_set_key, student_id)
+
                 label = f"{name} ({confidence}%)"
-                color = (0, 255, 0)  # Green for new recognition
+                color = (0, 255, 0)
                 new_recognitions += 1
-                logger.info("[face_worker] ✅ NEW recognition: %s (roll %s, ID %s) confidence=%.1f%% in image %d", 
-                           name, roll, student_id, confidence, current_image)
-                
-                # Publish individual student recognition immediately
-                student_recognition = {
+
+                await publish_to_channel(f"student_recognized:{attendance_id}", {
                     "student_id": student_id,
                     "name": name,
                     "roll_number": roll,
                     "confidence": confidence,
-                    "image_index": current_image,
-                    "timestamp": current_image  # Can be used for ordering
-                }
-                await publish_to_channel(f"student_recognized:{attendance_id}", student_recognition)
-                logger.debug("[face_worker] Published individual student recognition: %s", name)
+                    "image_index": current_image
+                })
+
             else:
-                # Duplicate recognition
                 label = f"{name} - Duplicate ({confidence}%)"
-                color = (255, 255, 0)  # Yellow for duplicate
-                logger.debug("[face_worker] 🔄 Duplicate recognition: %s (ID %s) in image %d", 
-                           name, student_id, current_image)
+                color = (255, 255, 0)
                 
             # Add to results regardless of duplicate status
             result = {
@@ -252,7 +285,11 @@ async def face_worker():
     logger.info("[face_worker] 👂 Listening on queue: face_recog_queue")
 
     async with queue.iterator() as messages:
+        
         async for message in messages:
+            
+            recognized_ids = set()
+            
             async with message.process():
                 logger.info("[face_worker] 📨 Received message from queue")
                 student_data = None  # Initialize for cleanup
@@ -272,10 +309,9 @@ async def face_worker():
                     semester = data.get("semester")
                     department = data.get("department")
                     program = data.get("program")
-                    academic_year = data.get("academic_year")
 
                     logger.info("[face_worker] 📊 Processing job - attendance_id: %s, images: %d, filters: semester=%s, dept=%s, program=%s, year=%s", 
-                               attendance_id, num_images, semester, department, program, academic_year)
+                               attendance_id, num_images, semester, department, program)
 
                     # Validate required data
                     if not all([attendance_id, image_base64_list, semester, department, program]):
@@ -312,7 +348,7 @@ async def face_worker():
 
                     # Load student data once for the entire job
                     logger.info("[face_worker] 📥 Loading student data...")
-                    student_data = await load_student_data(semester, department, program, academic_year, attendance_id)
+                    student_data = await load_student_data(semester, department, program)
                     if not student_data:
                         logger.error("[face_worker] ❌ No student data loaded")
                         await publish_to_channel(f"face_progress:{attendance_id}", {
@@ -324,7 +360,6 @@ async def face_worker():
                     logger.info("[face_worker] ✅ Loaded %d students for recognition", len(student_data['ids']))
 
                     # Process each image
-                    all_results = []
                     total_faces = 0
                     total_new_recognitions = 0
 
@@ -352,43 +387,75 @@ async def face_worker():
                                     "current_image": current_image,
                                     "total_images": num_images,
                                     "message": f"Failed to decode image {current_image}",
-                                    "recognized_count": len(await redis_client.smembers(recognized_set_key))
+                                    "recognized_count": len(recognized_ids)
                                 })
                                 continue
 
+                            # 🔥 4. ADD IMAGE QUALITY LOG
+                            h, w, _ = img.shape
+                            logger.info(
+                                "[IMG] idx=%d shape=%s brightness=%.2f",
+                                current_image,
+                                (h, w),
+                                float(np.mean(img))
+                            )
+                            
+                            # 🔥 6. ADD IMAGE PREPROCESSING
+                            # improve brightness
+                            img = cv2.convertScaleAbs(img, alpha=1.2, beta=20)
+                            # denoise
+                            img = cv2.fastNlMeansDenoisingColored(img, None, 10, 10, 7, 21)
+                            
                             logger.debug("[face_worker] ✅ Image %d decoded successfully, shape: %s", 
                                        current_image, str(img.shape))
 
                             # Process the image
                             logger.debug("[face_worker] 🔍 Running face detection on image %d", current_image)
                             image_results, annotated_img, new_recognitions = await process_single_image(
-                                img, current_image, student_data, recognized_set_key, attendance_id
+                                img,
+                                current_image,
+                                student_data,
+                                recognized_set_key,
+                                attendance_id,
+                                recognized_ids
                             )
 
                             # Always encode and store the annotated image (even if no faces detected)
                             _, buffer = cv2.imencode('.jpg', annotated_img)
-                            annotated_image_base64 = base64.b64encode(buffer).decode('utf-8')
+                            image_bytes = buffer.tobytes()
                             
+                            #upload to imagekit
+                            filename = f"attendance_{attendance_id}_{current_image}_{uuid.uuid4().hex}.jpg"
+                            
+                            upload_result = await upload_file_to_imagekit(
+                                file=image_bytes,
+                                filename=filename,
+                                folder="attendance_faces",
+                                tags=["attendance", str(attendance_id)]
+                            )
+
+                            annotated_image_url = upload_result["url"]
+
                             # Store annotated image info
                             annotated_image_info = {
                                 "image_index": current_image,
                                 "status": "processed",
                                 "faces_detected": len(image_results),
                                 "new_recognitions": new_recognitions,
-                                "annotated_image_base64": annotated_image_base64,
+                                "annotated_image_url": annotated_image_url,
                                 "message": f"Processed {len(image_results)} faces, {new_recognitions} new recognitions"
                             }
                             all_annotated_images.append(annotated_image_info)
 
                             if not image_results:
                                 # No faces detected but still store the annotated image
-                                recognized_count = len(await redis_client.smembers(recognized_set_key))
+                                recognized_count = len(recognized_ids)
                                 await publish_to_channel(f"face_progress:{attendance_id}", {
                                     "status": "progress",
                                     "current_image": current_image,
                                     "total_images": num_images,
                                     "recognized_count": recognized_count,
-                                    "annotated_image_base64": annotated_image_base64,
+                                    "annotated_image_url": annotated_image_url,
                                     "message": f"No faces detected in image {current_image}"
                                 })
                             else:
@@ -397,7 +464,7 @@ async def face_worker():
                                 total_new_recognitions += new_recognitions
 
                                 # Get current recognition count
-                                recognized_count = len(await redis_client.smembers(recognized_set_key))
+                                recognized_count = len(recognized_ids)
 
                                 # Publish progress
                                 await publish_to_channel(f"face_progress:{attendance_id}", {
@@ -407,14 +474,12 @@ async def face_worker():
                                     "faces_in_image": len(image_results),
                                     "new_recognitions_in_image": new_recognitions,
                                     "total_recognized_count": recognized_count,
-                                    "annotated_image_base64": annotated_image_base64,
+                                    "annotated_image_url": annotated_image_url,
                                     "message": f"Processed image {current_image}: {len(image_results)} faces, {new_recognitions} new recognitions"
                                 })
 
                                 logger.info("[face_worker] ✅ Image %d processed: %d faces, %d new recognitions, total unique: %d", 
                                            current_image, len(image_results), new_recognitions, recognized_count)
-
-                                all_results.extend(image_results)
 
                         except Exception as e:
                             logger.error("[face_worker] ❌ Error processing image %d: %s", current_image, str(e))
@@ -443,9 +508,7 @@ async def face_worker():
                         })
                     else:
                         # Get final unique students
-                        recognized_members = await redis_client.smembers(recognized_set_key)
-                        unique_student_ids = [member.decode('utf-8') if isinstance(member, bytes) else str(member) 
-                                            for member in recognized_members]
+                        unique_student_ids = list(recognized_ids)
                         
                         logger.info("[face_worker] 🎯 Building final results for %d unique students", len(unique_student_ids))
                         

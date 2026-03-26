@@ -17,7 +17,6 @@ class Teacher(Document):
     email: Indexed(EmailStr, unique=True)  # type: ignore
     password: Optional[str] = None 
     mobile_number: int
-    department: Indexed(str)  # type: ignore
     subjects_assigned: List[Link["Subject"]] = []  # Use string-based forward reference
     created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
     updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
@@ -32,7 +31,7 @@ class Teacher(Document):
     class Settings:
         name = "teachers"
         indexes = [
-            [("teacher_id", 1), ("email", 1), ("department", 1)],
+            [("teacher_id", 1), ("email", 1)],
         ]
 
         # Automatically update updated_at timestamp on save

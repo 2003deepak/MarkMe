@@ -122,6 +122,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
                 start_time=session.start_time,
                 end_time=session.end_time,
                 subject_name=session.subject.subject_name,
+                subject_id=str(session.subject.id),
                 teacher_name=teacher_name,
                 component=session.subject.component
             )

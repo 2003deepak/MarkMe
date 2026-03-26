@@ -16,43 +16,37 @@ async def get_todays_upcoming_sessions_for_student(
     request: Request
 ) -> Dict[str, Any]:
 
-    # STEP 1 — Auth
+    #auth
     user = request.state.user
     if user.get("role") != "student":
         return JSONResponse(
             status_code=403,
-            content={
-                "success": False,
-                "message": "Only students can access this endpoint"
-            }
+            content={"success": False, "message": "Only students allowed"}
         )
 
-    # STEP 2 — Date context
+    #time context
     now = datetime.now(tz=IST)
     today = now.date()
     weekday = now.strftime("%A")
 
-    day_start = datetime.combine(today, datetime.min.time(), tzinfo=IST)
-    day_end = datetime.combine(today, datetime.max.time(), tzinfo=IST)
-
-    # STEP 3 — Student scope
+    #student scope
     program = user.get("program")
     semester = str(user.get("semester"))
     academic_year = str(user.get("batch_year"))
     department = user.get("department")
-    
+
     missing = validate_student_academic(user)
     if missing:
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
-                "message": "Student academic details are incomplete",
+                "message": "Student academic details incomplete",
                 "missing_fields": missing
             }
         )
 
-    # STEP 4 — Base sessions
+    #base sessions
     base_sessions = await Session.find(
         Session.day == weekday,
         Session.program == program,
@@ -62,12 +56,11 @@ async def get_todays_upcoming_sessions_for_student(
         fetch_links=True
     ).to_list()
 
-    base_session_map = {str(s.id): s for s in base_sessions}
+    base_map = {str(s.id): s for s in base_sessions}
 
-    # STEP 5 — Exceptions (today only)
+    #today exceptions only
     exceptions = await ExceptionSession.find(
-        ExceptionSession.date >= day_start,
-        ExceptionSession.date <= day_end,
+        ExceptionSession.date == today,
         fetch_links=True
     ).to_list()
 
@@ -76,14 +69,14 @@ async def get_todays_upcoming_sessions_for_student(
     target_exceptions = []
     add_exceptions = []
 
-    # STEP 6 — Process exceptions
+    #process exceptions
     for ex in exceptions:
 
-        # swap must be approved
+        #ignore non-approved swaps
         if ex.swap_id and ex.swap_id.status != "APPROVED":
             continue
 
-        # ADD
+        #ADD
         if ex.action == "Add":
             if (
                 ex.program == program and
@@ -99,22 +92,21 @@ async def get_todays_upcoming_sessions_for_student(
 
         sid = str(ex.session.id)
 
-        # CANCEL
         if ex.action == "Cancel":
             cancel_set.add(sid)
 
-        # RESCHEDULE
         elif ex.action == "Reschedule":
             reschedule_map[sid] = ex
 
             if ex.swap_role == "TARGET":
                 target_exceptions.append(ex)
 
-    # STEP 7 — Apply base sessions
+    #final session list
     final_sessions = []
     added_ids = set()
 
-    for sid, session in base_session_map.items():
+    #normal + reschedule
+    for sid, session in base_map.items():
 
         if sid in cancel_set:
             continue
@@ -127,7 +119,7 @@ async def get_todays_upcoming_sessions_for_student(
         final_sessions.append(session)
         added_ids.add(sid)
 
-    # STEP 8 — Inject TARGET swap sessions
+    #inject swap target sessions
     for ex in target_exceptions:
         sid = str(ex.session.id)
         if sid not in added_ids:
@@ -137,7 +129,7 @@ async def get_todays_upcoming_sessions_for_student(
             final_sessions.append(injected)
             added_ids.add(sid)
 
-    # STEP 9 — ADD virtual sessions
+    #add virtual sessions (ADD)
     for ex in add_exceptions:
         final_sessions.append({
             "_is_added": True,
@@ -152,10 +144,9 @@ async def get_todays_upcoming_sessions_for_student(
             "academic_year": ex.academic_year,
         })
 
-    # STEP 10 — Attendance
+    #attendance (today only)
     attendance_list = await Attendance.find(
-        Attendance.date >= day_start,
-        Attendance.date <= day_end,
+        Attendance.date == today,
         fetch_links=True
     ).to_list()
 
@@ -166,8 +157,8 @@ async def get_todays_upcoming_sessions_for_student(
         elif a.exception_session:
             attendance_map[str(a.exception_session.id)] = a
 
-    # STEP 11 — Categorize sessions
-    upcoming, current, past = [], [], []
+    #filter upcoming
+    upcoming = []
 
     for s in final_sessions:
 
@@ -192,13 +183,14 @@ async def get_todays_upcoming_sessions_for_student(
             semester = s.semester
             academic_year = s.academic_year
 
+        #convert time
         start_dt = datetime.strptime(
             f"{today} {start_str}", "%Y-%m-%d %H:%M"
         ).replace(tzinfo=IST)
 
-        end_dt = datetime.strptime(
-            f"{today} {end_str}", "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=IST)
+        #only upcoming
+        if start_dt <= now:
+            continue
 
         attendance = attendance_map.get(session_id)
 
@@ -221,36 +213,23 @@ async def get_todays_upcoming_sessions_for_student(
             )
         }
 
-        if start_dt <= now <= end_dt:
-            current.append(payload)
-        elif start_dt > now:
-            mins = int((start_dt - now).total_seconds() // 60)
-            payload["time_until_start_display"] = (
-                f"{mins//60}hr {mins%60}m"
-                if mins >= 60 else f"{mins}m"
-            )
-            upcoming.append(payload)
-        else:
-            past.append(payload)
+        upcoming.append(payload)
 
-    # STEP 12 — Sort
-    for arr in (upcoming, current, past):
-        arr.sort(
-            key=lambda x: datetime.strptime(
-                f"{x['date']} {x['start_time']}",
-                "%Y-%m-%d %H:%M"
-            )
+    #sort
+    upcoming.sort(
+        key=lambda x: datetime.strptime(
+            f"{x['date']} {x['start_time']}",
+            "%Y-%m-%d %H:%M"
         )
+    )
 
     return JSONResponse(
         status_code=200,
         content={
             "success": True,
-            "message": "Student sessions fetched successfully",
+            "message": "Upcoming sessions fetched successfully",
             "data": {
-                "upcoming": upcoming,
-                "current": current,
-                "past": past
+                "upcoming": upcoming
             }
         }
     )

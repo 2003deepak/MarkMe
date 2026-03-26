@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Optional
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -8,10 +8,10 @@ import json
 
 from app.core.redis import redis_client
 from app.schemas.subject import Subject
-from app.models.allModel import SubjectListingView, SubjectShortView
+from app.models.allModel import SubjectShortView
 
 
-# Custom JSON encoder for Mongo-specific types
+#mongo encoder
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):
@@ -21,19 +21,19 @@ class MongoJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-
-async def get_subject_detail(
+async def list_all_subjects(
     request: Request,
+    department: Optional[str] = None,
     program: Optional[str] = None,
     semester: Optional[int] = None,
-    mode: Literal["subject_listing", "subject_teacher_listing"] = "subject_teacher_listing",
+    page: int = 1,
+    limit: int = 10
 ):
     user = request.state.user
-    user_role = user.get("role")
-    department = user.get("department")
+    role = user.get("role")
 
-    # Role validation
-    if user_role not in {"clerk", "student"}:
+    #auth
+    if role != "clerk":
         return JSONResponse(
             status_code=403,
             content={
@@ -42,39 +42,240 @@ async def get_subject_detail(
             }
         )
 
-    # Cache key (mode-aware ❗)
-    cache_key = f"subjects:{department}:{program}:{semester}:{mode}"
-    cached = await redis_client.get(cache_key)
+    scopes = user.get("academic_scopes", [])
 
+    if not scopes:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "No subjects found",
+                "data": [],
+                "pagination": {}
+            }
+        )
+
+    #extract scope filters
+    program_ids = [s["program_id"] for s in scopes]
+    department_ids = [s["department_id"] for s in scopes]
+
+    match_stage = {
+        "program": {"$in": program_ids},
+        "department": {"$in": department_ids}
+    }
+
+    #apply UI filters (safe)
+    if program and program in program_ids:
+        match_stage["program"] = program
+
+    if department and department in department_ids:
+        match_stage["department"] = department
+
+    if semester:
+        match_stage["semester"] = semester
+
+    skip = (page - 1) * limit
+
+    pipeline = [
+        {
+            "$match": match_stage
+        },
+
+        #lookup teacher
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "teacher_assigned.$id",
+                "foreignField": "_id",
+                "as": "teacher"
+            }
+        },
+
+        #unwind teacher (one-to-one)
+        {
+            "$unwind": {
+                "path": "$teacher",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+
+        #project clean response
+        {
+            "$project": {
+                "_id": 1,
+                "subject_name": 1,
+                "subject_code": 1,
+                "program": 1,
+                "department": 1,
+                "semester": 1,
+                "credit": 1,
+                "component": 1,
+
+                #teacher fields
+                "teacher": {
+                    "_id": "$teacher._id",
+                    "first_name": "$teacher.first_name",
+                    "last_name": "$teacher.last_name",
+                    "email": "$teacher.email",
+                    "teacher_id": "$teacher.teacher_id"
+                },
+            }
+        },
+
+        #facet for pagination
+        {
+            "$facet": {
+                "data": [
+                    {"$skip": skip},
+                    {"$limit": limit}
+                ],
+                "totalCount": [
+                    {"$count": "count"}
+                ]
+            }
+        }
+    ]
+
+    result = await Subject.aggregate(pipeline).to_list()
+
+    if not result:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "No subjects found",
+                "data": [],
+                "pagination": {}
+            }
+        )
+
+    data = result[0].get("data", [])
+    total_count = result[0].get("totalCount", [])
+    total = total_count[0]["count"] if total_count else 0
+
+    #format response
+    def serialize(doc):
+        doc["_id"] = str(doc["_id"])
+
+        if doc.get("teacher") and doc["teacher"].get("_id"):
+            doc["teacher"]["_id"] = str(doc["teacher"]["_id"])
+
+        if doc.get("created_at"):
+            doc["created_at"] = doc["created_at"].isoformat()
+
+        if doc.get("updated_at"):
+            doc["updated_at"] = doc["updated_at"].isoformat()
+
+        return doc
+
+    response_data = [serialize(d) for d in data]
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "message": "Subject details fetched successfully",
+            "data": response_data,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "total_pages": (total + limit - 1) // limit
+            }
+        }
+    )
+    
+async def get_assignable_subjects(request: Request):
+
+    user = request.state.user
+    role = user.get("role")
+
+    #auth
+    if role != "clerk":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "message": "You are not authorized to access subjects"
+            }
+        )
+
+    scopes = user.get("academic_scopes", [])
+
+    if not scopes:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "No subjects found",
+                "data": []
+            }
+        )
+
+    program_ids = [s["program_id"] for s in scopes]
+    department_ids = [s["department_id"] for s in scopes]
+
+    # cache key (based on scope)
+    scope_key = "_".join(sorted([f"{d}:{p}" for d, p in zip(department_ids, program_ids)]))
+    cache_key = f"assignable_subjects:{user.get('email')}"
+
+    cached = await redis_client.get(cache_key)
     if cached:
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "message": "Subject details fetched successfully",
+                "message": "Assignable subjects fetched successfully (cache)",
                 "data": json.loads(cached)
             }
         )
 
-    # Build query dynamically
-    query = {Subject.department: department}
+    #aggregation pipeline
+    pipeline = [
+        {
+            "$match": {
+                "program": {"$in": program_ids},
+                "department": {"$in": department_ids}
+            }
+        },
 
-    if program:
-        query[Subject.program] = program
-    if semester:
-        query[Subject.semester] = semester
+        #lookup teacher
+        {
+            "$lookup": {
+                "from": "teachers",
+                "localField": "teacher_assigned.$id",
+                "foreignField": "_id",
+                "as": "teacher"
+            }
+        },
 
-    projection = (
-        SubjectListingView
-        if mode == "subject_listing"
-        else SubjectShortView
-    )
+        {
+            "$unwind": {
+                "path": "$teacher",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
 
-    # Fetch from DB
-    subjects = await Subject.find(
-        *[k == v for k, v in query.items()],
-        fetch_links=True
-    ).project(projection).to_list()
+        {
+            "$project": {
+                "_id": 1,
+                "subject_name": 1,
+                "subject_code": 1,
+                "component": 1,
+                "program": 1,
+                "department": 1,
+                "semester": 1,
+
+                "teacher": {
+                    "_id": "$teacher._id",
+                    "first_name": "$teacher.first_name",
+                    "last_name": "$teacher.last_name"
+                }
+            }
+        }
+    ]
+
+    subjects = await Subject.aggregate(pipeline).to_list()
 
     if not subjects:
         return JSONResponse(
@@ -82,36 +283,59 @@ async def get_subject_detail(
             content={
                 "success": True,
                 "message": "No subjects found",
-                "data" : []
+                "data": []
             }
         )
 
-    # Prepare response data
-    response_data =  [s.dict() for s in subjects]
+    # grouping
+    grouped = {}
 
-    # Cache result (24h)
-    await redis_client.set(
+    for sub in subjects:
+        group_key = f"{sub['department']} - {sub['program']} (Sem {sub['semester']})"
+
+        if group_key not in grouped:
+            grouped[group_key] = []
+
+        teacher = sub.get("teacher")
+
+        grouped[group_key].append({
+            "id": str(sub["_id"]),
+            "label": f"{sub['subject_name']} ({sub['component']})",
+            "code": sub.get("subject_code"),
+            "component": sub.get("component"),
+
+            "assigned": bool(teacher and teacher.get("_id")),
+
+            "teacher_name": (
+                f"{teacher.get('first_name','')} {teacher.get('last_name','')}".strip()
+                if teacher and teacher.get("_id")
+                else None
+            )
+        })
+
+    response = [
+        {
+            "group": group,
+            "subjects": subs
+        }
+        for group, subs in grouped.items()
+    ]
+
+    # cache it
+    await redis_client.setex(
         cache_key,
-        json.dumps(response_data, cls=MongoJSONEncoder),
-        ex=86400
+        300,
+        json.dumps(response, cls=MongoJSONEncoder)
     )
 
     return JSONResponse(
         status_code=200,
         content={
             "success": True,
-            "message": "Subject details fetched successfully",
-            "data": jsonable_encoder(
-                response_data,
-                custom_encoder={
-                    ObjectId: str,
-                    datetime: lambda x: x.isoformat()
-                }
-            )
+            "message": "Assignable subjects fetched successfully",
+            "data": response
         }
     )
-
-
 
 async def get_subject_by_id(request : Request , subject_id: str):
     
@@ -133,24 +357,6 @@ async def get_subject_by_id(request : Request , subject_id: str):
     clerk_program = request.state.user.get("program")
     print(f"➡️ Requested by: {user_email} (Role: {user_role}, Program: {clerk_program})")
 
-    # Simplified Redis key naming
-    cache_key = f"subject:{subject_id}"
-    cached_subject = await redis_client.get(cache_key)
-
-    if cached_subject:
-        print(f"✅ Found data in Redis cache: {cache_key}")
-    
-        return JSONResponse(
-                    status_code=200,
-                    content={
-                        "success": True,
-                        "message" : "Subject Details fetched successfully",
-                        "data": json.loads(cached_subject)
-                    }
-                )
-
-    print("ℹ️ No cached data found — fetching from DB...")
-    
 
     # Query all subjects by subject_code and program, and fetch linked teacher data
     subjects = await Subject.find(
@@ -178,10 +384,6 @@ async def get_subject_by_id(request : Request , subject_id: str):
         "subjects": [subject.dict() for subject in subjects]
     }
 
-    # Save to Redis with 24hr TTL
-    serialized_subject = json.dumps(subject_data, cls=MongoJSONEncoder)
-    await redis_client.set(cache_key, serialized_subject, ex=86400)
-    print(f"📥 Saved subjects {subject_id} for {clerk_program} to Redis (TTL 24h)")
 
     # Use jsonable_encoder for response
 
@@ -193,3 +395,79 @@ async def get_subject_by_id(request : Request , subject_id: str):
                         "data": jsonable_encoder(subject_data, custom_encoder={ObjectId: str, datetime: lambda x: x.isoformat()})
                     }
                 )
+
+
+
+async def get_timetable_subjects(
+    request: Request,
+    department: Optional[str] = None,
+    program: Optional[str] = None,
+    semester: Optional[str] = None
+):
+    user = request.state.user
+    role = user.get("role")
+    
+    print(f"➡️ User Role: {role} is requesting subjects for Timetable with filters - Department: {department}, Program: {program}, Semester: {semester}")
+
+    #auth
+    if role != "clerk":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "message": "You are not authorized to access subjects"
+            }
+        )
+
+    match_stage = {}
+
+    #convert comma-separated → list
+    if program:
+        program_list = [p.strip() for p in program.split(",") if p.strip()]
+        match_stage["program"] = {"$in": program_list}
+
+    if department:
+        dept_list = [d.strip() for d in department.split(",") if d.strip()]
+        match_stage["department"] = {"$in": dept_list}
+
+    if semester:
+        
+        semester_list = [int(s.strip()) for s in semester.split(",") if s.strip()]
+        match_stage["semester"] = {"$in": semester_list}
+       
+
+    pipeline = [
+        {
+            "$match": match_stage
+        },
+
+        {
+            "$project": {
+                "_id": {"$toString": "$_id"},
+                "subject_name": 1,
+                "subject_code": 1,
+                "component": 1,
+            }
+        }
+    ]
+
+    result = await Subject.aggregate(pipeline).to_list()
+
+    if not result:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "No subjects found",
+                "data": []
+            }
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "message": "Subject details fetched successfully",
+            "data": result,
+        }
+    )

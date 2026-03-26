@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
+
+from starlette import status
 from app.core.redis import redis_client
 from beanie.operators import Or
 from app.schemas.session import Session
@@ -228,7 +230,23 @@ async def fetch_teacher_request(
         "approved": "APPROVED",
         "rejected": "REJECTED"
     }
-    db_status = status_map.get(status) if status else None
+
+    db_status_list = None
+
+    if status:
+        status_values = [s.strip().lower() for s in status.split(",")]
+        db_status_list = [
+            status_map[s]
+            for s in status_values
+            if s in status_map
+        ]
+        
+        
+    if status and not db_status_list:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Invalid status filter"}
+        )
 
     # created_by_me
     if request_type in (None, "created_by_me"):
@@ -248,15 +266,15 @@ async def fetch_teacher_request(
             {"$unwind": {"path": "$swap", "preserveNullAndEmptyArrays": True}},
         ]
 
-        if db_status:
+        if db_status_list:
             created_pipeline.append({
                 "$match": {
                     "$or": [
-                        {"swap.status": db_status},
+                        {"swap.status": {"$in": db_status_list}},
                         {
                             "$and": [
                                 {"swap": {"$eq": None}},
-                                {"$expr": {"$eq": [db_status, "APPROVED"]}}
+                                {"$expr": {"$in": ["APPROVED", db_status_list]}}
                             ]
                         }
                     ]
@@ -322,8 +340,12 @@ async def fetch_teacher_request(
             }}
         ]
 
-        if db_status:
-            received_pipeline.append({"$match": {"status": db_status}})
+        if db_status_list:
+            received_pipeline.append({
+                "$match": {
+                    "status": {"$in": db_status_list}
+                }
+            })
 
         received_pipeline += [
             {

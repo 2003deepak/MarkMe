@@ -1,24 +1,37 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from pydantic import EmailStr, Field, field_validator,BaseModel
+from typing import Optional, List
 from beanie import Document, Indexed
 from datetime import datetime
 import re
 
+
+class AcademicScope(BaseModel):
+    program_id: str
+    department_id: str
+
+
 class Clerk(Document):
-    first_name: str 
+
+    first_name: str
     middle_name: Optional[str] = None
-    last_name: str 
+    last_name: str
+
     email: Indexed(EmailStr, unique=True)  # type: ignore
-    password: Optional[str] = None  # 6-digit numeric PIN
-    department: Optional[str] = None
-    program: Optional[str] = None
-    phone: Optional[int] = Field(None, alias="phone")
+    password: Optional[str] = None
+
+    phone: Optional[int] = None
+
+    academic_scopes: List[AcademicScope] = []
+
     profile_picture: Optional[str] = None
     profile_picture_id: Optional[str] = None
-    created_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
-    updated_at: Indexed(datetime) = datetime.utcnow()  # type: ignore
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
 
     @field_validator("phone")
+    @classmethod
     def validate_phone(cls, v):
         if v is not None:
             v_str = str(v)
@@ -26,32 +39,23 @@ class Clerk(Document):
                 raise ValueError("Phone number must be a 10-digit number")
         return v
 
+
     @field_validator("password")
+    @classmethod
     def validate_password(cls, v):
         if v is None:
             return v
-        if v.startswith("$2b$"):  # Already hashed
+        if v.startswith("$2"):
             return v
         if not re.match(r"^\d{6}$", v):
             raise ValueError("Password must be a 6-digit numeric PIN")
         return v
 
-    @field_validator("department")
-    def validate_department(cls, v):
-        if v is not None and not v.strip():
-            raise ValueError("Department cannot be empty")
-        return v
 
-    @field_validator("program")
-    def validate_program(cls, v):
-        if v is not None and not v.strip():
-            raise ValueError("Program cannot be empty")
-        return v
+    async def save(self, *args, **kwargs):
+        self.updated_at = datetime.utcnow()
+        return await super().save(*args, **kwargs)
+
 
     class Settings:
         name = "clerks"
-
-        async def pre_save(self) -> None:
-            self.updated_at = datetime.utcnow()
-            if not self.created_at:
-                self.created_at = self.updated_at

@@ -77,7 +77,7 @@ async def enqueue_exception_session(
         "exception_id": str(exception.id),
     }
     
-    print("Session added in queue with delay ms :- " + (delay*1000))
+    print(f"Session added in queue with delay ms :- {delay*1000}")
 
     await send_to_queue(
         SESSION_QUEUE_NAME,

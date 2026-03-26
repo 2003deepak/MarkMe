@@ -158,8 +158,6 @@ async def recognize_students(request: Request, attendance_id: str, images: List[
                         # ⭐ ADD SLOWDOWN WHEN A FACE IS DETECTED ⭐
                         
                         if channel == recognized_channel:
-                            logger.info(f"[event_generator] FACE DETECTED -> Delaying 2 seconds for UI testing")
-                            await asyncio.sleep(1)
 
                             yield json.dumps({
                                 "event": "student_recognized",

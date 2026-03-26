@@ -1,5 +1,6 @@
 from fastapi import (
     APIRouter,
+    Query,
     Request,
     Path,
     Form,
@@ -25,7 +26,7 @@ from app.services.student_services.register_student import register_student
 from app.services.teacher_services.get_teacher_detail import get_teacher_by_id, get_teacher_subject_insights, get_teacher_subject_performance
 from app.services.teacher_services.fetch_class_list import fetch_class
 from app.services.clerk_services.add_timetable import add_timetable
-from app.services.clerk_services.get_subject_detail import get_subject_detail, get_subject_by_id
+from app.services.clerk_services.get_subject_detail import get_assignable_subjects, list_all_subjects, get_subject_by_id
 
 # --- Pydantic Imports
 from app.models.allModel import (
@@ -51,13 +52,19 @@ async def create_subject_route(
 
 
 @router.get("/subject")
-async def get_subject_route(
+async def get_data_subjects(
     request: Request,
+    department: str | None = None,
     program: str | None = None,
     semester: int | None = None,
-    mode: Literal["subject_listing", "subject_teacher_listing"] = "subject_teacher_listing",
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
     ):
-    return await get_subject_detail(request,program,semester,mode)
+    return await list_all_subjects(request,department,program,semester,page,limit)
+
+@router.get("/subject/assignable")
+async def get_data_subjects(request: Request):
+    return await get_assignable_subjects(request)
 
 
 @router.get("/subject/{subject_id}")
@@ -88,11 +95,13 @@ async def update_teacher(
 @router.get("/teacher")
 async def get_all_teachers_route(
     request: Request,
+    department: str | None = None,
+    program: str | None = None,
     page: int = 1,
     limit: int = 10,
     search: str | None = None,
     ):
-    return await get_all_teachers(request,page,limit,search)
+    return await get_all_teachers(request,department,program,page,limit,search)
 
 
 @router.get("/teacher/{teacher_id}/subject-performance")

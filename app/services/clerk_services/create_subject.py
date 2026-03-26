@@ -7,6 +7,7 @@ from bson.objectid import ObjectId
 from app.core.redis import redis_client
 
 async def create_subject(request, request_model):
+    
     if request.state.user.get("role") != "clerk":
         return JSONResponse(
             status_code=400,
@@ -22,8 +23,6 @@ async def create_subject(request, request_model):
             "subject_code": request_model.subject_code,
             "component": request_model.component
         })
-
-        print(f"Existing Subject: {existing_subject}")
         
         if existing_subject:
         
@@ -31,7 +30,8 @@ async def create_subject(request, request_model):
                 status_code=400,
                 content={
                     "success": False,
-                    "message": f"Subject with code {request_model.subject_code} and component {request_model.component} already exists"
+                    "message" : "Subject Creation Failed",
+                    "error": f"Subject with code {request_model.subject_code} and component {request_model.component} already exists"
                 }
             )
 
@@ -48,11 +48,14 @@ async def create_subject(request, request_model):
 
         # Save subject to database
         await subject_data.save()
+        
+
 
         # Delete cache for subjects to ensure fresh data
         cache_key_subject = [
             f"subjects:{request.state.user.get('program')}:{request.state.user.get('department')}:{request.state.user.get('semester')}",
-            f"subject:{request.state.user.get('program')}"
+            f"subject:{request.state.user.get('program')}",
+            f"assignable_subjects:{request.state.user.get('email')}"
         ]
 
 
@@ -77,23 +80,32 @@ async def create_subject(request, request_model):
 
     except ValidationError as e:
         error_msg = str(e.errors()[0]['msg'])
-        raise HTTPException(
+        return JSONResponse(
             status_code=422,
-            detail={
+            content={
                 "success": False,
-                "message": error_msg
+                "message": "Subject creation failed due to validation error",
+                "error": error_msg
             }
         )
 
     except HTTPException as he:
-        raise he
+        return JSONResponse(
+            status_code=he.status_code,
+            content={
+                "success": False,
+                "message": "Subject creation failed",
+                "error": he.detail
+            }
+        )
 
     except Exception as e:
         print(f"Subject Creation error: {str(e)}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail={
+            content={
                 "success": False,
-                "message": f"Error creating subject: {str(e)}"
+                "message": "Subject creation failed due to an internal error",
+                "error": str(e)
             }
         )

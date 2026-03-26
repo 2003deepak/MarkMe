@@ -154,7 +154,7 @@ async def get_department_heatmap(
 
     if role == "clerk":
         return await clerk_attendance_history(
-            request, month, year, subject_list, program_list, batch_year_list,semester_list
+            request, month, year, subject_list, department_list,program_list, batch_year_list,semester_list
         )
         
 @router.get("/{attendance_id}")

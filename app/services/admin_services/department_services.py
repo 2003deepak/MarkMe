@@ -54,7 +54,7 @@ async def create_department(request: Request, dept_data: CreateDepartmentRequest
         # Invalidate cache
         redis = await get_redis_client()
         await redis.delete("all_departments")
-        await redis.delete("metadata_listing")
+        await redis.delete("metadata_listing_v2")
         
         return JSONResponse(
             status_code=201,
@@ -121,7 +121,7 @@ async def update_department(request: Request, id: str, update_data: UpdateDepart
         # Invalidate cache
         redis = await get_redis_client()
         await redis.delete("all_departments")
-        await redis.delete("metadata_listing")
+        await redis.delete("metadata_listing_v2")
         
         return JSONResponse(status_code=200, content={"success": True, "message": "Department updated successfully"})
     except Exception as e:

@@ -1,9 +1,7 @@
-import uuid
 import logging
 from bson import ObjectId
-from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
+from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -12,45 +10,35 @@ from app.models.allModel import (
     NotificationRequest,
     TakeSwapActionRequest,
 )
+
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.swap_approval import SwapApproval
 from app.schemas.session import Session
 from app.schemas.teacher import Teacher
 
 from app.services.common_services.notify_users import notify_users
-from app.utils.notify import (
-    notify_students_by_session,
-    notify_students_for_two_sessions,
-)
+from app.utils.notify import notify_students_by_session, notify_students_for_two_sessions
 from app.utils.parse_data import enqueue_exception_session, overlap_error_response
-from app.utils.publisher import send_to_queue
 from app.core.redis import redis_client
 
-# --------------------------------------------------
-# config
-# --------------------------------------------------
 
 logger = logging.getLogger("session_exception")
 logger.setLevel(logging.INFO)
 
 IST = ZoneInfo("Asia/Kolkata")
 
-SESSION_QUEUE_NAME = "session_queue"
 REDIS_SESSION_JOB_PREFIX = "attendance:job:"
 
-
-# --------------------------------------------------
-# CREATE EXCEPTION
-# --------------------------------------------------
 
 async def create_session_exception(
     request: Request,
     exception_request: CreateExceptionSession
 ):
+
     logger.info("create_session_exception called")
 
-    # auth
     user = request.state.user
+
     if user.get("role") != "teacher":
         return JSONResponse(
             status_code=403,
@@ -58,6 +46,7 @@ async def create_session_exception(
         )
 
     requester = await Teacher.get(ObjectId(user["id"]))
+
     if not requester:
         return JSONResponse(
             status_code=404,
@@ -69,11 +58,18 @@ async def create_session_exception(
     day_name = ex_date.strftime("%A")
     confirm_swap = bool(exception_request.confirm_swap)
 
+    if ex_date < datetime.now(IST).date():
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Cannot create exception for past date"}
+        )
+
     # --------------------------------------------------
     # CANCEL
     # --------------------------------------------------
 
     if action == "Cancel":
+
         if not exception_request.session_id:
             return JSONResponse(
                 status_code=400,
@@ -84,10 +80,52 @@ async def create_session_exception(
             exception_request.session_id,
             fetch_links=True
         )
+
+        #check if session already started
+        now = datetime.now(IST)
+
+        session_start_dt = datetime.strptime(
+            f"{ex_date} {session_obj.start_time}",
+            "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=IST)
+
+        if now >= session_start_dt:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "message": "Cannot cancel session that has already started or completed"
+                }
+            )
+
         if not session_obj:
             return JSONResponse(
                 status_code=404,
                 content={"success": False, "message": "Session not found"}
+            )
+
+        if str(session_obj.teacher.id) != str(requester.id):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "message": "You cannot cancel this session"
+                }
+            )
+
+        existing = await ExceptionSession.find_one(
+            ExceptionSession.session.id == session_obj.id,
+            ExceptionSession.date == ex_date,
+            ExceptionSession.action == "Cancel"
+        )
+
+        if existing:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "success": False,
+                    "message": "Session already cancelled"
+                }
             )
 
         cancel_exception = ExceptionSession(
@@ -99,9 +137,9 @@ async def create_session_exception(
             reason=exception_request.reason,
             created_by=requester
         )
+
         await cancel_exception.insert()
 
-        # cancel redis job
         redis_key = f"{REDIS_SESSION_JOB_PREFIX}{session_obj.id}:{ex_date}"
         await redis_client.delete(redis_key)
 
@@ -115,35 +153,78 @@ async def create_session_exception(
         )
 
     # --------------------------------------------------
-    # VALIDATION
+    # VALIDATE TIME
     # --------------------------------------------------
 
     if not exception_request.new_start_time or not exception_request.new_end_time:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "message": "new_start_time and new_end_time are required"}
+            content={"success": False, "message": "new_start_time and new_end_time required"}
         )
 
     start_time = exception_request.new_start_time
     end_time = exception_request.new_end_time
 
+    start_dt = datetime.strptime(start_time, "%H:%M")
+    end_dt = datetime.strptime(end_time, "%H:%M")
+
+    if end_dt <= start_dt:
+        return JSONResponse(
+            status_code=400,
+            content={
+            "success": False,
+            "message": "End time must be greater than start time"
+        }
+    )
+
     # --------------------------------------------------
-    # ADD (extra lecture)
+    # ADD
     # --------------------------------------------------
 
     if action == "Add":
+
+        session_obj = None
+
+        if exception_request.session_id:
+            session_obj = await Session.get(
+                exception_request.session_id,
+                fetch_links=True
+            )
+
+        elif exception_request.subject_id:
+
+            session_obj = await Session.find_one(
+                Session.subject.id == ObjectId(exception_request.subject_id),
+                Session.teacher.id == requester.id,
+                fetch_links=True
+            )
+
+            if not session_obj:
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "message": "Subject not assigned to teacher"}
+                )
+
+        if not session_obj:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "Session not found"}
+            )
 
         overlapping_sessions = await Session.find(
             Session.day == day_name,
             Session.start_time < end_time,
             Session.end_time > start_time,
-            Session.department == requester.department,
+            Session.teacher.id == requester.id,
             fetch_links=True
         ).to_list()
 
         if len(overlapping_sessions) == 0:
+
             add_exception = ExceptionSession(
-                session=None,
+                session=session_obj,
+                teacher=requester,
+                subject=session_obj.subject,
                 date=ex_date,
                 action="Add",
                 reason=exception_request.reason,
@@ -151,20 +232,20 @@ async def create_session_exception(
                 end_time=end_time,
                 created_by=requester
             )
+
             await add_exception.insert()
 
-            await notify_users(
-                NotificationRequest(
-                    user="student",
-                    filters={
-                        "department": requester.department,
-                        "program": requester.program,
-                        "semester": requester.semester,
-                        "batch_year": requester.batch_year,
-                    },
-                    title="New Extra Lecture Added",
-                    message=f"Extra lecture scheduled {start_time}-{end_time}",
-                )
+            await enqueue_exception_session(
+                session=session_obj,
+                exception=add_exception,
+                date=ex_date,
+                start_time=start_time
+            )
+
+            await notify_students_by_session(
+                session=session_obj,
+                title="Extra Lecture Added",
+                message=f"Extra lecture scheduled {start_time}-{end_time}"
             )
 
             return JSONResponse(
@@ -182,6 +263,7 @@ async def create_session_exception(
         target = overlapping_sessions[0]
 
         if not confirm_swap:
+
             return JSONResponse(
                 status_code=409,
                 content={
@@ -197,7 +279,9 @@ async def create_session_exception(
             )
 
         add_exception = ExceptionSession(
-            session=None,
+            session=session_obj,
+            teacher=requester,
+            subject=session_obj.subject,
             date=ex_date,
             action="Add",
             reason=exception_request.reason,
@@ -206,16 +290,25 @@ async def create_session_exception(
             created_by=requester,
             swap_role="SOURCE"
         )
+
         await add_exception.insert()
+
+        await enqueue_exception_session(
+            session=session_obj,
+            exception=add_exception,
+            date=ex_date,
+            start_time=start_time
+        )
 
         swap = SwapApproval(
             exception=add_exception,
-            source_session=None,
+            source_session=session_obj,
             target_session=target,
             requested_by=requester,
             requested_to=target.teacher,
             status="PENDING"
         )
+
         await swap.insert()
 
         add_exception.swap_id = swap
@@ -254,33 +347,51 @@ async def create_session_exception(
         exception_request.session_id,
         fetch_links=True
     )
+
+    #check if session already started
+    now = datetime.now(IST)
+
+    session_start_dt = datetime.strptime(
+        f"{ex_date} {session_obj.start_time}",
+        "%Y-%m-%d %H:%M"
+    ).replace(tzinfo=IST)
+
+    if now >= session_start_dt:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "Cannot reschedule session that has already started or completed"
+            }
+        )
+
     if not session_obj:
         return JSONResponse(
             status_code=404,
             content={"success": False, "message": "Session not found"}
         )
 
+    if str(session_obj.teacher.id) != str(requester.id):
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "message": "You cannot reschedule this session"}
+        )
+
     overlapping_sessions = await Session.find(
         Session.day == day_name,
         Session.start_time < end_time,
         Session.end_time > start_time,
-        Session.department == session_obj.department,
-        Session.program == session_obj.program,
-        Session.semester == session_obj.semester,
-        Session.academic_year == session_obj.academic_year,
+        Session.teacher.id != requester.id,
         fetch_links=True
     ).to_list()
 
-    target_sessions = [
-        s for s in overlapping_sessions
-        if str(s.teacher.id) != str(requester.id)
-    ]
+    if len(overlapping_sessions) > 1:
+        return overlap_error_response(len(overlapping_sessions))
 
-    if len(target_sessions) > 1:
-        return overlap_error_response(len(target_sessions))
+    if len(overlapping_sessions) == 1 and not confirm_swap:
 
-    if len(target_sessions) == 1 and not confirm_swap:
-        target = target_sessions[0]
+        target = overlapping_sessions[0]
+
         return JSONResponse(
             status_code=409,
             content={
@@ -296,6 +407,8 @@ async def create_session_exception(
 
     source_exception = ExceptionSession(
         session=session_obj,
+        teacher=requester,
+        subject=session_obj.subject,
         date=ex_date,
         action="Reschedule",
         reason=exception_request.reason,
@@ -304,10 +417,14 @@ async def create_session_exception(
         created_by=requester,
         swap_role="SOURCE"
     )
+
     await source_exception.insert()
 
-    # no overlap → enqueue immediately
-    if len(target_sessions) == 0:
+    redis_key = f"{REDIS_SESSION_JOB_PREFIX}{session_obj.id}:{ex_date}"
+    await redis_client.delete(redis_key)
+
+    if len(overlapping_sessions) == 0:
+
         await enqueue_exception_session(
             session=session_obj,
             exception=source_exception,
@@ -330,8 +447,7 @@ async def create_session_exception(
             }
         )
 
-    # swap flow
-    target = target_sessions[0]
+    target = overlapping_sessions[0]
 
     swap = SwapApproval(
         exception=source_exception,
@@ -341,6 +457,7 @@ async def create_session_exception(
         requested_to=target.teacher,
         status="PENDING"
     )
+
     await swap.insert()
 
     source_exception.swap_id = swap
@@ -364,7 +481,6 @@ async def create_session_exception(
             "data": {"swap_id": str(swap.id)}
         }
     )
-
 
 # --------------------------------------------------
 # TAKE SWAP ACTION

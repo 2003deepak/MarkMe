@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -15,13 +15,17 @@ async def get_extremes(
     try:
 
         #period logic
+        now = datetime.now(timezone.utc)
+    
         if period == "weekly":
-            start = datetime(2025, 6, 10, tzinfo=timezone.utc)
-            end = datetime(2025, 6, 17, tzinfo=timezone.utc)
-
+            # Last 7 days including today
+            start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         else:
-            start = datetime(2025, 6, 1, tzinfo=timezone.utc)
-            end = datetime(2025, 6, 30, tzinfo=timezone.utc)
+            # Current month: From the 1st day of the current month to now
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # End of the month (current moment or end of day)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         base_pipeline = [
 

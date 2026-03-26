@@ -4,8 +4,6 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 from bson import ObjectId
 
-from app.core.database import db
-from app.core.redis import redis_client
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
 
 
@@ -20,35 +18,29 @@ async def defaulter_students(
     semester: Optional[int] = None,
     threshold: int = Query(75, ge=0, le=100)
 ):
-    #auth
-    user_role = request.state.user.get("role")
-    if user_role not in ["clerk", "admin", "teacher"]:
+
+    user = request.state.user
+    role = user.get("role")
+
+    if role not in ["clerk", "admin", "teacher"]:
         return JSONResponse(
             status_code=403,
             content={"success": False, "message": "Access denied"}
-        )
-
-    department = request.state.user.get("department")
-    if not department:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": "Department not found"}
         )
 
     skip = (page - 1) * limit
 
     pipeline = []
 
-    #base filter
+    #percentage filter
     pipeline.append({
         "$match": {
             "percentage": {"$lt": threshold}
         }
     })
 
-    #student join
+    #join student
     pipeline.append({
-    
         "$lookup": {
             "from": "students",
             "localField": "student.$id",
@@ -57,7 +49,7 @@ async def defaulter_students(
         }
     })
 
-    #subject join
+    #join subject
     pipeline.append({
         "$lookup": {
             "from": "subjects",
@@ -72,14 +64,38 @@ async def defaulter_students(
         {"$unwind": "$subject_data"}
     ]
 
-    #department restriction for clerk
-    pipeline.append({
-        "$match": {
-            "student_data.department": department
-        }
-    })
+    # ---------------- CLERK SCOPE FILTER ----------------
 
-    #program filter
+    if role == "clerk":
+
+        scopes = user.get("academic_scopes", [])
+
+        if not scopes:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": True,
+                    "students": [],
+                    "total": 0
+                }
+            )
+
+        scope_filters = []
+
+        for scope in scopes:
+            scope_filters.append({
+                "student_data.program": scope["program_id"],
+                "student_data.department": scope["department_id"]
+            })
+
+        pipeline.append({
+            "$match": {
+                "$or": scope_filters
+            }
+        })
+
+    # ---------------- OPTIONAL FILTERS ----------------
+
     if program:
         pipeline.append({
             "$match": {
@@ -87,7 +103,6 @@ async def defaulter_students(
             }
         })
 
-    #semester filter
     if semester:
         pipeline.append({
             "$match": {
@@ -95,9 +110,11 @@ async def defaulter_students(
             }
         })
 
-    #group by student
+    # ---------------- GROUP BY STUDENT ----------------
+
     pipeline.append({
         "$group": {
+
             "_id": "$student_data._id",
 
             "name": {
@@ -109,17 +126,14 @@ async def defaulter_students(
                     ]
                 }
             },
-            
-            "profile_picture" : { "$first" : "$student_data.profile_picture"},
+
+            "profile_picture": {"$first": "$student_data.profile_picture"},
 
             "roll": {"$first": "$student_data.roll_number"},
-
             "program": {"$first": "$student_data.program"},
             "semester": {"$first": "$student_data.semester"},
 
-            "overall_percentage": {
-                "$avg": "$percentage"
-            },
+            "overall_percentage": {"$avg": "$percentage"},
 
             "defaulter_subjects": {
                 "$push": {
@@ -132,7 +146,8 @@ async def defaulter_students(
         }
     })
 
-    #search by student name
+    # ---------------- SEARCH ----------------
+
     if search:
         pipeline.append({
             "$match": {
@@ -143,8 +158,10 @@ async def defaulter_students(
             }
         })
 
-    #subject filter inside grouped result
+    # ---------------- SUBJECT FILTER ----------------
+
     if subject_id:
+
         pipeline.append({
             "$addFields": {
                 "defaulter_subjects": {
@@ -165,7 +182,8 @@ async def defaulter_students(
             }
         })
 
-    #risk calculation
+    # ---------------- RISK CALCULATION ----------------
+
     pipeline.append({
         "$addFields": {
             "risk": {
@@ -178,48 +196,46 @@ async def defaulter_students(
         }
     })
 
-    #projection
+    # ---------------- PROJECTION ----------------
+
     pipeline.append({
-    "$project": {
-        "_id": 0,
+        "$project": {
 
-        "student_id": {
-            "$toString": "$_id"
-        },
-        "profile_picture" : 1 ,
-        "name": 1,
-        "roll": 1,
-        "program": 1,
-        "semester": 1,
+            "_id": 0,
 
-        "overall_percentage": {
-            "$round": ["$overall_percentage", 2]
-        },
+            "student_id": {"$toString": "$_id"},
+            "profile_picture": 1,
+            "name": 1,
+            "roll": 1,
+            "program": 1,
+            "semester": 1,
 
-        "defaulter_subjects": {
-            "$map": {
-                "input": "$defaulter_subjects",
-                "as": "s",
-                "in": {
-                    "id": { "$toString": "$$s.id" },
-                    "name": "$$s.name",
-                    "percentage": "$$s.percentage",
-                    "code": "$$s.code"
+            "overall_percentage": {
+                "$round": ["$overall_percentage", 2]
+            },
+
+            "defaulter_subjects": {
+                "$map": {
+                    "input": "$defaulter_subjects",
+                    "as": "s",
+                    "in": {
+                        "id": {"$toString": "$$s.id"},
+                        "name": "$$s.name",
+                        "percentage": "$$s.percentage",
+                        "code": "$$s.code"
+                    }
                 }
-            }
-        },
+            },
 
-        "risk": 1
-    }
-})
-
-    pipeline.append({
-        "$sort": {
-            "_id": 1
+            "risk": 1
         }
     })
 
-    #pagination facet
+    pipeline.append({
+        "$sort": {"_id": 1}
+    })
+
+    #pagination
     pipeline.append({
         "$facet": {
             "data": [
@@ -246,5 +262,4 @@ async def defaulter_students(
             "total": total,
             "students": data
         })
-)
-
+    )

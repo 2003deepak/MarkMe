@@ -82,12 +82,25 @@ async def login_user(request):
             "batch_year": user.batch_year
         }
 
-    elif request.role in ["teacher", "clerk"]:
+    elif request.role == "clerk":
         access_payload = {
             "id": str(user.id),
             "email": user.email,
-            "role": request.role,
-            "department": user.department
+            "role": "clerk",
+            "academic_scopes": [
+                {
+                    "program_id": scope.program_id,
+                    "department_id": scope.department_id
+                }
+                for scope in user.academic_scopes
+            ]
+        }
+
+    elif request.role == "teacher":
+        access_payload = {
+            "id": str(user.id),
+            "email": user.email,
+            "role": "teacher"
         }
 
     else:
@@ -180,17 +193,6 @@ async def logout_user(request,request_model):
             "message": "Logged out successfully",
         },
     )
-  
-
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from bson import ObjectId
-
-from app.schemas.student import Student
-from app.schemas.teacher import Teacher
-from app.schemas.clerk import Clerk
-from app.utils.security import decode_token, create_access_token
-
 
 async def refresh_access_token(request: Request):
 
@@ -299,12 +301,26 @@ async def refresh_access_token(request: Request):
             "semester": user.semester,
             "batch_year": user.batch_year
         }
-    else:
+
+    elif role == "clerk":
         access_payload = {
             "id": str(user.id),
             "email": user.email,
-            "role": role,
-            "department": user.department
+            "role": "clerk",
+            "academic_scopes": [
+                {
+                    "program_id": scope.program_id,
+                    "department_id": scope.department_id
+                }
+                for scope in user.academic_scopes
+            ]
+        }
+
+    elif role == "teacher":
+        access_payload = {
+            "id": str(user.id),
+            "email": user.email,
+            "role": "teacher"
         }
 
     new_access_token = create_access_token(access_payload)
@@ -398,7 +414,7 @@ async def request_password_reset(request):
         }
     )
 
-async def verify_reset_otp(request):
+async def verify_first_otp(request):
     email = request.email
     otp = request.otp
     role = request.role.lower()
@@ -419,8 +435,7 @@ async def verify_reset_otp(request):
         )
 
     model = role_model_map[role]
-    
-    # Verify OTP using utility
+
     is_valid, message = await verify_otp(email, otp)
 
     if not is_valid:
@@ -432,7 +447,15 @@ async def verify_reset_otp(request):
             }
         )
 
-    # Set verification flag in Redis for 10 minutes
+    user = await model.find_one(model.email == email)
+
+    if user:
+        await user.update({
+            "$set": {
+                "is_verified": True
+            }
+        })
+
     await redis_client.setex(f"reset_verified:{email}", 600, "1")
 
     return JSONResponse(

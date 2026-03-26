@@ -40,6 +40,7 @@ async def create_program(request: Request, program_data: CreateProgramRequest) -
         # Invalidate cache
         redis = await get_redis_client()
         await redis.delete("all_programs")
+        await redis.delete("metadata_listing_v2")
         
         return JSONResponse(
             status_code=201,
@@ -91,6 +92,7 @@ async def update_program(request: Request, id: str, update_data: UpdateProgramRe
         # Invalidate cache
         redis = await get_redis_client()
         await redis.delete("all_programs")
+        await redis.delete("metadata_listing_v2")
         
         return JSONResponse(status_code=200, content={"success": True, "message": "Program updated successfully"})
     except Exception as e:

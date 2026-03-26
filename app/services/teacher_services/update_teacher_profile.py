@@ -55,7 +55,6 @@ async def update_teacher_profile(
         
         # Read and encode the file
         file_bytes = await profile_picture.read()
-        encoded = base64.b64encode(file_bytes).decode("utf-8")
 
         # Delete existing profile picture if it exists
         if teacher.profile_picture_id:
@@ -67,7 +66,7 @@ async def update_teacher_profile(
 
         try:
             profile_picture_result = await upload_file_to_imagekit(
-                file=encoded, 
+                file=file_bytes, 
                 folder="profile_image",
                 filename=profile_picture.filename
             )
@@ -118,15 +117,9 @@ async def update_teacher_profile(
         print("Teacher document updated successfully.")
 
         # Clear relevant caches
-        cache_key_teacher = f"teacher:{teacher_email}"
+        cache_key_teacher = f"teacher:profile:{teacher_email}"
         await redis_client.delete(cache_key_teacher)
         print(f"Deleted cache key: {cache_key_teacher}")
-
-        # Clear department cache if teacher has department
-        if teacher.department:
-            cache_key_department = f"teachers:{teacher.department}"
-            await redis_client.delete(cache_key_department)
-            print(f"Deleted department cache key: {cache_key_department}")
 
     else:
         print("No fields to update for teacher.")

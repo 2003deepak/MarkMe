@@ -1,5 +1,5 @@
 from fastapi import APIRouter,Request
-from app.services.auth_services.auth import login_user, logout_user, refresh_access_token, request_password_reset, reset_user_password,change_current_password,verify_reset_otp
+from app.services.auth_services.auth import login_user, logout_user, refresh_access_token, request_password_reset, reset_user_password,change_current_password,verify_first_otp
 
 # --- Pydantics Model Import ----- 
 from app.models.allModel import LoginRequest , ForgotPasswordRequest, LogoutRequest,ResetPasswordRequest,ChangePasswordRequest,OtpRequest
@@ -28,8 +28,8 @@ async def forgot_password(request: ForgotPasswordRequest):
     return await request_password_reset(request)
 
 @router.post("/verify-otp")
-async def forgot_password(request: OtpRequest):
-    return await verify_reset_otp(request)
+async def verify_otp(request: OtpRequest):
+    return await verify_first_otp(request)
 
 
 @router.post("/reset-password")

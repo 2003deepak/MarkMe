@@ -24,10 +24,10 @@ async def get_teacher_leaderboard(
 
         #period logic
         if period == "weekly":
-            #start = now - timedelta(days=7)
-            #end = now
-            start = datetime(2025, 10, 11, tzinfo=timezone.utc)
-            end = datetime(2025, 10, 18, tzinfo=timezone.utc)
+            start = now - timedelta(days=7)
+            end = now
+            # start = datetime(2025, 10, 11, tzinfo=timezone.utc)
+            # end = datetime(2025, 10, 18, tzinfo=timezone.utc)
 
         elif period == "monthly":
             #start = now - timedelta(days=30)

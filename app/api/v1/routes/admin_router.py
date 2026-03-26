@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Request, Path , Query
 from typing import Literal, Optional
 from datetime import datetime
-from app.services.admin_services.create_clerk import create_clerk
-from app.services.admin_services.get_clerk import get_clerk, get_clerk_by_id
-from app.services.admin_services.delete_clerk import delete_clerk
+
+from sympy import limit
+from app.services.admin_services.manage_clerk import create_clerk, edit_clerk, get_clerk, get_clerk_by_id
 from app.services.admin_services.get_live_classes import get_live_classes
 from app.services.admin_services.teacher_leaderboard import get_teacher_leaderboard
 from app.services.admin_services.teacher_defaulters import teacher_defaulters
@@ -15,7 +15,8 @@ from app.services.admin_services.department_services import create_department, g
 from app.models.allModel import (
     CreateClerkRequest, 
     TeacherLeaderboardRequest, 
-    CreateProgramRequest, 
+    CreateProgramRequest,
+    UpdateAcademicScopesRequest, 
     UpdateProgramRequest, 
     CreateDepartmentRequest, 
     UpdateDepartmentRequest
@@ -99,6 +100,15 @@ async def get_extremes_route(
         program=program
     )
 
+
+# Update clerk by ID    
+@router.patch("/clerk/{clerk_id}")
+async def update_clerk_route(
+    request: Request,
+    clerk_id: str,
+    body: UpdateAcademicScopesRequest
+):
+    return await edit_clerk(request, clerk_id, body)
     
 # Create Clerk
 @router.post("/clerk")
@@ -109,36 +119,32 @@ async def create_clerk_route(
     return await create_clerk(request, request_model)
 
 
-# Get clerks by department
-
-
-# Get clerks by department
-@router.get("/clerk/department/{department}")
-async def get_clerk_by_department_route(
+# Get clerks
+@router.get("/clerk")
+async def get_clerk_route(
     request: Request = None,
-    department: str = Path(..., description="Department to fetch clerks for"),
+    department: Optional[str] = None,
+    program: Optional[str] = None,
+    search: Optional[str] = None,
+    page: Optional[int] = 1,
+    limit: Optional[int] = 10
+    
 ):
-    return await get_clerk(request, department)
+    return await get_clerk(request, department,program, search, page, limit)
 
 
 
 
 # Get clerk by email
-@router.get("/clerk/{email_id}")
+@router.get("/clerk/{clerk_id}")
 async def get_clerk_by_id_route(
     request: Request ,
-    email_id: str = Path(..., description="Email ID"),
+    clerk_id: str = Path(..., description="Clerk ID"),
 ):
-    return await get_clerk_by_id(request,email_id)
+    return await get_clerk_by_id(request,clerk_id)
 
 
-# Delete clerk by email
-@router.delete("/clerk/{email_id}")
-async def delete_clerk_route(
-    email_id: str = Path(..., description="Email ID"),
-    request: Request = None
-):
-    return await delete_clerk(request,email_id)
+
 
 
 @router.get("/teacher/defaulters")

@@ -30,7 +30,7 @@ async def get_teacher_me_route(request : Request):
     return await get_teacher_me(request)
 
 
-@router.put("/me/update-profile")
+@router.patch("/me/update-profile")
 async def update_teacher_profile_route(
     request: Request,
     first_name: Optional[str] = Form(None),
@@ -136,7 +136,7 @@ async def fetch_requests(
     request : Request,
     year: int | None = None,
     request_type: Optional[Literal["created_by_me", "recieved_to_me"]] = None,
-    status : Optional[Literal["pending", "approved", "rejected"]] = None,
+    status: Optional[str] = None,   
     page: int = 1,
     limit: int = 10,
 ):

@@ -1,24 +1,19 @@
-from random import random
+
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.core.database import get_db
-from app.core.config import settings
 from datetime import datetime, timedelta
-from passlib.context import CryptContext
 from app.schemas.student import Student
 from pydantic import ValidationError
 from app.utils.security import get_password_hash
-from app.utils.token_utils import create_verification_token
-from typing import List
 from app.utils.publisher import send_to_queue  
 from app.models.allModel import StudentRegisterRequest
-from uuid import uuid4
 from app.utils.send_otp import generate_and_store_otp
 
 
 async def register_student(student_data: StudentRegisterRequest, request: Request):
     try:
-        print("Starting student registration...")
+      
 
        #safe role
         user = getattr(request.state, "user", None)
@@ -34,7 +29,8 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
                 status_code=403,
                 content={
                     "success": False,
-                    "message": "Only student or clerk can register student"
+                    "message": "Student registration failed",
+                    "error" : "Only student or clerk can register student"
                 }
             )
 
@@ -44,15 +40,16 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
                 status_code=409,
                 content={
                     "success": False,
-                    "message": "Student already exists "
-                }
+                    "message": "Student registration failed",
+                    "error": "Student with this email already exists"
+                }   
             )
-
+               
         #hash
         hashed_password = get_password_hash(str(student_data.password))
 
         #clerk auto verify
-        is_verified = False
+        is_verified = True if role == "clerk" else False
         
         expiry = None
 
@@ -69,9 +66,9 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
             phone=None,
             dob=None,
             roll_number=None,
-            program=None,
-            department=None,
-            semester=None,
+            program=student_data.program,
+            department=student_data.department,
+            semester=student_data.semester,
             batch_year=None,
             face_embedding=None,
             is_verified=is_verified,
@@ -91,7 +88,8 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
                     status_code=429,
                     content={
                         "success": False,
-                        "message": str(e)
+                        "message": "Student registration failed",
+                        "error": "OTP generation failed. Please try again later."
                     }
                 )
 
@@ -169,7 +167,8 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
             status_code=422,
             content={
                 "success": False,
-                "message": error_msg
+                "error": error_msg,
+                "message": "Student registration failed"
             }
         )
 
@@ -183,6 +182,7 @@ async def register_student(student_data: StudentRegisterRequest, request: Reques
             status_code=500,
             content={
                 "success": False,
-                "message": f"Error registering student: {str(e)}"
+                "message": "Student registration failed",
+                "error":  f"Error registering student: {str(e)}"
             }
         )
