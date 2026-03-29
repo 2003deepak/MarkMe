@@ -1,27 +1,134 @@
 version: "3.9"
 
 services:
-  rabbitmq_delayed:
+
+  # backend api
+  backend:
+    build: .
+    container_name: markme_backend
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  # scheduler (cron jobs)
+  scheduler:
+    build: .
+    container_name: markme_scheduler
+    restart: unless-stopped
+    command: python app/cron_job/cron.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  # workers
+  worker_session:
+    build: .
+    container_name: worker_session
+    restart: unless-stopped
+    command: python app/workers/worker_session.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker_email:
+    build: .
+    container_name: worker_email
+    restart: unless-stopped
+    command: python app/workers/worker_email.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker_cleanup:
+    build: .
+    container_name: worker_cleanup
+    restart: unless-stopped
+    command: python app/workers/worker_cleanup.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker_embeddings:
+    build: .
+    container_name: worker_embeddings
+    restart: unless-stopped
+    command: python app/workers/worker_embeddings.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker_face:
+    build: .
+    container_name: worker_face
+    restart: unless-stopped
+    command: python app/workers/worker_face_recognition.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker_notifications:
+    build: .
+    container_name: worker_notifications
+    restart: unless-stopped
+    command: python app/workers/worker_notifications.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  worker_attendance:
+    build: .
+    container_name: worker_attendance
+    restart: unless-stopped
+    command: python app/workers/worker_attendance_stream.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+
+  # rabbitmq with delayed plugin
+  rabbitmq:
     build: ./rabbitmq
-    container_name: rabbitmq_delayed
+    container_name: rabbitmq
     restart: unless-stopped
     ports:
-      - "5673:5672"   # RabbitMQ protocol (changed host port to avoid conflict)
-      - "15673:15672" # RabbitMQ management UI (changed host port to avoid conflict)
+      - "5673:5672"
+      - "15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
 
+  # redis
   redis:
     image: redis:7-alpine
-    container_name: redis_local
+    container_name: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"   # Redis default port
     volumes:
       - redis_data:/data
+
+  # mongodb
 
 volumes:
   rabbitmq_data:
