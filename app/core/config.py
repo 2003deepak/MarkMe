@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     # Environment (development, production, testing)
     ENVIRONMENT: str 
+    TEMP_DIR: str
 
     # Load environment variables from .env file
     model_config = SettingsConfigDict(

@@ -11,8 +11,6 @@ from app.core.rabbitmq_config import settings
 from app.utils.extract_student_embedding import extract_student_embedding
 from app.core.database import init_db
 from app.schemas.student import Student
-
-# faiss cache
 from app.core.faiss_cache import faiss_cache, get_cache_key
 
 # logging
@@ -24,7 +22,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['INSIGHTFACE_LOG_LEVEL'] = 'ERROR'
 warnings.filterwarnings("ignore")
 
+MAX_RETRIES = 3
 
+
+# ---------------- RABBITMQ CONNECTION ----------------
 async def connect_rabbitmq():
     while True:
         try:
@@ -36,9 +37,18 @@ async def connect_rabbitmq():
             await asyncio.sleep(5)
 
 
+# ---------------- EMBEDDING LOGIC ----------------
 async def generate_embedding(student_id: str, image_paths: List[str]):
 
+    # normalize paths
+    image_paths = [os.path.abspath(p) for p in image_paths]
+
     try:
+        # validate paths
+        for path in image_paths:
+            if not os.path.exists(path):
+                raise ValueError(f"Invalid image path: {path}")
+
         face_embedding = await extract_student_embedding(image_paths)
 
         # validate embedding
@@ -60,7 +70,7 @@ async def generate_embedding(student_id: str, image_paths: List[str]):
 
         logger.info(f"✅ Embedding stored for student: {student_id}")
 
-        # invalidate FAISS cache
+        # invalidate cache
         if student.semester and student.department and student.program:
             cache_key = get_cache_key(
                 student.semester,
@@ -72,22 +82,24 @@ async def generate_embedding(student_id: str, image_paths: List[str]):
 
     except Exception as e:
         logger.error(f"❌ Embedding generation failed for {student_id}: {str(e)}", exc_info=True)
-        raise  # important for retry
+        raise
 
     finally:
         # cleanup temp files
         for path in image_paths:
             try:
-                os.remove(path)
-            except Exception:
-                pass
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
+                logger.warning(f"Cleanup failed: {e}")
 
 
+# ---------------- MESSAGE PROCESSOR ----------------
 async def process_message(message: aio_pika.IncomingMessage):
-
     try:
         payload = json.loads(message.body.decode())
         data = payload.get("data", {})
+        retry = payload.get("retry", 0)
 
         student_id = data.get("student_id")
         image_paths = data.get("image_paths")
@@ -99,16 +111,37 @@ async def process_message(message: aio_pika.IncomingMessage):
 
         await generate_embedding(student_id, image_paths)
 
-        # success → ACK
+        # success
         await message.ack()
 
     except Exception as e:
         logger.error(f"❌ Error processing message: {str(e)}", exc_info=True)
 
-        # reject → requeue
-        await message.nack(requeue=True)
+        payload = json.loads(message.body.decode())
+        retry = payload.get("retry", 0)
+
+        if retry < MAX_RETRIES:
+            payload["retry"] = retry + 1
+
+            logger.warning(f"🔁 Retrying ({retry+1}/{MAX_RETRIES})")
+            
+            channel = await message.channel.get_channel()
+
+            await channel.default_exchange.publish(
+                aio_pika.Message(
+                    body=json.dumps(payload).encode(),
+                    priority=message.priority
+                ),
+                routing_key=message.routing_key,
+            )
+        else:
+            logger.error(f"💀 Max retries exceeded: {payload}")
+
+        # always ACK original message (IMPORTANT)
+        await message.ack()
 
 
+# ---------------- WORKER ----------------
 async def embedding_worker():
 
     await init_db()
@@ -134,6 +167,7 @@ async def embedding_worker():
                 await process_message(message)
 
 
+# ---------------- ENTRY ----------------
 if __name__ == "__main__":
     try:
         asyncio.run(embedding_worker())

@@ -7,7 +7,7 @@ from app.core.rabbitmq_config import settings
 
 # ------------------- Firebase Init -------------------
 cred = credentials.Certificate(
-    "app\google-services.json"
+    "app/google-services.json"
 )
 firebase_admin.initialize_app(cred)
 

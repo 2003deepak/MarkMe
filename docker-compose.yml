@@ -5,6 +5,7 @@ services:
   # backend api
   backend:
     build: .
+    image: markme_app
     container_name: markme_backend
     restart: unless-stopped
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -12,103 +13,149 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
-      - mongo
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # scheduler (cron jobs)
+  # scheduler
   scheduler:
-    build: .
+    image: markme_app
     container_name: markme_scheduler
     restart: unless-stopped
     command: python app/cron_job/cron.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
-      - mongo
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # workers
   worker_session:
-    build: .
+    image: markme_app
     container_name: worker_session
     restart: unless-stopped
     command: python app/workers/worker_session.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   worker_email:
-    build: .
+    image: markme_app
     container_name: worker_email
     restart: unless-stopped
     command: python app/workers/worker_email.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   worker_cleanup:
-    build: .
+    image: markme_app
     container_name: worker_cleanup
     restart: unless-stopped
     command: python app/workers/worker_cleanup.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   worker_embeddings:
-    build: .
+    image: markme_app
     container_name: worker_embeddings
     restart: unless-stopped
     command: python app/workers/worker_embeddings.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   worker_face:
-    build: .
+    image: markme_app
     container_name: worker_face
     restart: unless-stopped
     command: python app/workers/worker_face_recognition.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   worker_notifications:
-    build: .
+    image: markme_app
     container_name: worker_notifications
     restart: unless-stopped
     command: python app/workers/worker_notifications.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   worker_attendance:
-    build: .
+    image: markme_app
     container_name: worker_attendance
     restart: unless-stopped
     command: python app/workers/worker_attendance_stream.py
     env_file:
       - .env
+    volumes:
+      - temp_data:/app/temp
     depends_on:
-      - rabbitmq
-      - redis
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-  # rabbitmq with delayed plugin
+  # rabbitmq
   rabbitmq:
     build: ./rabbitmq
     container_name: rabbitmq
@@ -121,29 +168,64 @@ services:
       RABBITMQ_DEFAULT_PASS: strongpassword
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # redis
+  # redis (internal only)
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # mongodb
+  # mongodb (internal only)
   mongo:
     image: mongo:7
     container_name: mongo
     restart: unless-stopped
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # mongo replica init (runs once)
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      bash -c "
+      mongosh --host mongo:27017 --eval '
+        try {
+          rs.initiate({
+            _id: \"rs0\",
+            members: [{ _id: 0, host: \"mongo:27017\" }]
+          })
+        } catch(e) { print(e) }
+      '
+      "
 
 volumes:
   rabbitmq_data:
   redis_data:
   mongo_data:
+  temp_data:
