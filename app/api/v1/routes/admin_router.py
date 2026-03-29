@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Path , Query
 from typing import Literal, Optional
 from datetime import datetime
 
-from sympy import limit
+
 from app.services.admin_services.manage_clerk import create_clerk, edit_clerk, get_clerk, get_clerk_by_id
 from app.services.admin_services.get_live_classes import get_live_classes
 from app.services.admin_services.teacher_leaderboard import get_teacher_leaderboard
@@ -21,6 +21,7 @@ from app.models.allModel import (
     CreateDepartmentRequest, 
     UpdateDepartmentRequest
 )
+from app.services.clerk_services.get_attendance_trends import get_attendance_trends
 
 router = APIRouter()
 
@@ -98,6 +99,28 @@ async def get_extremes_route(
         request=request,
         department=department,
         program=program
+    )
+    
+
+@router.get("/analytics/attendance-trends")
+async def get_attendance_trends_route(
+    request: Request,
+    range: Literal["week", "month"] = "week",
+    teacher_id: Optional[str] = None,
+    program: Optional[str] = None,
+    department: Optional[str] = None,
+    semester: Optional[int] = None,
+    subject_id: Optional[str] = None
+):
+    return await get_attendance_trends(
+        request=request,
+        time_range=range,
+        teacher_id=teacher_id,  
+        program=program,
+        department=department,
+        semester=semester,
+        subject_id=subject_id,
+        
     )
 
 

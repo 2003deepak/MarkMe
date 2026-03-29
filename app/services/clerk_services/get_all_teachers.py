@@ -21,12 +21,12 @@ async def get_all_teachers(
     role = user.get("role")
 
     #auth
-    if role != "clerk":
+    if role not in ["clerk" , "admin"]:
         return JSONResponse(
             status_code=403,
             content={
                 "success": False,
-                "message": "Only clerks can access this route"
+                "message": "Only clerks and admins can access this route"
             }
         )
 

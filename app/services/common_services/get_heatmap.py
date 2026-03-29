@@ -6,14 +6,13 @@ from app.schemas.subject_session_stats import SubjectSessionStats
 import json
 import logging
 
-from app.services.common_services.get_critical_students import MongoJSONEncoder
+from app.utils.json_encoder import JSONEncoder as MongoJSONEncoder
 
 
 
 async def get_heatmap(
     department: Optional[str] = None,
     program: Optional[str] = None,
-    batch_year: Optional[int] = None,
     semester: Optional[int] = None,
     month: Optional[int] = None,
     year: Optional[int] = None
@@ -53,8 +52,6 @@ async def get_heatmap(
             subject_conditions["subject_data.department"] = department
         if program:
             subject_conditions["subject_data.program"] = program
-        if batch_year:
-            subject_conditions["subject_data.batch_year"] = batch_year
         if semester:
             subject_conditions["subject_data.semester"] = semester
 
@@ -81,9 +78,9 @@ async def get_heatmap(
             response_content = {
                 "success": False,
                 "message": "No attendance data found for the given filters.",
-                "data": {},
+                "data": [],
             }
-            return JSONResponse(status_code=404, content=response_content)
+            return JSONResponse(status_code=200, content=response_content)
 
         # format output
         response_data = [
