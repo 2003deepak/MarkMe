@@ -13,9 +13,9 @@ class StudentRegisterRequest(BaseModel):
     last_name: str 
     email: EmailStr 
     password: Optional[str] = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
-    program : str 
-    department : str 
-    semester : int
+    program : Optional[str] = None
+    department : Optional[str] = None
+    semester : Optional[int] = None
 
 class TeacherRegisterRequest(BaseModel):
     first_name: str

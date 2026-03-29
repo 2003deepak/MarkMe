@@ -15,6 +15,7 @@ services:
     depends_on:
       - rabbitmq
       - redis
+      - mongo
 
   # scheduler (cron jobs)
   scheduler:
@@ -27,6 +28,7 @@ services:
     depends_on:
       - rabbitmq
       - redis
+      - mongo
 
   # workers
   worker_session:
@@ -116,7 +118,7 @@ services:
       - "15673:15672"
     environment:
       RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: admin
+      RABBITMQ_DEFAULT_PASS: strongpassword
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
@@ -125,11 +127,23 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
 
   # mongodb
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
 
 volumes:
   rabbitmq_data:
   redis_data:
+  mongo_data:
