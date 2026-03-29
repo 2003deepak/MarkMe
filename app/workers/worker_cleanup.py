@@ -4,10 +4,20 @@ import json
 from app.core.rabbitmq_config import settings
 from app.utils.imagekit_uploader import delete_file
 
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            print("[cleanup_worker] Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            print(f"[cleanup_worker] RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+
 
 async def cleanup_worker():
 
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     channel = await connection.channel()
 
     queue = await channel.declare_queue(

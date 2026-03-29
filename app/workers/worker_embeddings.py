@@ -25,6 +25,17 @@ os.environ['INSIGHTFACE_LOG_LEVEL'] = 'ERROR'
 warnings.filterwarnings("ignore")
 
 
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            logger.info("✅ Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            logger.warning(f"RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+
+
 async def generate_embedding(student_id: str, image_paths: List[str]):
 
     try:
@@ -103,7 +114,7 @@ async def embedding_worker():
     await init_db()
     logger.info("✅ Database connected")
 
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
 
     async with connection:
         channel = await connection.channel()

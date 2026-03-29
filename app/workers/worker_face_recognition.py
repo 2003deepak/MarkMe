@@ -33,6 +33,17 @@ else:
     logger.warning("Using CPU")
 
 
+
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            logger.info("✅ Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            logger.warning(f"RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+            
 # lock for cache build
 faiss_locks = {}
 
@@ -273,7 +284,7 @@ async def face_worker():
     logger.info("[face_worker] ✅ Database connected successfully")
 
     logger.debug("[face_worker] Connecting to RabbitMQ: %s", settings.rabbitmq_url)
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     channel = await connection.channel()
     logger.info("[face_worker] ✅ RabbitMQ connection and channel established")
 

@@ -4,9 +4,18 @@ import json
 from app.core.rabbitmq_config import settings
 from app.utils.send_email import send_email
 
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            print("[email_worker] Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            print(f"[email_worker] RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
 
 async def email_worker():
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     channel = await connection.channel()
     
     queue = await channel.declare_queue(
