@@ -45,9 +45,14 @@ async def update_student_profile(
 
         update_data = {}
 
-        # ---------------- TEMP DIR ----------------
-        temp_dir = settings.TEMP_DIR or tempfile.gettempdir()
-        os.makedirs(temp_dir, exist_ok=True)
+        # decide storage dir
+        if settings.ENVIRONMENT == "production":
+            base_dir = settings.PROD_DIR
+        else:
+            base_dir = settings.DEV_DIR
+
+        os.makedirs(base_dir, exist_ok=True)
+        
 
         # ---------------- FACE IMAGES ----------------
         if images:
@@ -80,10 +85,15 @@ async def update_student_profile(
                     ext = image.filename.split(".")[-1]
 
                 filename = f"{uuid.uuid4()}.{ext}"
-                path = os.path.join(temp_dir, filename)
+                path = os.path.join(base_dir, filename)
+            
 
                 async with aiofiles.open(path, "wb") as f:
                     await f.write(content)
+                    
+                
+                logger.info(f"Saved image: {path}")
+                logger.info(f"Exists after save: {os.path.exists(path)}")
 
                 image_paths.append(path)
 

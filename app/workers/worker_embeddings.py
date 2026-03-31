@@ -40,21 +40,25 @@ async def connect_rabbitmq():
 # ---------------- EMBEDDING LOGIC ----------------
 async def generate_embedding(student_id: str, image_paths: List[str]):
 
-    # normalize paths
     image_paths = [os.path.abspath(p) for p in image_paths]
 
     try:
+        # debug paths
+        for path in image_paths:
+            logger.info(f"Checking path: {path} | Exists: {os.path.exists(path)}")
+
         # validate paths
         for path in image_paths:
             if not os.path.exists(path):
                 raise ValueError(f"Invalid image path: {path}")
 
+        # generate embedding
         face_embedding = await extract_student_embedding(image_paths)
 
-        # validate embedding
         if face_embedding is None or len(face_embedding) != 512:
             raise ValueError("Invalid embedding generated")
 
+        # fetch student
         student = await Student.find_one(Student.id == ObjectId(student_id))
 
         if not student:
@@ -80,66 +84,66 @@ async def generate_embedding(student_id: str, image_paths: List[str]):
             faiss_cache.pop(cache_key, None)
             logger.info(f"🧹 Cache invalidated: {cache_key}")
 
-    except Exception as e:
-        logger.error(f"❌ Embedding generation failed for {student_id}: {str(e)}", exc_info=True)
-        raise
-
-    finally:
-        # cleanup temp files
+        # delete files ONLY after success
         for path in image_paths:
             try:
                 if os.path.exists(path):
                     os.remove(path)
+                    logger.info(f"🧹 Deleted: {path}")
             except Exception as e:
                 logger.warning(f"Cleanup failed: {e}")
+
+    except Exception as e:
+        logger.error(f"❌ Embedding generation failed for {student_id}: {str(e)}", exc_info=True)
+        raise
 
 
 # ---------------- MESSAGE PROCESSOR ----------------
 async def process_message(message: aio_pika.IncomingMessage):
-    try:
-        payload = json.loads(message.body.decode())
-        data = payload.get("data", {})
-        retry = payload.get("retry", 0)
+    async with message.process(ignore_processed=True):
+        try:
+            payload = json.loads(message.body.decode())
+            data = payload.get("data", {})
+            retry = payload.get("retry", 0)
 
-        student_id = data.get("student_id")
-        image_paths = data.get("image_paths")
+            student_id = data.get("student_id")
+            image_paths = data.get("image_paths")
 
-        if not student_id or not image_paths:
-            logger.warning("⚠️ Missing student_id or image_paths")
-            await message.ack()
-            return
+            if not student_id or not image_paths:
+                logger.warning("⚠️ Missing student_id or image_paths")
+                return
 
-        await generate_embedding(student_id, image_paths)
+            await generate_embedding(student_id, image_paths)
 
-        # success
-        await message.ack()
+        except Exception as e:
+            error_msg = str(e)
 
-    except Exception as e:
-        logger.error(f"❌ Error processing message: {str(e)}", exc_info=True)
+            logger.error(f"❌ Error processing message: {error_msg}", exc_info=True)
 
-        payload = json.loads(message.body.decode())
-        retry = payload.get("retry", 0)
+            # ❌ DO NOT RETRY VALIDATION ERRORS
+            if "Inconsistent face" in error_msg:
+                logger.warning("🚫 Skipping retry (face mismatch)")
+                return
 
-        if retry < MAX_RETRIES:
-            payload["retry"] = retry + 1
+            payload = json.loads(message.body.decode())
+            retry = payload.get("retry", 0)
 
-            logger.warning(f"🔁 Retrying ({retry+1}/{MAX_RETRIES})")
-            
-            channel = await message.channel.get_channel()
+            if retry < MAX_RETRIES:
+                payload["retry"] = retry + 1
+                logger.warning(f"🔁 Retrying ({retry+1}/{MAX_RETRIES})")
 
-            await channel.default_exchange.publish(
-                aio_pika.Message(
-                    body=json.dumps(payload).encode(),
-                    priority=message.priority
-                ),
-                routing_key=message.routing_key,
-            )
-        else:
-            logger.error(f"💀 Max retries exceeded: {payload}")
+                connection = await connect_rabbitmq()
+                channel = await connection.channel()
 
-        # always ACK original message (IMPORTANT)
-        await message.ack()
-
+                await channel.default_exchange.publish(
+                    aio_pika.Message(
+                        body=json.dumps(payload).encode(),
+                        priority=message.priority
+                    ),
+                    routing_key=message.routing_key,
+                )
+            else:
+                logger.error(f"💀 Max retries exceeded: {payload}")
 
 # ---------------- WORKER ----------------
 async def embedding_worker():

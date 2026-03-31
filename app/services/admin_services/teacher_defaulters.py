@@ -171,6 +171,12 @@ async def teacher_defaulters(
                 }
             }
         },
+        
+        {
+            "$match": {
+                "score": {"$gt": 0.20}
+            }
+        },
 
         {
             "$lookup": {

@@ -40,10 +40,27 @@ async def student_attendance_history(
         )
 
     roll_no = user.get("roll_number")
-    if not roll_no:
+    program = user.get("program")
+    department = user.get("department")
+    semester = user.get("semester")
+    batch_year = user.get("batch_year")
+    
+    if not all([roll_no, program, department, semester, batch_year]):
+        missing_fields = []
+        if not roll_no:
+            missing_fields.append("Roll Number")
+        if not program:
+            missing_fields.append("Program")
+        if not department:
+            missing_fields.append("Department")
+        if not semester:
+            missing_fields.append("Semester")
+        if not batch_year:
+            missing_fields.append("Batch Year")
+
         return JSONResponse(
             status_code=400,
-            content={"success": False, "message": "Roll number missing"}
+            content={"success": False, "message": "Student academic details are incomplete" , "missing_fields": missing_fields}
         )
 
     program = user["program"]

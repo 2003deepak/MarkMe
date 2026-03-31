@@ -321,8 +321,6 @@ async def face_worker():
                     department = data.get("department")
                     program = data.get("program")
 
-                    logger.info("[face_worker] 📊 Processing job - attendance_id: %s, images: %d, filters: semester=%s, dept=%s, program=%s, year=%s", 
-                               attendance_id, num_images, semester, department, program)
 
                     # Validate required data
                     if not all([attendance_id, image_base64_list, semester, department, program]):
