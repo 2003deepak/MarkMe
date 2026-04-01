@@ -14,6 +14,7 @@ from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
 from app.utils.publisher import send_to_queue
 from app.core.redis import redis_client
+from app.utils.redis_key_deletion import invalidate_redis_keys
 from app.utils.security import get_password_hash
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -142,6 +143,8 @@ async def create_teacher(request: Request, request_model):
 
         for key in cache_keys:
             await redis_client.delete(key)
+            
+        await invalidate_redis_keys("assignable_subjects:*")
 
         # STEP 9 — SEND EMAIL VIA QUEUE
         await send_to_queue(

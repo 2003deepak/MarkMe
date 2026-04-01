@@ -14,8 +14,8 @@ CANCEL_PROB = 0.1
 RESCHEDULE_PROB = 0.12
 ADD_SESSION_PROB = 0.2
 
-START_DATE = datetime(2026, 3, 1)
-END_DATE = datetime(2026, 3, 20)
+START_DATE = datetime(2026, 1, 1)
+END_DATE = datetime(2026, 4, 1)
 
 WEEKDAYS = [
     "Monday", "Tuesday", "Wednesday",
@@ -45,7 +45,8 @@ def generate_bitstring(n, rate):
 #fetch all exceptions for date
 async def get_exceptions_by_date(date):
     return await ExceptionSession.find(
-        ExceptionSession.date == date
+        ExceptionSession.date == date,
+        fetch_links=True
     ).to_list()
 
 #fetch exception for session
@@ -59,17 +60,17 @@ async def run():
     await init_db()
 
     students = await Student.find(
-        Student.program == "MCA",
-        Student.department == "CA",
-        Student.batch_year == 2025,
+        Student.program == "MSC",
+        Student.department == "IT",
+        Student.batch_year == 2026,
         Student.semester == 2
     ).to_list()
 
     sessions = await Session.find(
-        Session.program == "MCA",
-        Session.department == "CA",
+        Session.program == "MSC",
+        Session.department == "IT",
         Session.semester == "2",
-        Session.academic_year == "2025",
+        Session.academic_year == "2026",
         fetch_links=True
     ).to_list()
 
