@@ -47,6 +47,8 @@ async def teacher_defaulters(
         pipeline.append({"$match": match_stage})
 
     pipeline.extend([
+        
+        { "$match": { "is_active": True } },
         {
             "$lookup": {
                 "from": "exception_sessions",

@@ -27,6 +27,7 @@ async def get_teacher_based_time_table(request: Request) -> JSONResponse:
     # 1. Fetch sessions
     sessions = await Session.find_many(
         Eq(Session.teacher.id, ObjectId(user_id)),
+        Session.is_active == True,
         fetch_links=True
     ).to_list()
 

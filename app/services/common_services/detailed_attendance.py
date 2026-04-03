@@ -5,7 +5,6 @@ from datetime import timezone
 
 from app.models.allModel import StudentListingView
 from app.schemas.attendance import Attendance
-from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.subject import Subject
 from app.schemas.teacher import Teacher

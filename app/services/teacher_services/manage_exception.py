@@ -78,6 +78,7 @@ async def create_session_exception(
 
         session_obj = await Session.get(
             exception_request.session_id,
+            Session.is_active == True,
             fetch_links=True
         )
 

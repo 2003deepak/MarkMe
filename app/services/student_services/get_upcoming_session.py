@@ -53,6 +53,7 @@ async def get_todays_upcoming_sessions_for_student(
         Session.semester == semester,
         Session.academic_year == academic_year,
         Session.department == department,
+        Session.is_active == True,
         fetch_links=True
     ).to_list()
 

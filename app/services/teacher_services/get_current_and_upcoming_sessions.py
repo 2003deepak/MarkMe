@@ -43,6 +43,7 @@ async def get_current_and_upcoming_sessions(request: Request):
     base_sessions = await Session.find(
         Session.day == weekday,
         Session.teacher.id == teacher_id,
+        Session.is_active == True,
         fetch_links=True
     ).to_list()
 
