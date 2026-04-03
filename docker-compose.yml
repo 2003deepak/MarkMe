@@ -15,6 +15,7 @@ services:
       - .env
     volumes:
       - temp_data:/app/temp
+      - media_data:/var/app/media
     depends_on:
       mongo:
         condition: service_healthy
@@ -104,6 +105,7 @@ services:
       - .env
     volumes:
       - temp_data:/app/temp
+      - media_data:/var/app/media
     depends_on:
       redis:
         condition: service_healthy
@@ -119,6 +121,7 @@ services:
       - .env
     volumes:
       - temp_data:/app/temp
+      - media_data:/var/app/media
     depends_on:
       redis:
         condition: service_healthy
@@ -229,3 +232,4 @@ volumes:
   redis_data:
   mongo_data:
   temp_data:
+  media_data:
