@@ -14,8 +14,8 @@ CANCEL_PROB = 0.1
 RESCHEDULE_PROB = 0.12
 ADD_SESSION_PROB = 0.2
 
-START_DATE = datetime(2026, 1, 1)
-END_DATE = datetime(2026, 4, 1)
+START_DATE = datetime(2026, 3, 2)
+END_DATE = datetime(2026, 4, 4)
 
 WEEKDAYS = [
     "Monday", "Tuesday", "Wednesday",
@@ -71,6 +71,7 @@ async def run():
         Session.department == "IT",
         Session.semester == "2",
         Session.academic_year == "2026",
+        Session.is_active == True,
         fetch_links=True
     ).to_list()
 

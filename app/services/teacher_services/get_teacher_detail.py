@@ -320,7 +320,8 @@ async def get_teacher_subject_performance(
         # --------------------------------------------------
         sessions = await Session.find(
             Session.teacher.id == teacher_oid,
-            Session.subject.id == subject_oid
+            Session.subject.id == subject_oid,
+            Session.is_active == True
         ).to_list()
 
         session_ids = [s.id for s in sessions]

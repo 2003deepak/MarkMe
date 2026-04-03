@@ -34,7 +34,7 @@ async def get_teacher_session_compliance(
 
     # 1️⃣ scheduled sessions (teacher-wise + subject-wise)
     scheduled_pipeline = [
-        {"$match": {"teacher.$id": teacher_oid}},
+        {"$match": {"teacher.$id": teacher_oid, "is_active": True}},
         {
             "$group": {
                 "_id": "$subject.$id",

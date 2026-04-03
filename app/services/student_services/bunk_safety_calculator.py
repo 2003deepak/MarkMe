@@ -72,6 +72,7 @@ async def get_tomorrow_bunk_safety(request: Request):
         Session.semester == sem,
         Session.academic_year == ac_year,
         Session.department == dept,
+        Session.is_active == True,
         fetch_links=True
     ).to_list()
 
@@ -365,6 +366,7 @@ async def get_week_plan(request: Request):
         Session.semester == sem,
         Session.academic_year == ac_year,
         Session.department == dept,
+        Session.is_active == True,
         fetch_links=True
     ).to_list()
 
