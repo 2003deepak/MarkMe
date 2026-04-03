@@ -1,39 +1,43 @@
 name: Deploy MarkMe
 
 on:
-push:
-branches:
-- production
+  push:
+    branches:
+      - production
 
 jobs:
-deploy:
-runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
 
-```
-steps:
-- name: Checkout Code
-  uses: actions/checkout@v3
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
-- name: Deploy to GCP VM
-  uses: appleboy/ssh-action@v1.0.0
-  with:
-    host: ${{ secrets.SERVER_HOST }}
-    username: ${{ secrets.SERVER_USER }}
-    key: ${{ secrets.SERVER_SSH_KEY }}
-    script: |
-      cd ~/MarkMe
+    - name: Deploy to GCP VM
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          cd ~/MarkMe
 
-      echo "📥 Pulling latest code..."
-      git pull origin production
+          echo "📥 Pulling latest code..."
+          git pull origin production
 
-      echo "🔨 Building & starting containers..."
-      docker compose up -d --build
+          echo "🔨 Building & starting containers..."
+          # Use docker compose (v2) or docker-compose (v1) based on your setup
+          docker compose down
+          docker compose build --no-cache
+          docker compose up -d
 
-      echo "⏳ Waiting for service..."
-      sleep 10
+          echo "⏳ Waiting for services to be healthy..."
+          sleep 15
 
-      echo "🔍 Health check..."
-      curl -f http://localhost:8000 || exit 1
+          echo "🔍 Health check..."
+          curl -f http://localhost:8000 || exit 1
 
-      echo "🧹 Cleaning unused images..."
-      docker image prune -f
+          echo "🧹 Cleaning unused images..."
+          docker image prune -f
+
+          echo "✅ Deployment complete!"

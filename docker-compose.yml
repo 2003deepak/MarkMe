@@ -5,7 +5,7 @@ services:
   # backend api
   backend:
     build: .
-    image: markme_app
+    image: markme_app:latest
     container_name: markme_backend
     restart: unless-stopped
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -30,7 +30,8 @@ services:
 
   # scheduler
   scheduler:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: markme_scheduler
     restart: unless-stopped
     command: python app/cron_job/cron.py
@@ -52,7 +53,8 @@ services:
 
   # workers
   worker_session:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_session
     restart: unless-stopped
     command: python app/workers/worker_session.py
@@ -67,7 +69,8 @@ services:
         condition: service_healthy
 
   worker_email:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_email
     restart: unless-stopped
     command: python app/workers/worker_email.py
@@ -82,7 +85,8 @@ services:
         condition: service_healthy
 
   worker_cleanup:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_cleanup
     restart: unless-stopped
     command: python app/workers/worker_cleanup.py
@@ -97,7 +101,8 @@ services:
         condition: service_healthy
 
   worker_embeddings:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_embeddings
     restart: unless-stopped
     command: python app/workers/worker_embeddings.py
@@ -113,7 +118,8 @@ services:
         condition: service_healthy
 
   worker_face:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_face
     restart: unless-stopped
     command: python app/workers/worker_face_recognition.py
@@ -129,7 +135,8 @@ services:
         condition: service_healthy
 
   worker_notifications:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_notifications
     restart: unless-stopped
     command: python app/workers/worker_notifications.py
@@ -144,7 +151,8 @@ services:
         condition: service_healthy
 
   worker_attendance:
-    image: markme_app
+    build: .
+    image: markme_app:latest
     container_name: worker_attendance
     restart: unless-stopped
     command: python app/workers/worker_attendance_stream.py
