@@ -1,9 +1,6 @@
-from datetime import datetime
-
-from bson import ObjectId
+import datetime
 
 from app.models.allModel import TimeTableRequest, UpdateTimeTableRequest
-from app.schemas.clerk import Clerk
 from app.schemas.session import Session
 from app.schemas.subject import Subject
 from app.schemas.teacher import Teacher
@@ -126,7 +123,8 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     academic_year=request_model.academic_year,
                     department=request_model.department, 
                     program=request_model.program,
-                    semester=request_model.semester
+                    semester=request_model.semester,
+                    is_active=True
                 )
 
                 try:
@@ -168,13 +166,12 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                 'message': f'Unexpected error occurred: {str(e)}'
             }
         )
-        
-    
+
 
 async def update_timetable(request: Request, request_model: UpdateTimeTableRequest) -> dict:
+    
     try:
-
-        # auth
+        
         if request.state.user.get("role") != "clerk":
             return JSONResponse(
                 status_code=403,
@@ -187,24 +184,20 @@ async def update_timetable(request: Request, request_model: UpdateTimeTableReque
         updates = request_model.updates or []
         adds = request_model.adds or []
         deletes = request_model.deletes or []
-        
-        clerk = await Clerk.get(ObjectId(request.state.user.get("id")))
 
-        # ---------------- DELETE ----------------
+        # ------------------ DELETE ------------------
         for session_id in deletes:
-
-            session = await Session.get(ObjectId(session_id))
-
+            session = await Session.get(session_id)
             if session:
                 session.is_active = False
-                session.deleted_by = clerk
+                session.deleted_by = request.state.user.id
                 session.updated_at = datetime.utcnow()
                 await session.save()
 
-        # ---------------- UPDATE ----------------
+        # ------------------ UPDATE ------------------
         for item in updates:
 
-            old_session = await Session.get(ObjectId(item.session_id))
+            old_session = await Session.get(item.session_id)
 
             if not old_session:
                 return JSONResponse(
@@ -215,15 +208,13 @@ async def update_timetable(request: Request, request_model: UpdateTimeTableReque
                     }
                 )
 
-            # fetch subject properly
-            subject = await Subject.get(ObjectId(item.subject))
-
+            subject = await Subject.get(item.subject)
             if not subject:
                 return JSONResponse(
                     status_code=404,
                     content={
                         "success": False,
-                        "message": f"Subject {item.subject} not found"
+                        "message": "Subject not found"
                     }
                 )
 
@@ -238,16 +229,6 @@ async def update_timetable(request: Request, request_model: UpdateTimeTableReque
 
             teacher_doc = await subject.teacher_assigned.fetch()
 
-            if not teacher_doc:
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "success": False,
-                        "message": "Teacher not found"
-                    }
-                )
-
-            # validate time
             if item.start_time >= item.end_time:
                 return JSONResponse(
                     status_code=400,
@@ -259,38 +240,37 @@ async def update_timetable(request: Request, request_model: UpdateTimeTableReque
 
             # deactivate old
             old_session.is_active = False
+            old_session.deleted_by = request.state.user.id
             old_session.updated_at = datetime.utcnow()
 
-            # create new session (IMPORTANT: pass DOCUMENT, not string)
+            # create new
             new_session = Session(
                 day=item.day or old_session.day,
                 start_time=item.start_time,
                 end_time=item.end_time,
-                subject=subject,          # ✅ FIXED
-                teacher=teacher_doc,      # ✅ FIXED
+                subject=subject,
+                teacher=teacher_doc,
                 academic_year=item.academic_year or old_session.academic_year,
                 department=item.department or old_session.department,
                 program=item.program or old_session.program,
                 semester=item.semester or old_session.semester,
-                is_active=True
+                is_active=True,
+                deleted_by=request.state.user.get("id")
             )
 
             await new_session.insert()
-
-            # link
             await old_session.save()
 
-        # ---------------- ADD ----------------
+        # ------------------ ADD ------------------
         for item in adds:
 
-            subject = await Subject.get(ObjectId(item.subject))
-
+            subject = await Subject.get(item.subject)
             if not subject:
                 return JSONResponse(
                     status_code=404,
                     content={
                         "success": False,
-                        "message": f"Subject {item.subject} not found"
+                        "message": "Subject not found"
                     }
                 )
 
@@ -304,15 +284,6 @@ async def update_timetable(request: Request, request_model: UpdateTimeTableReque
                 )
 
             teacher_doc = await subject.teacher_assigned.fetch()
-
-            if not teacher_doc:
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "success": False,
-                        "message": "Teacher not found"
-                    }
-                )
 
             if item.start_time >= item.end_time:
                 return JSONResponse(
@@ -327,18 +298,18 @@ async def update_timetable(request: Request, request_model: UpdateTimeTableReque
                 day=item.day,
                 start_time=item.start_time,
                 end_time=item.end_time,
-                subject=subject,          # ✅ FIXED
-                teacher=teacher_doc,      # ✅ FIXED
+                subject=subject,
+                teacher=teacher_doc,
                 academic_year=item.academic_year,
                 department=item.department,
                 program=item.program,
                 semester=item.semester,
-                is_active=True
+                is_active=True,
+                deleted_by=request.state.user.get("id")
             )
 
             await new_session.insert()
 
-        # invalidate cache
         await invalidate_redis_keys("timetable:*")
 
         return JSONResponse(
