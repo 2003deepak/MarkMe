@@ -194,6 +194,8 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -208,6 +210,8 @@ services:
     container_name: mongo
     restart: unless-stopped
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
