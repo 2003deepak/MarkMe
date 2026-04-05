@@ -25,7 +25,6 @@ from app.services.clerk_services.get_all_teachers import get_all_teachers
 from app.services.student_services.register_student import register_student
 from app.services.teacher_services.get_teacher_detail import get_teacher_by_id, get_teacher_subject_insights, get_teacher_subject_performance
 from app.services.teacher_services.fetch_class_list import fetch_class
-from app.services.clerk_services.add_timetable import add_timetable
 from app.services.clerk_services.get_subject_detail import get_assignable_subjects, list_all_subjects, get_subject_by_id
 
 # --- Pydantic Imports
@@ -34,8 +33,7 @@ from app.models.allModel import (
     TeacherUpdateRequest,
     UpdateClerkRequest,
     CreateSubjectRequest,
-    TeacherRegisterRequest,
-    TimeTableRequest
+    TeacherRegisterRequest
 )
 
 router = APIRouter()

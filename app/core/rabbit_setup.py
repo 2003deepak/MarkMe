@@ -1,3 +1,4 @@
+import asyncio
 import aio_pika
 from app.core.rabbitmq_config import settings
 
@@ -10,8 +11,18 @@ QUEUE_PRIORITY_CONFIG = {
     settings.cleanup_queue: 10
 }
 
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            print("Connected to RabbitMQ (setup)")
+            return connection
+        except Exception as e:
+            print(f"RabbitMQ not ready (setup), retrying... {e}")
+            await asyncio.sleep(5)
+
 async def setup_rabbitmq():
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     channel = await connection.channel()
 
     delayed_exchange = await channel.declare_exchange(
@@ -28,6 +39,6 @@ async def setup_rabbitmq():
             arguments={"x-max-priority": max_priority}
         )
         await queue.bind(delayed_exchange, routing_key=queue_name)
-        print(f"[RabbitMQ] Queue '{queue_name}' declared & bound to delayed exchange with max priority {max_priority}")
+        print(f"[RabbitMQ] Queue '{queue_name}' declared")
 
     await connection.close()

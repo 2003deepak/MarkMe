@@ -11,8 +11,6 @@ from app.core.rabbitmq_config import settings
 from app.utils.extract_student_embedding import extract_student_embedding
 from app.core.database import init_db
 from app.schemas.student import Student
-
-# faiss cache
 from app.core.faiss_cache import faiss_cache, get_cache_key
 
 # logging
@@ -24,16 +22,43 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['INSIGHTFACE_LOG_LEVEL'] = 'ERROR'
 warnings.filterwarnings("ignore")
 
+MAX_RETRIES = 3
 
+
+# ---------------- RABBITMQ CONNECTION ----------------
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            logger.info("✅ Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            logger.warning(f"RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+
+
+# ---------------- EMBEDDING LOGIC ----------------
 async def generate_embedding(student_id: str, image_paths: List[str]):
 
+    image_paths = [os.path.abspath(p) for p in image_paths]
+
     try:
+        # debug paths
+        for path in image_paths:
+            logger.info(f"Checking path: {path} | Exists: {os.path.exists(path)}")
+
+        # validate paths
+        for path in image_paths:
+            if not os.path.exists(path):
+                raise ValueError(f"Invalid image path: {path}")
+
+        # generate embedding
         face_embedding = await extract_student_embedding(image_paths)
 
-        # validate embedding
         if face_embedding is None or len(face_embedding) != 512:
             raise ValueError("Invalid embedding generated")
 
+        # fetch student
         student = await Student.find_one(Student.id == ObjectId(student_id))
 
         if not student:
@@ -49,7 +74,7 @@ async def generate_embedding(student_id: str, image_paths: List[str]):
 
         logger.info(f"✅ Embedding stored for student: {student_id}")
 
-        # invalidate FAISS cache
+        # invalidate cache
         if student.semester and student.department and student.program:
             cache_key = get_cache_key(
                 student.semester,
@@ -59,51 +84,74 @@ async def generate_embedding(student_id: str, image_paths: List[str]):
             faiss_cache.pop(cache_key, None)
             logger.info(f"🧹 Cache invalidated: {cache_key}")
 
-    except Exception as e:
-        logger.error(f"❌ Embedding generation failed for {student_id}: {str(e)}", exc_info=True)
-        raise  # important for retry
-
-    finally:
-        # cleanup temp files
+        # delete files ONLY after success
         for path in image_paths:
             try:
-                os.remove(path)
-            except Exception:
-                pass
-
-
-async def process_message(message: aio_pika.IncomingMessage):
-
-    try:
-        payload = json.loads(message.body.decode())
-        data = payload.get("data", {})
-
-        student_id = data.get("student_id")
-        image_paths = data.get("image_paths")
-
-        if not student_id or not image_paths:
-            logger.warning("⚠️ Missing student_id or image_paths")
-            await message.ack()
-            return
-
-        await generate_embedding(student_id, image_paths)
-
-        # success → ACK
-        await message.ack()
+                if os.path.exists(path):
+                    os.remove(path)
+                    logger.info(f"🧹 Deleted: {path}")
+            except Exception as e:
+                logger.warning(f"Cleanup failed: {e}")
 
     except Exception as e:
-        logger.error(f"❌ Error processing message: {str(e)}", exc_info=True)
-
-        # reject → requeue
-        await message.nack(requeue=True)
+        logger.error(f"❌ Embedding generation failed for {student_id}: {str(e)}", exc_info=True)
+        raise
 
 
+# ---------------- MESSAGE PROCESSOR ----------------
+async def process_message(message: aio_pika.IncomingMessage):
+    async with message.process(ignore_processed=True):
+        try:
+            payload = json.loads(message.body.decode())
+            data = payload.get("data", {})
+            retry = payload.get("retry", 0)
+
+            student_id = data.get("student_id")
+            image_paths = data.get("image_paths")
+
+            if not student_id or not image_paths:
+                logger.warning("⚠️ Missing student_id or image_paths")
+                return
+
+            await generate_embedding(student_id, image_paths)
+
+        except Exception as e:
+            error_msg = str(e)
+
+            logger.error(f"❌ Error processing message: {error_msg}", exc_info=True)
+
+            # ❌ DO NOT RETRY VALIDATION ERRORS
+            if "Inconsistent face" in error_msg:
+                logger.warning("🚫 Skipping retry (face mismatch)")
+                return
+
+            payload = json.loads(message.body.decode())
+            retry = payload.get("retry", 0)
+
+            if retry < MAX_RETRIES:
+                payload["retry"] = retry + 1
+                logger.warning(f"🔁 Retrying ({retry+1}/{MAX_RETRIES})")
+
+                connection = await connect_rabbitmq()
+                channel = await connection.channel()
+
+                await channel.default_exchange.publish(
+                    aio_pika.Message(
+                        body=json.dumps(payload).encode(),
+                        priority=message.priority
+                    ),
+                    routing_key=message.routing_key,
+                )
+            else:
+                logger.error(f"💀 Max retries exceeded: {payload}")
+
+# ---------------- WORKER ----------------
 async def embedding_worker():
 
     await init_db()
     logger.info("✅ Database connected")
 
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
 
     async with connection:
         channel = await connection.channel()
@@ -123,6 +171,7 @@ async def embedding_worker():
                 await process_message(message)
 
 
+# ---------------- ENTRY ----------------
 if __name__ == "__main__":
     try:
         asyncio.run(embedding_worker())

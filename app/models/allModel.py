@@ -13,9 +13,9 @@ class StudentRegisterRequest(BaseModel):
     last_name: str 
     email: EmailStr 
     password: Optional[str] = Field(..., min_length=6, max_length=6)  # Exactly 6 characters
-    program : str 
-    department : str 
-    semester : int
+    program : Optional[str] = None
+    department : Optional[str] = None
+    semester : Optional[int] = None
 
 class TeacherRegisterRequest(BaseModel):
     first_name: str
@@ -257,7 +257,37 @@ class TimeTableRequest(BaseModel):
 class UpdateAcademicScopesRequest(BaseModel):
     academic_scopes: List[AcademicScopeRequest]
 
+class UpdateSessionItem(BaseModel):
+    session_id: str
 
+    day: Optional[str] = None
+    start_time: str
+    end_time: str
+
+    subject: str
+
+    academic_year: Optional[str] = None
+    department: Optional[str] = None
+    program: Optional[str] = None
+    semester: Optional[str] = None
+    
+class AddSessionItem(BaseModel):
+    day: str
+    start_time: str
+    end_time: str
+    subject: str
+
+    academic_year: str
+    department: str
+    program: str
+    semester: str
+    
+    
+class UpdateTimeTableRequest(BaseModel):
+    updates: List[UpdateSessionItem] = []
+    adds: List[AddSessionItem] = []
+    deletes: List[str] = []
+    
 class CreateExceptionSession(BaseModel):
     session_id: Optional[str] = None
     subject_id: Optional[str] = None

@@ -23,7 +23,16 @@ REDIS_SESSION_JOB_PREFIX = "attendance:job:"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("session_worker")
 
-
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            print("[cleanup_worker] Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            print(f"[cleanup_worker] RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+            
 # redis
 async def get_job_id_from_redis(session_id: str, date_str: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
@@ -137,7 +146,7 @@ async def process_session(message: aio_pika.IncomingMessage):
 async def start_worker():
     await init_db()
 
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     async with connection:
         channel = await connection.channel()
         await channel.set_qos(prefetch_count=1)

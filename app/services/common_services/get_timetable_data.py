@@ -82,7 +82,8 @@ async def get_timetable_data(request: Request, department: str, program: str, se
             "department": department,
             "program": program,
             "semester": semester,
-            "academic_year": academic_year
+            "academic_year": academic_year,
+            "is_active": True
         }
         print(f"Querying sessions with filter: {query}")
 

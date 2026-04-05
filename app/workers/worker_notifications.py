@@ -7,13 +7,23 @@ from app.core.rabbitmq_config import settings
 
 # ------------------- Firebase Init -------------------
 cred = credentials.Certificate(
-    "app\google-services.json"
+    "app/google-services.json"
 )
 firebase_admin.initialize_app(cred)
 
 CHUNK_SIZE = 500
 
-
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            print("[cleanup_worker] Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            print(f"[cleanup_worker] RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+            
+              
 # ------------------- Main FCM Sender -------------------
 async def send_fcm_to_tokens(payload: dict):
     tokens = payload.get("tokens", [])
@@ -58,7 +68,7 @@ async def send_fcm_to_tokens(payload: dict):
 
 # ------------------- Worker Listener -------------------
 async def notification_worker():
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     channel = await connection.channel()
 
     queue = await channel.declare_queue(

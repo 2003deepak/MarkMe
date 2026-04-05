@@ -1,4 +1,5 @@
 import asyncio
+import io
 import aio_pika
 import json
 from app.utils.imagekit_uploader import upload_file_to_imagekit
@@ -14,6 +15,7 @@ from insightface.app import FaceAnalysis
 from app.core.rabbitmq_config import settings
 from app.core.redis import redis_client
 from app.utils.redis_pub_sub import publish_to_channel
+from PIL import Image, ImageOps
 from app.core.faiss_cache import faiss_cache, get_cache_key
 import onnxruntime as ort
 import logging
@@ -33,6 +35,17 @@ else:
     logger.warning("Using CPU")
 
 
+
+async def connect_rabbitmq():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+            logger.info("✅ Connected to RabbitMQ")
+            return connection
+        except Exception as e:
+            logger.warning(f"RabbitMQ not ready, retrying... {e}")
+            await asyncio.sleep(5)
+            
 # lock for cache build
 faiss_locks = {}
 
@@ -155,7 +168,10 @@ async def process_single_image(
         x1, y1, x2, y2 = bbox
         face_area = (x2 - x1) * (y2 - y1)
         
-        if face_area < 5000:
+        h, w, _ = img.shape
+        min_area = (h * w) * 0.01  # 1%
+        
+        if face_area < min_area:
             logger.warning(
                 "[SKIP] Small face img=%d face=%d area=%d",
                 current_image,
@@ -273,7 +289,7 @@ async def face_worker():
     logger.info("[face_worker] ✅ Database connected successfully")
 
     logger.debug("[face_worker] Connecting to RabbitMQ: %s", settings.rabbitmq_url)
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+    connection = await connect_rabbitmq()
     channel = await connection.channel()
     logger.info("[face_worker] ✅ RabbitMQ connection and channel established")
 
@@ -310,8 +326,6 @@ async def face_worker():
                     department = data.get("department")
                     program = data.get("program")
 
-                    logger.info("[face_worker] 📊 Processing job - attendance_id: %s, images: %d, filters: semester=%s, dept=%s, program=%s, year=%s", 
-                               attendance_id, num_images, semester, department, program)
 
                     # Validate required data
                     if not all([attendance_id, image_base64_list, semester, department, program]):
@@ -370,8 +384,12 @@ async def face_worker():
                             # Decode image
                             logger.debug("[face_worker] 🔍 Decoding image %d", current_image)
                             image_bytes = base64.b64decode(image_base64)
-                            nparr = np.frombuffer(image_bytes, np.uint8)
-                            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                           
+                            
+                            image = Image.open(io.BytesIO(image_bytes))
+                            image = ImageOps.exif_transpose(image)  # fixes rotation
+
+                            img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
                             
                             if img is None:
                                 logger.warning("[face_worker] ❌ Failed to decode image %d", current_image)
@@ -402,9 +420,39 @@ async def face_worker():
                             
                             # 🔥 6. ADD IMAGE PREPROCESSING
                             # improve brightness
-                            img = cv2.convertScaleAbs(img, alpha=1.2, beta=20)
-                            # denoise
-                            img = cv2.fastNlMeansDenoisingColored(img, None, 10, 10, 7, 21)
+                            # analyze image (NO modification yet)
+                            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+                            brightness = float(np.mean(gray))
+                            contrast = float(np.std(gray))
+                            
+                            # apply ONLY if extremely bad conditions
+                            if brightness < 50:
+                                logger.warning("[ADJUST] Very dark image - applying mild correction")
+                                img = cv2.convertScaleAbs(img, alpha=1.03, beta=3)
+
+                            elif brightness > 210:
+                                logger.warning("[ADJUST] Overexposed image - reducing brightness slightly")
+                                img = cv2.convertScaleAbs(img, alpha=0.97, beta=-3)
+
+                            # contrast too low (flat image)
+                            if contrast < 20:
+                                logger.warning("[ADJUST] Low contrast - applying CLAHE")
+
+                                lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+                                l, a, b = cv2.split(lab)
+
+                                clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8, 8))
+                                l = clahe.apply(l)
+
+                                lab = cv2.merge((l, a, b))
+                                img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+                            logger.info(
+                                "[IMG_ANALYSIS] brightness=%.2f contrast=%.2f",
+                                brightness,
+                                contrast
+                            )
                             
                             logger.debug("[face_worker] ✅ Image %d decoded successfully, shape: %s", 
                                        current_image, str(img.shape))
@@ -421,14 +469,19 @@ async def face_worker():
                             )
 
                             # Always encode and store the annotated image (even if no faces detected)
-                            _, buffer = cv2.imencode('.jpg', annotated_img)
-                            image_bytes = buffer.tobytes()
+                            _, buffer = cv2.imencode(
+                                '.jpg',
+                                annotated_img,
+                                [int(cv2.IMWRITE_JPEG_QUALITY), 100]
+                            )
+                            
+                            annotated_bytes = buffer.tobytes()
                             
                             #upload to imagekit
                             filename = f"attendance_{attendance_id}_{current_image}_{uuid.uuid4().hex}.jpg"
                             
                             upload_result = await upload_file_to_imagekit(
-                                file=image_bytes,
+                                file=annotated_bytes,
                                 filename=filename,
                                 folder="attendance_faces",
                                 tags=["attendance", str(attendance_id)]

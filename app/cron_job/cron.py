@@ -39,7 +39,7 @@ async def generate_sessions_for_tomorrow():
     date_str = str(target_date)
     weekday = now.strftime("%A")
 
-    sessions = await Session.find(Session.day == weekday, fetch_links=True).to_list()
+    sessions = await Session.find(Session.day == weekday, Session.is_active == True, fetch_links=True).to_list()
     final_jobs = []
 
     for session in sessions:

@@ -69,7 +69,8 @@ async def download_class_report(
     sessions = await Session.find({
         "department": department,
         "program": program,
-        "semester": str(semester)
+        "semester": str(semester),
+        "is_active": True
     }, fetch_links=True).to_list()
 
     if not sessions:

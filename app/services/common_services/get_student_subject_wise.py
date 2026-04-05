@@ -9,8 +9,6 @@ from typing import Dict, Any, Optional
 
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.schemas.attendance import Attendance
-from app.schemas.session import Session
-from app.schemas.subject import Subject
 
 
 # JSON encoder to handle ObjectId and datetime

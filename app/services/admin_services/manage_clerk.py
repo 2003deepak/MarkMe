@@ -77,6 +77,8 @@ async def edit_clerk(request: Request, clerk_id: str, body: UpdateAcademicScopes
     # save to DB
     await clerk.save()
     
+    invalidate_redis_keys("clerks:profile:*")
+    
     # send email notification
     try:
         scopes_text = "\n".join([

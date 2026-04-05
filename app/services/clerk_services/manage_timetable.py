@@ -1,4 +1,6 @@
-from app.models.allModel import TimeTableRequest
+import datetime
+
+from app.models.allModel import TimeTableRequest, UpdateTimeTableRequest
 from app.schemas.session import Session
 from app.schemas.subject import Subject
 from app.schemas.teacher import Teacher
@@ -121,7 +123,8 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
                     academic_year=request_model.academic_year,
                     department=request_model.department, 
                     program=request_model.program,
-                    semester=request_model.semester
+                    semester=request_model.semester,
+                    is_active=True
                 )
 
                 try:
@@ -161,5 +164,167 @@ async def add_timetable(request: Request, request_model: TimeTableRequest) -> di
             content={
                 "success": False,
                 'message': f'Unexpected error occurred: {str(e)}'
+            }
+        )
+
+
+async def update_timetable(request: Request, request_model: UpdateTimeTableRequest) -> dict:
+    
+    try:
+        
+        if request.state.user.get("role") != "clerk":
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "message": "Unauthorized: Only clerks can update the timetable"
+                }
+            )
+
+        updates = request_model.updates or []
+        adds = request_model.adds or []
+        deletes = request_model.deletes or []
+
+        # ------------------ DELETE ------------------
+        for session_id in deletes:
+            session = await Session.get(session_id)
+            if session:
+                session.is_active = False
+                session.deleted_by = request.state.user.id
+                session.updated_at = datetime.utcnow()
+                await session.save()
+
+        # ------------------ UPDATE ------------------
+        for item in updates:
+
+            old_session = await Session.get(item.session_id)
+
+            if not old_session:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "success": False,
+                        "message": f"Session {item.session_id} not found"
+                    }
+                )
+
+            subject = await Subject.get(item.subject)
+            if not subject:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "success": False,
+                        "message": "Subject not found"
+                    }
+                )
+
+            if not subject.teacher_assigned:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "message": f"No teacher assigned to subject {subject.subject_name}"
+                    }
+                )
+
+            teacher_doc = await subject.teacher_assigned.fetch()
+
+            if item.start_time >= item.end_time:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "message": "Invalid time range"
+                    }
+                )
+
+            # deactivate old
+            old_session.is_active = False
+            old_session.deleted_by = request.state.user.id
+            old_session.updated_at = datetime.utcnow()
+
+            # create new
+            new_session = Session(
+                day=item.day or old_session.day,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                subject=subject,
+                teacher=teacher_doc,
+                academic_year=item.academic_year or old_session.academic_year,
+                department=item.department or old_session.department,
+                program=item.program or old_session.program,
+                semester=item.semester or old_session.semester,
+                is_active=True,
+                deleted_by=request.state.user.get("id")
+            )
+
+            await new_session.insert()
+            await old_session.save()
+
+        # ------------------ ADD ------------------
+        for item in adds:
+
+            subject = await Subject.get(item.subject)
+            if not subject:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "success": False,
+                        "message": "Subject not found"
+                    }
+                )
+
+            if not subject.teacher_assigned:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "message": f"No teacher assigned to subject {subject.subject_name}"
+                    }
+                )
+
+            teacher_doc = await subject.teacher_assigned.fetch()
+
+            if item.start_time >= item.end_time:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "success": False,
+                        "message": "Invalid time range"
+                    }
+                )
+
+            new_session = Session(
+                day=item.day,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                subject=subject,
+                teacher=teacher_doc,
+                academic_year=item.academic_year,
+                department=item.department,
+                program=item.program,
+                semester=item.semester,
+                is_active=True,
+                deleted_by=request.state.user.get("id")
+            )
+
+            await new_session.insert()
+
+        await invalidate_redis_keys("timetable:*")
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "message": "Timetable updated successfully"
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "message": f"Unexpected error: {str(e)}"
             }
         )
