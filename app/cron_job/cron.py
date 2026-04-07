@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bson import DBRef
 
 from app.core.database import init_db, close_db
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.utils.publisher import send_to_queue
 from app.core.config import settings
 from app.schemas.session import Session
@@ -18,16 +18,18 @@ REDIS_SESSION_JOB_PREFIX = "attendance:job:"
 SESSION_QUEUE_NAME = "session_queue"
 IST = ZoneInfo("Asia/Kolkata")
 
+redis = None
+
 
 # redis
 async def store_job_id(session_id: str, date_str: str, job_id: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
-    await redis_client.set(key, job_id, ex=48 * 3600)
+    await redis.set(key, job_id, ex=48 * 3600)
 
 
 async def delete_job_id(session_id: str, date_str: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
-    await redis_client.delete(key)
+    await redis.delete(key)
 
 
 # scheduler
@@ -173,12 +175,14 @@ async def generate_sessions_for_today():
 async def main():
     await init_db()
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+    
+    redis = await get_redis_client()
 
     if settings.ENVIRONMENT == "production":
         scheduler.add_job(generate_sessions_for_today, "cron", hour=0, minute=0)
         scheduler.start()
     else:
-        await generate_sessions_for_tomorrow()
+        await generate_sessions_for_today()
 
     try:
         await asyncio.Event().wait()
