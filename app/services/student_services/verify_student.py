@@ -1,8 +1,4 @@
 from fastapi import Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from jose import JWTError, ExpiredSignatureError
-from datetime import datetime
-
 from app.schemas.student import Student
 from app.utils.send_otp import verify_otp
 from app.models.allModel import OtpRequest

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.schemas.student import Student
 from app.core.config import settings
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.utils.imagekit_uploader import upload_file_to_imagekit, delete_file
 from app.utils.publisher import send_to_queue
 from app.utils.security import create_access_token
@@ -34,6 +34,8 @@ async def update_student_profile(
             status_code=403,
             content={"success": False, "message": "Only Students can access their profile"}
         )
+        
+    redis = await get_redis_client()
 
     try:
         student = await Student.find_one(Student.email == user_email)
@@ -193,7 +195,7 @@ async def update_student_profile(
             faiss_cache.pop(old_cache_key, None)
             faiss_cache.pop(new_cache_key, None)
 
-            await redis_client.delete(f"student:{student.email}")
+            await redis.delete(f"student:{student.email}")
 
             student = await Student.get(student.id)
 

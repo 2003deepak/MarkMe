@@ -1,11 +1,12 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.schemas.clerk import Clerk
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 import json
 
 
 async def get_clerk_profile(request: Request):
+    redis = await get_redis_client()
 
     try:
 
@@ -34,7 +35,7 @@ async def get_clerk_profile(request: Request):
         #redis cache
         cache_key = f"clerk:profile:{user_email}"
 
-        cached_data = await redis_client.get(cache_key)
+        cached_data = await redis.get(cache_key)
 
         if cached_data:
             return JSONResponse(
@@ -83,7 +84,7 @@ async def get_clerk_profile(request: Request):
         }
 
         #save cache
-        await redis_client.setex(
+        await redis.setex(
             cache_key,
             3600,
             json.dumps(clerk_data)

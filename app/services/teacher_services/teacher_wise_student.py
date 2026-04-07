@@ -5,7 +5,7 @@ from app.models.allModel import StudentBasicView, StudentSelectionRequest
 from app.schemas.student import Student
 from app.schemas.subject import Subject
 from app.schemas.teacher import Teacher
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 import json
 
 
@@ -40,6 +40,7 @@ async def get_students_by_teacher(request: Request, student_request: StudentSele
         )
 
     teacher_id = request.state.user.get("id")
+    redis = await get_redis_client()
 
     cache_key = (
         f"teacher_students:{teacher_id}:"
@@ -48,7 +49,7 @@ async def get_students_by_teacher(request: Request, student_request: StudentSele
         f"{student_request.page}:{student_request.limit}"
     )
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
 
     if cached:
         data = json.loads(cached)
@@ -155,7 +156,7 @@ async def get_students_by_teacher(request: Request, student_request: StudentSele
         enriched_students.append(student_dict)
 
     #cache for 30 minutes
-    await redis_client.setex(
+    await redis.setex(
         cache_key,
         1800,
         json.dumps({

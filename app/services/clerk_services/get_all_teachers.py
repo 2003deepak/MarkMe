@@ -4,7 +4,7 @@ from fastapi.encoders import jsonable_encoder
 from typing import Optional
 import json
 
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.schemas.teacher import Teacher
 
 
@@ -31,6 +31,7 @@ async def get_all_teachers(
         )
 
     scopes = user.get("academic_scopes", [])
+    redis = await get_redis_client()
 
     if not scopes:
         return JSONResponse(
@@ -48,7 +49,7 @@ async def get_all_teachers(
 
     cache_key = f"teachers:list:{clerk_id}:{program or 'all'}:{department or 'all'}:{search_query or 'none'}:{page}:{limit}"
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
 
     if cached:
         payload = json.loads(cached)
@@ -196,7 +197,7 @@ async def get_all_teachers(
         "has_prev": page > 1
     }
 
-    await redis_client.setex(
+    await redis.setex(
         cache_key,
         3600,
         json.dumps(response_payload)

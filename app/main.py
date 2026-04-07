@@ -5,7 +5,7 @@ from app.api.v1.routes import auth_router, notification_router, student_router, 
 from app.core.database import init_db, close_db
 from app.core.config import settings
 from app.core.rabbit_setup import setup_rabbitmq
-from app.core.redis import get_redis_client
+from app.core.redis import redis_manager
 from app.middleware.auth_middleware import AuthMiddleware  # Make sure you import your middleware
 
 # Routes that do NOT require authentication
@@ -28,7 +28,13 @@ WHITELIST = [
 async def lifespan(app: FastAPI):
     print("📦 Connecting to DB...")
     await init_db()
-    await get_redis_client()
+    
+    # redis connect
+    await redis_manager.connect()
+
+    await setup_rabbitmq()
+
+    yield
 
     print("🔄 Initializing RabbitMQ...")
     await setup_rabbitmq()

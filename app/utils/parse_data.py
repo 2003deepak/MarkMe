@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.responses import JSONResponse
 import uuid
 from app.utils.publisher import send_to_queue
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 
 def parse_comma_separated_list(value: Optional[str]) -> Optional[List[str]]:
@@ -52,6 +52,8 @@ async def enqueue_exception_session(
         f"{date_str} {start_time}",
         "%Y-%m-%d %H:%M"
     ).replace(tzinfo=IST)
+    
+    redis = await get_redis_client()
 
     delay = (start_dt - timedelta(minutes=15) - datetime.now(tz=IST)).total_seconds()
     if delay <= 0:
@@ -60,7 +62,7 @@ async def enqueue_exception_session(
     job_id = str(uuid.uuid4())
 
     redis_key = f"{REDIS_SESSION_JOB_PREFIX}{session.id}:{date_str}"
-    await redis_client.set(redis_key, job_id, ex=48 * 3600)
+    await redis.set(redis_key, job_id, ex=48 * 3600)
 
     payload = {
         "session_id": str(session.id),

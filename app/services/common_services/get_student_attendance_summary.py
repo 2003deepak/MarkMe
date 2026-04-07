@@ -5,7 +5,7 @@ from bson import ObjectId
 import json, logging
 from datetime import datetime
 
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.schemas.subject import Subject         
 from app.schemas.student import Student
@@ -40,6 +40,8 @@ async def get_student_attendance_summary(
                 "message": f"Access denied. Role '{user_role}' not authorized to view attendance summaries"
             },
         )
+        
+    redis = await get_redis_client()
 
     # 1. Resolve the target student_id
     if user_role == "student":
@@ -60,7 +62,7 @@ async def get_student_attendance_summary(
 
     # 2. Redis cache
     cache_key = f"student_attendance_summary:{student_id}:{user_role}"
-    cached_data = await redis_client.get(cache_key)
+    cached_data = await redis.get(cache_key)
 
     if cached_data:
         try:
@@ -75,7 +77,7 @@ async def get_student_attendance_summary(
                 },
             )
         except json.JSONDecodeError:
-            await redis_client.delete(cache_key)
+            await redis.delete(cache_key)
             logging.warning(f"Invalid cache data for key: {cache_key}, cleared.")
 
 
@@ -202,7 +204,7 @@ async def get_student_attendance_summary(
         }
 
         # 3.6 Cache for 30 min
-        await redis_client.setex(
+        await redis.setex(
             cache_key,
             1800,
             json.dumps(data, cls=MongoJSONEncoder),

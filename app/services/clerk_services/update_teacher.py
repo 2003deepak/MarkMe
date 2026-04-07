@@ -3,7 +3,6 @@ from fastapi.responses import JSONResponse
 from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
 from app.models.allModel import TeacherUpdateRequest
-from app.core.redis import redis_client
 from beanie.operators import In
 import logging
 

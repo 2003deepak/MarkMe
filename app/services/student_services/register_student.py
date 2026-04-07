@@ -1,7 +1,6 @@
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from app.core.database import get_db
 from datetime import datetime, timedelta
 from app.schemas.student import Student
 from pydantic import ValidationError

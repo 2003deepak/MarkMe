@@ -3,8 +3,6 @@ from typing import Optional, Dict, Any
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from app.schemas.subject_session_stats import SubjectSessionStats
-from app.schemas.subject import Subject
-import json  # For pretty printing if needed
 
 
 async def get_attendance_summary_department(

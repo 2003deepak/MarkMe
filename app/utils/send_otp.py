@@ -1,7 +1,7 @@
 import json
 import secrets
 from typing import Tuple
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 
 OTP_LENGTH = 6
@@ -29,11 +29,12 @@ def generate_6_digit_otp() -> str:
 async def generate_and_store_otp(email: str) -> str:
   
     send_key = _send_key(email)
+    redis = await get_redis_client()
 
     # rate limit send
-    send_count = await redis_client.incr(send_key)
+    send_count = await redis.incr(send_key)
     if send_count == 1:
-        await redis_client.expire(send_key, SEND_WINDOW_SECONDS)
+        await redis.expire(send_key, SEND_WINDOW_SECONDS)
 
     if send_count > MAX_OTP_SENDS:
         raise ValueError("Too many OTP requests. Please try again later.")
@@ -45,7 +46,7 @@ async def generate_and_store_otp(email: str) -> str:
         "attempts": 0
     }
 
-    await redis_client.setex(
+    await redis.setex(
         _otp_key(email),
         OTP_TTL_SECONDS,
         json.dumps(otp_data)
@@ -57,7 +58,9 @@ async def generate_and_store_otp(email: str) -> str:
 async def verify_otp(email: str, submitted_otp: str) -> Tuple[bool, str]:
 
     key = _otp_key(email)
-    raw = await redis_client.get(key)
+    
+    redis = await get_redis_client()
+    raw = await redis.get(key)
 
     if not raw:
         return False, "OTP expired or not found"
@@ -66,13 +69,13 @@ async def verify_otp(email: str, submitted_otp: str) -> Tuple[bool, str]:
 
     # too many attempts
     if data["attempts"] >= MAX_VERIFY_ATTEMPTS:
-        await redis_client.delete(key)
+        await redis.delete(key)
         return False, "Too many invalid attempts. OTP locked."
 
     # match
     if data["otp"] != submitted_otp:
         data["attempts"] += 1
-        await redis_client.setex(
+        await redis.setex(
             key,
             OTP_TTL_SECONDS,
             json.dumps(data)
@@ -80,5 +83,5 @@ async def verify_otp(email: str, submitted_otp: str) -> Tuple[bool, str]:
         return False, "Invalid OTP"
 
     # success
-    await redis_client.delete(key)
+    await redis.delete(key)
     return True, "OTP verified successfully"

@@ -5,9 +5,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
-
-from starlette import status
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from beanie.operators import Or
 from app.schemas.session import Session
 from app.schemas.attendance import Attendance
@@ -199,6 +197,8 @@ async def fetch_teacher_request(
 
     teacher_id = ObjectId(user["id"])
     skip = (page - 1) * limit
+    
+    redis = await get_redis_client()
 
     # cache
     cache_key = (
@@ -207,7 +207,7 @@ async def fetch_teacher_request(
         f"page={page}:limit={limit}"
     )
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
     if cached:
         return JSONResponse(
             status_code=200,
@@ -410,7 +410,7 @@ async def fetch_teacher_request(
     }
 
     # cache save
-    await redis_client.setex(cache_key, 60, json.dumps(response, default=str))
+    await redis.setex(cache_key, 60, json.dumps(response, default=str))
 
     return JSONResponse(status_code=200, content=response)
 

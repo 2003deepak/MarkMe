@@ -15,10 +15,12 @@ from app.schemas.swap_approval import SwapApproval
 from app.core.rabbitmq_config import settings
 from app.core.config import settings as app_settings
 from app.core.database import init_db
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 IST = ZoneInfo("Asia/Kolkata")
 REDIS_SESSION_JOB_PREFIX = "attendance:job:"
+
+redis = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("session_worker")
@@ -36,7 +38,7 @@ async def connect_rabbitmq():
 # redis
 async def get_job_id_from_redis(session_id: str, date_str: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
-    return await redis_client.get(key)
+    return await redis.get(key)
 
 
 # worker
@@ -67,7 +69,7 @@ async def process_session(message: aio_pika.IncomingMessage):
 
             if start_time < now:
                 logger.info("⏰ Session already passed")
-                await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
+                await redis.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
                 return
             
             if app_settings.ENVIRONMENT == "production":
@@ -92,7 +94,7 @@ async def process_session(message: aio_pika.IncomingMessage):
                 logger.info(f"⚠️ Exception action → {action}")
 
                 if action == "CANCEL":
-                    await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
+                    await redis.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
                     logger.info("🚫 Cancelled session")
                     return
 
@@ -137,7 +139,7 @@ async def process_session(message: aio_pika.IncomingMessage):
             await attendance.insert()
             logger.info("✅ Attendance created")
 
-            await redis_client.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
+            await redis.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
 
         except Exception as e:
             logger.error("💥 Worker error", exc_info=True)
@@ -145,6 +147,9 @@ async def process_session(message: aio_pika.IncomingMessage):
 
 async def start_worker():
     await init_db()
+    
+    
+    redis = await get_redis_client()
 
     connection = await connect_rabbitmq()
     async with connection:
