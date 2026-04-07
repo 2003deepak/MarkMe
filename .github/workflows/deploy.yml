@@ -26,7 +26,7 @@ jobs:
             git pull origin production
 
             echo "Building & starting containers..."
-            docker compose up -d --build
+            docker-compose up -d --build
 
             echo "Waiting for services..."
             sleep 15
