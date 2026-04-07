@@ -176,6 +176,7 @@ async def main():
     await init_db()
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
     
+    global redis
     redis = await get_redis_client()
 
     if settings.ENVIRONMENT == "production":

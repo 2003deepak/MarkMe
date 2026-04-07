@@ -148,7 +148,7 @@ async def process_session(message: aio_pika.IncomingMessage):
 async def start_worker():
     await init_db()
     
-    
+    global redis
     redis = await get_redis_client()
 
     connection = await connect_rabbitmq()
