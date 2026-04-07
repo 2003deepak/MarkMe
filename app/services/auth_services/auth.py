@@ -14,7 +14,7 @@ from app.utils.publisher import send_to_queue
 from fastapi.responses import JSONResponse
 import logging
 from app.utils.send_otp import generate_and_store_otp, verify_otp
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -418,6 +418,8 @@ async def verify_first_otp(request):
     email = request.email
     otp = request.otp
     role = request.role.lower()
+    
+    redis = await get_redis_client()  # Get Redis client instance
 
     role_model_map = {
         "student": Student,
@@ -456,7 +458,7 @@ async def verify_first_otp(request):
             }
         })
 
-    await redis_client.setex(f"reset_verified:{email}", 600, "1")
+    await redis.setex(f"reset_verified:{email}", 600, "1")
 
     return JSONResponse(
         status_code=200,
@@ -470,6 +472,8 @@ async def reset_user_password(request):
     email = request.email
     new_password = request.new_password
     role = request.role.lower()
+    
+    redis = await get_redis_client()  # Get Redis client instance
 
     role_model_map = {
         "student": Student,
@@ -499,7 +503,7 @@ async def reset_user_password(request):
         )
 
     # Check if user is verified via Redis
-    is_verified = await redis_client.get(f"reset_verified:{email}")
+    is_verified = await redis.get(f"reset_verified:{email}")
     if not is_verified:
         return JSONResponse(
             status_code=400,
@@ -525,6 +529,9 @@ async def reset_user_password(request):
             "password": get_password_hash(new_password),
         }
     })
+    
+        # Clean up verification flag
+    await redis.delete(f"reset_verified:{email}")
 
     return JSONResponse(
         status_code=200,
@@ -534,8 +541,6 @@ async def reset_user_password(request):
         }
     )
     
-    # Clean up verification flag
-    await redis_client.delete(f"reset_verified:{email}")
 
 async def change_current_password(
     request_model: ChangePasswordRequest, 

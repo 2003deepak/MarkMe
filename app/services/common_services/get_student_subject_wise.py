@@ -1,6 +1,6 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from bson import ObjectId
 import json
 import logging
@@ -31,6 +31,8 @@ async def get_student_subject_wise(
     
 ) -> Dict[str, Any]:
     user_role = request.state.user.get("role")
+    
+    redis = await get_redis_client()
 
     # --- Role-based auth ---
     allowed_roles = {"student", "clerk", "admin", "teacher"}
@@ -53,7 +55,7 @@ async def get_student_subject_wise(
 
     # --- Cache key includes month & year for uniqueness ---
     cache_key = f"student_subject_attendance:{target_id}:{subject_id}:{month}:{year}"
-    cached_data = await redis_client.get(cache_key)
+    cached_data = await redis.get(cache_key)
     if cached_data:
         try:
             return {
@@ -62,7 +64,7 @@ async def get_student_subject_wise(
                 "source": "cache"
             }
         except json.JSONDecodeError:
-            await redis_client.delete(cache_key)
+            await redis.delete(cache_key)
 
     try:
         summary = await StudentAttendanceSummary.find_one(
@@ -158,7 +160,7 @@ async def get_student_subject_wise(
         }
 
         # --- Cache it ---
-        await redis_client.setex(cache_key, 1800, json.dumps(result, cls=MongoJSONEncoder))
+        await redis.setex(cache_key, 1800, json.dumps(result, cls=MongoJSONEncoder))
         
         return JSONResponse(status_code=200, content=result)
 

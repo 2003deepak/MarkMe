@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from datetime import datetime
 import base64
 from app.schemas.clerk import Clerk  
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.core.config import settings  
 from app.models.allModel import UpdateClerkRequest
 from app.utils.imagekit_uploader import upload_file_to_imagekit, delete_file
@@ -16,6 +16,8 @@ async def update_clerk(request: Request, request_data: UpdateClerkRequest, profi
     user_email = request.state.user.get("email")
     
     print(f"Starting update_clerk for email: {user_email}")
+    
+    redis = await get_redis_client()
 
     # Validate user role
     if user_role != "clerk":
@@ -120,7 +122,7 @@ async def update_clerk(request: Request, request_data: UpdateClerkRequest, profi
 
             # Clear relevant caches
             cache_key_clerk = f"clerk:{clerk_email}"
-            await redis_client.delete(cache_key_clerk)
+            await redis.delete(cache_key_clerk)
             print(f"Deleted cache key: {cache_key_clerk}")
 
           

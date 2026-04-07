@@ -4,12 +4,13 @@ from bson import ObjectId
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from zoneinfo import ZoneInfo
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.utils.parse_data import validate_student_academic
+
 
 
 async def get_tomorrow_bunk_safety(request: Request):
@@ -24,6 +25,8 @@ async def get_tomorrow_bunk_safety(request: Request):
             status_code=403,
             content={"success": False, "message": "Only students can access this endpoint"}
         )
+        
+    redis = await get_redis_client()
 
     student_id = str(user.get("id"))
     prog = user.get("program")
@@ -35,6 +38,8 @@ async def get_tomorrow_bunk_safety(request: Request):
     print(f"🎓 Program: {prog} | Sem: {sem} | Year: {ac_year} | Dept: {dept}")
     
     missing = validate_student_academic(user)
+    
+    
     
     if missing:
         return JSONResponse(
@@ -55,7 +60,7 @@ async def get_tomorrow_bunk_safety(request: Request):
     
     cache_key = f"student:{student_id}:bunk:tomorrow:{tomorrow_date}"
     
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
     if cached:
         return JSONResponse(status_code=200, content=json.loads(cached))
 
@@ -276,7 +281,7 @@ async def get_tomorrow_bunk_safety(request: Request):
     }
 
     #store cache 12 hours
-    await redis_client.setex(
+    await redis.setex(
         cache_key,
         12 * 60 * 60,
         json.dumps(response)
@@ -299,6 +304,8 @@ async def get_week_plan(request: Request):
             status_code=403,
             content={"success": False, "message": "Only students can access this endpoint"}
         )
+        
+    redis = await get_redis_client()
 
     student_id = str(user.get("id"))
     prog = user.get("program")
@@ -323,7 +330,7 @@ async def get_week_plan(request: Request):
     week_end = today + timedelta(days=(6 - today.weekday()))
     cache_key = f"student:{student_id}:bunk:week:{week_end}"
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
     if cached:
         return JSONResponse(status_code=200, content=json.loads(cached))
     
@@ -544,7 +551,7 @@ async def get_week_plan(request: Request):
     #ttl till week end (approx 24h * remaining days)
     ttl = max(6 - today.weekday(), 1) * 24 * 60 * 60
 
-    await redis_client.setex(
+    await redis.setex(
         cache_key,
         ttl,
         json.dumps(response)

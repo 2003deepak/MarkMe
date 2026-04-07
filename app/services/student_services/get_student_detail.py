@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 import logging
 from bson import ObjectId
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.schemas.student import Student
 from app.models.allModel import StudentShortView
 
@@ -21,6 +21,8 @@ class MongoJSONEncoder(json.JSONEncoder):
 async def get_student_detail(request: Request):
     user_email = request.state.user.get("email")
     user_role = request.state.user.get("role")
+    
+    redis = await get_redis_client()
 
     if not user_email:
         return JSONResponse(
@@ -35,7 +37,7 @@ async def get_student_detail(request: Request):
         )
 
     cache_key_student = f"student:{user_email}"
-    cached_student = await redis_client.get(cache_key_student)
+    cached_student = await redis.get(cache_key_student)
 
     if cached_student:
         student_data = json.loads(cached_student)
@@ -95,7 +97,7 @@ async def get_student_detail(request: Request):
             response_data["dob"]
         ).strftime("%d/%m/%Y")
 
-    await redis_client.setex(
+    await redis.setex(
         cache_key_student,
         3600,
         json.dumps(response_data, cls=MongoJSONEncoder)

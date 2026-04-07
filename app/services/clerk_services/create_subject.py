@@ -4,10 +4,12 @@ from app.core.database import get_db
 from app.schemas.subject import Subject
 from pydantic import ValidationError
 from bson.objectid import ObjectId
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 async def create_subject(request, request_model):
     
+    
+    redis = await get_redis_client()
     if request.state.user.get("role") != "clerk":
         return JSONResponse(
             status_code=400,
@@ -59,7 +61,7 @@ async def create_subject(request, request_model):
         ]
 
 
-        await redis_client.delete(*cache_key_subject)
+        await redis.delete(*cache_key_subject)
 
         return JSONResponse(
             status_code=200,  

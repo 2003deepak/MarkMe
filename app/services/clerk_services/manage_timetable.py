@@ -8,8 +8,6 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from typing import Dict, List
 from beanie.odm.fields import PydanticObjectId
-import traceback
-
 from app.utils.redis_key_deletion import invalidate_redis_keys
 
 async def add_timetable(request: Request, request_model: TimeTableRequest) -> dict:

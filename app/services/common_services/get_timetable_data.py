@@ -3,7 +3,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.schemas.session import Session
 from app.models.allModel import TimeTableResponse, SessionShortView, DaySchedule
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 import json
 import logging
 from datetime import datetime
@@ -23,6 +23,8 @@ async def get_timetable_data(request: Request, department: str, program: str, se
                 "message": "User must be a teacher, admin, clerk, or student"
             }
         )
+        
+    redis = await get_redis_client()
 
     try:
         if not department.strip() or not program.strip():
@@ -65,7 +67,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
         cache_key = f"timetable:{program}:{department}:{semester}:{academic_year}"
         print(f"Checking cache with key: {cache_key}")
 
-        cached_data = await redis_client.get(cache_key)
+        cached_data = await redis.get(cache_key)
         if cached_data:
             print("Cache hit: Returning cached timetable data")
             cached_response = json.loads(cached_data)
@@ -144,7 +146,7 @@ async def get_timetable_data(request: Request, department: str, program: str, se
         }
 
         try:
-            await redis_client.setex(
+            await redis.setex(
                 name=cache_key,
                 time=3600,
                 value=json.dumps(response_data)

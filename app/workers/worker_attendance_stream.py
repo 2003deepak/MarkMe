@@ -14,10 +14,6 @@ from app.schemas.student_attendance_summary import StudentAttendanceSummary
 from app.schemas.teacher_subject_summary import TeacherSubjectSummary
 from app.schemas.subject_session_stats import SubjectSessionStats
 from app.schemas.student import Student
-from app.schemas.session import Session
-from app.schemas.exception_session import ExceptionSession
-from app.schemas.teacher import Teacher
-from app.schemas.subject import Subject
 
 # Logger
 logger = logging.getLogger(__name__)

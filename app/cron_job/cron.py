@@ -31,7 +31,7 @@ async def delete_job_id(session_id: str, date_str: str):
 
 
 # scheduler
-async def generate_sessions_for_tomorrow():
+async def generate_sessions_for_today():
     print("🔄 Scheduler started")
 
     now = datetime.now(tz=IST)
@@ -175,7 +175,7 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
     if settings.ENVIRONMENT == "production":
-        scheduler.add_job(generate_sessions_for_tomorrow, "cron", hour=0, minute=0)
+        scheduler.add_job(generate_sessions_for_today, "cron", hour=0, minute=0)
         scheduler.start()
     else:
         await generate_sessions_for_tomorrow()

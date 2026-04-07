@@ -3,8 +3,8 @@ from typing import Optional
 from fastapi import HTTPException, Request, logger
 from fastapi.responses import JSONResponse
 from numpy import random
-from sympy import false, true
-from app.core.redis import redis_client
+from app.core import redis
+from app.core.redis import get_redis_client
 import json
 from app.models.allModel import ClerkFullView, ClerkShortView, CreateClerkRequest, UpdateAcademicScopesRequest
 from app.schemas import clerk
@@ -129,7 +129,8 @@ async def create_clerk(request, request_model: CreateClerkRequest):
         )
 
     try:
-
+        
+        redis = await get_redis_client()
         existing_clerk = await Clerk.find_one(Clerk.email == request_model.email)
 
         if existing_clerk:
@@ -174,7 +175,7 @@ async def create_clerk(request, request_model: CreateClerkRequest):
         #clear redis cache for all departments
         for scope in scopes:
             cache_key = f"clerks:{scope.department_id}"
-            await redis_client.delete(cache_key)
+            await redis.delete(cache_key)
 
         #send email task
         await send_to_queue(
@@ -237,6 +238,8 @@ async def get_clerk(
 
     user = request.state.user
     role = user.get("role")
+    
+    redis = await get_redis_client()
 
     #auth
     if role != "admin":
@@ -258,7 +261,7 @@ async def get_clerk(
     #cache key (include everything)
     cache_key = f"clerks:{department or 'all'}:{program or 'all'}:{search_query or 'none'}:{page}:{limit}"
 
-    cached_data = await redis_client.get(cache_key)
+    cached_data = await redis.get(cache_key)
     if cached_data:
         print(f"✅ Cache hit: {cache_key}")
         return JSONResponse(
@@ -345,7 +348,7 @@ async def get_clerk(
     }
 
     #store in redis
-    await redis_client.setex(
+    await redis.setex(
         cache_key,
         86400,
         json.dumps(final_response)

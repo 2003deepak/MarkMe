@@ -8,7 +8,7 @@ import hashlib
 import json
 
 from app.schemas.subject_session_stats import SubjectSessionStats
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -29,6 +29,8 @@ async def get_attendance_trends(
             status_code=403,
             content={"success": False, "message": "Access denied"}
         )
+        
+    redis = await get_redis_client()
 
     # =========================
     # cache key
@@ -44,7 +46,7 @@ async def get_attendance_trends(
 
     cache_key = f"analytics:attendance_trends:{hashlib.md5(json.dumps(cache_payload, sort_keys=True).encode()).hexdigest()}"
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
     if cached:
         return JSONResponse(status_code=200, content=json.loads(cached))
 
@@ -198,6 +200,6 @@ async def get_attendance_trends(
     }
 
     # cache (5 min)
-    await redis_client.set(cache_key, json.dumps(response), ex=300)
+    await redis.set(cache_key, json.dumps(response), ex=300)
 
     return JSONResponse(status_code=200, content=response)

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import Request
+from fastapi import Request,Depends
 from fastapi.responses import JSONResponse
 from app.schemas.department import Department
 from app.schemas.program import Program
@@ -8,6 +8,7 @@ from app.core.redis import get_redis_client
 import json
 from beanie import Link
 from bson import ObjectId
+from app.core.redis import get_redis_client
 
 async def create_department(request: Request, dept_data: CreateDepartmentRequest) -> JSONResponse:
     try:
@@ -23,12 +24,12 @@ async def create_department(request: Request, dept_data: CreateDepartmentRequest
             )
 
         #exists
-        if await Department.find_one(Department.department_code == dept_data.department_code):
+        if await Department.find_one(Department.department_code == dept_data.department_code and Department.program_id == dept_data.program_code):
             return JSONResponse(
                 status_code=409,
                 content={
                     "success": False,
-                    "message": "Department already exists "
+                    "message": "Department already exists"
                 }
             )
 

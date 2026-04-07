@@ -6,7 +6,7 @@ from bson import ObjectId
 from datetime import datetime
 import json
 
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.schemas.subject import Subject
 from app.models.allModel import SubjectShortView
 
@@ -199,6 +199,8 @@ async def get_assignable_subjects(request: Request):
                 "message": "You are not authorized to access subjects"
             }
         )
+        
+    redis = await get_redis_client()
 
     scopes = user.get("academic_scopes", [])
 
@@ -219,7 +221,7 @@ async def get_assignable_subjects(request: Request):
     scope_key = "_".join(sorted([f"{d}:{p}" for d, p in zip(department_ids, program_ids)]))
     cache_key = f"assignable_subjects:{user.get('email')}"
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
     if cached:
         return JSONResponse(
             status_code=200,
@@ -322,7 +324,7 @@ async def get_assignable_subjects(request: Request):
     ]
 
     # cache it
-    await redis_client.setex(
+    await redis.setex(
         cache_key,
         300,
         json.dumps(response, cls=MongoJSONEncoder)

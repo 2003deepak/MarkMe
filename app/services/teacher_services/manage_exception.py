@@ -19,7 +19,7 @@ from app.schemas.teacher import Teacher
 from app.services.common_services.notify_users import notify_users
 from app.utils.notify import notify_students_by_session, notify_students_for_two_sessions
 from app.utils.parse_data import enqueue_exception_session, overlap_error_response
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 
 
 logger = logging.getLogger("session_exception")
@@ -38,6 +38,7 @@ async def create_session_exception(
     logger.info("create_session_exception called")
 
     user = request.state.user
+    redis = await get_redis_client()
 
     if user.get("role") != "teacher":
         return JSONResponse(
@@ -142,7 +143,7 @@ async def create_session_exception(
         await cancel_exception.insert()
 
         redis_key = f"{REDIS_SESSION_JOB_PREFIX}{session_obj.id}:{ex_date}"
-        await redis_client.delete(redis_key)
+        await redis.delete(redis_key)
 
         return JSONResponse(
             status_code=201,
@@ -422,7 +423,7 @@ async def create_session_exception(
     await source_exception.insert()
 
     redis_key = f"{REDIS_SESSION_JOB_PREFIX}{session_obj.id}:{ex_date}"
-    await redis_client.delete(redis_key)
+    await redis.delete(redis_key)
 
     if len(overlapping_sessions) == 0:
 

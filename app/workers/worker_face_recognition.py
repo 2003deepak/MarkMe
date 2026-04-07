@@ -13,7 +13,7 @@ from app.schemas.student import Student
 from app.core.database import init_db
 from insightface.app import FaceAnalysis
 from app.core.rabbitmq_config import settings
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.utils.redis_pub_sub import publish_to_channel
 from PIL import Image, ImageOps
 from app.core.faiss_cache import faiss_cache, get_cache_key
@@ -22,6 +22,8 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+redis = None  # Will be initialized in the worker function
 
 # GPU / CPU auto selection
 available_providers = ort.get_available_providers()
@@ -228,7 +230,7 @@ async def process_single_image(
             
             if student_id not in recognized_ids:
                 recognized_ids.add(student_id)
-                await redis_client.sadd(recognized_set_key, student_id)
+                await redis.sadd(recognized_set_key, student_id)
 
                 label = f"{name} ({confidence}%)"
                 color = (0, 255, 0)
@@ -287,6 +289,9 @@ async def face_worker():
     logger.info("[face_worker] Initializing DB connection...")
     await init_db()
     logger.info("[face_worker] ✅ Database connected successfully")
+     
+    redis = await get_redis_client()
+    logger.info("[face_worker] ✅ Redis client initialized and connected")
 
     logger.debug("[face_worker] Connecting to RabbitMQ: %s", settings.rabbitmq_url)
     connection = await connect_rabbitmq()
@@ -357,7 +362,7 @@ async def face_worker():
 
                     # Initialize Redis set for unique students
                     recognized_set_key = f"recognized_students:{attendance_id}"
-                    await redis_client.delete(recognized_set_key)
+                    await redis.delete(recognized_set_key)
                     logger.info("[face_worker] 🔧 Initialized Redis set: %s", recognized_set_key)
 
                     # Load student data once for the entire job
@@ -548,7 +553,7 @@ async def face_worker():
                                 "current_image": current_image,
                                 "total_images": num_images,
                                 "message": f"Error processing image {current_image}: {str(e)}",
-                                "recognized_count": len(await redis_client.smembers(recognized_set_key))
+                                "recognized_count": len(await redis.smembers(recognized_set_key))
                             })
 
                     # Final results compilation
@@ -626,7 +631,7 @@ async def face_worker():
                     # Cleanup Redis set
                     if recognized_set_key:
                         try:
-                            await redis_client.delete(recognized_set_key)
+                            await redis.delete(recognized_set_key)
                             logger.debug("[face_worker] 🧹 Cleaned up Redis set: %s", recognized_set_key)
                         except Exception as e:
                             logger.error("[face_worker] ❌ Error cleaning up Redis set: %s", str(e))

@@ -1,6 +1,6 @@
 from fastapi import HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.models.allModel import UpdateProfileRequest
 from app.utils.imagekit_uploader import upload_file_to_imagekit, delete_file
 from datetime import datetime
@@ -28,6 +28,8 @@ async def update_teacher_profile(
                 "message": "Only teachers can update their profile"
             }
         )
+        
+    redis = await get_redis_client()
 
     teacher_email = user_email
     teacher = await Teacher.find_one(Teacher.email == teacher_email)
@@ -118,7 +120,7 @@ async def update_teacher_profile(
 
         # Clear relevant caches
         cache_key_teacher = f"teacher:profile:{teacher_email}"
-        await redis_client.delete(cache_key_teacher)
+        await redis.delete(cache_key_teacher)
         print(f"Deleted cache key: {cache_key_teacher}")
 
     else:

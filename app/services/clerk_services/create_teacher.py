@@ -13,7 +13,7 @@ from beanie.operators import In
 from app.schemas.teacher import Teacher
 from app.schemas.subject import Subject
 from app.utils.publisher import send_to_queue
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from app.utils.redis_key_deletion import invalidate_redis_keys
 from app.utils.security import get_password_hash
 
@@ -31,8 +31,12 @@ async def create_teacher(request: Request, request_model):
                 "message": "You don't have the right to create a teacher"
             }
         )
+        
 
     try:
+        
+        redis = await get_redis_client()
+        
         # STEP 2 — CHECK DUPLICATE TEACHER
         if await Teacher.find_one(Teacher.email == request_model.email):
             return JSONResponse(
@@ -142,7 +146,7 @@ async def create_teacher(request: Request, request_model):
         cache_keys.add(cache_key)
 
         for key in cache_keys:
-            await redis_client.delete(key)
+            await redis.delete(key)
             
         await invalidate_redis_keys("assignable_subjects:*")
 

@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.models.allModel import SessionView
 from app.schemas.session import Session
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from beanie.operators import Eq
 from bson import DBRef, ObjectId
 import json
@@ -12,6 +12,8 @@ import json
 async def get_teacher_based_time_table(request: Request) -> JSONResponse:
     user_role = request.state.user.get("role")
     user_id   = request.state.user.get("id")
+    
+    redis = await get_redis_client()
 
     if user_role != "teacher":
         return JSONResponse(
@@ -20,7 +22,7 @@ async def get_teacher_based_time_table(request: Request) -> JSONResponse:
         )
 
     cache_key = f"timetable:teacher:{user_id}"
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
     if cached:
         return JSONResponse(status_code=200, content=json.loads(cached))
 
@@ -37,7 +39,7 @@ async def get_teacher_based_time_table(request: Request) -> JSONResponse:
             "message": "No timetable found for this teacher",
             "data": {}
         }
-        await redis_client.setex(cache_key, 3600, json.dumps(empty))
+        await redis.setex(cache_key, 3600, json.dumps(empty))
         return JSONResponse(status_code=200, content=empty)
 
     # 2. Fetch linked subject & teacher
@@ -76,5 +78,5 @@ async def get_teacher_based_time_table(request: Request) -> JSONResponse:
         "data": data_payload
     }
 
-    await redis_client.setex(cache_key, 3600, json.dumps(payload))
+    await redis.setex(cache_key, 3600, json.dumps(payload))
     return JSONResponse(status_code=200, content=payload)

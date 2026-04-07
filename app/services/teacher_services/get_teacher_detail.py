@@ -2,8 +2,7 @@ from decimal import Decimal
 from statistics import mean
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from app.core.database import get_db
-from app.core.redis import redis_client
+from app.core.redis import get_redis_client
 from bson import ObjectId
 import json
 from datetime import datetime, timedelta
@@ -48,10 +47,11 @@ async def get_teacher_me(request: Request):
         )
 
     teacher_email = user.get("email")
+    redis = await get_redis_client()
 
     cache_key = f"teacher:profile:{teacher_email}"
 
-    cached = await redis_client.get(cache_key)
+    cached = await redis.get(cache_key)
 
     if cached:
         return JSONResponse(
@@ -178,7 +178,7 @@ async def get_teacher_me(request: Request):
     teacher_json = json.dumps(teacher_data, cls=MongoJSONEncoder)
 
     #cache for 1 hour
-    await redis_client.setex(cache_key, 3600, teacher_json)
+    await redis.setex(cache_key, 3600, teacher_json)
 
     return JSONResponse(
         status_code=200,
