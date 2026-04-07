@@ -290,6 +290,8 @@ async def face_worker():
     await init_db()
     logger.info("[face_worker] ✅ Database connected successfully")
      
+     
+    global redis
     redis = await get_redis_client()
     logger.info("[face_worker] ✅ Redis client initialized and connected")
 
