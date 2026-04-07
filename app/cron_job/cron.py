@@ -12,6 +12,12 @@ from app.core.config import settings
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.swap_approval import SwapApproval
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+)
 
 
 REDIS_SESSION_JOB_PREFIX = "attendance:job:"
