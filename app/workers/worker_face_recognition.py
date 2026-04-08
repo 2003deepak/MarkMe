@@ -23,7 +23,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-redis = None  # Will be initialized in the worker function
 
 # GPU / CPU auto selection
 available_providers = ort.get_available_providers()
@@ -134,7 +133,7 @@ async def load_student_data(semester, department, program):
         return data
 
 async def process_single_image(
-    img, current_image, student_data, recognized_set_key, attendance_id, recognized_ids
+    redis,img, current_image, student_data, recognized_set_key, attendance_id, recognized_ids
 ):
     """Process a single image and return results"""
     logger.debug("[face_worker] Processing image %d for attendance_id: %s", current_image, attendance_id)
@@ -291,8 +290,6 @@ async def face_worker():
     logger.info("[face_worker] ✅ Database connected successfully")
      
      
-    global redis
-    redis = await get_redis_client()
     logger.info("[face_worker] ✅ Redis client initialized and connected")
 
     logger.debug("[face_worker] Connecting to RabbitMQ: %s", settings.rabbitmq_url)
@@ -308,6 +305,8 @@ async def face_worker():
     logger.info("[face_worker] 👂 Listening on queue: face_recog_queue")
 
     async with queue.iterator() as messages:
+        
+        redis = await get_redis_client()
         
         async for message in messages:
             
@@ -467,6 +466,7 @@ async def face_worker():
                             # Process the image
                             logger.debug("[face_worker] 🔍 Running face detection on image %d", current_image)
                             image_results, annotated_img, new_recognitions = await process_single_image(
+                                redis,
                                 img,
                                 current_image,
                                 student_data,
