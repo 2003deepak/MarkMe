@@ -54,11 +54,11 @@ async def process_session(message: aio_pika.IncomingMessage):
             is_exception = payload.get("is_exception", False)
             exception_id = payload.get("exception_id")
             start_ts = payload.get("start_time_timestamp")
-            
-            
+
+
             now = datetime.now(tz=IST)
             start_time = datetime.fromtimestamp(start_ts, tz=IST)
-            
+
             print("\n============== WORKER DEBUG ==============")
             print("SESSION:", session_id)
             print("JOB ID (payload):", job_id)
@@ -70,15 +70,10 @@ async def process_session(message: aio_pika.IncomingMessage):
                 logger.error("❌ Invalid payload")
                 return
 
-            redis_job_id = await get_job_id_from_redis(session_id, date_str)
-            
+            redis_job_id = await get_job_id_from_redis(redis,session_id, date_str)
+
             print("REDIS JOB ID:", redis_job_id)
             print("PAYLOAD JOB ID:", job_id)
-
-            if redis_job_id:
-                print("REDIS == PAYLOAD ?", redis_job_id.decode() == job_id)
-            else:
-                print("REDIS KEY MISSING")
 
             print("=========================================\n")
 

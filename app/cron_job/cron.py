@@ -168,7 +168,7 @@ async def generate_sessions_for_today():
 
         if settings.ENVIRONMENT == "development":
             delay = 5 + i * 5
-            
+
         # timing debug
         execute_at = start_time - timedelta(minutes=15)
 
@@ -197,7 +197,7 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
     if settings.ENVIRONMENT == "production":
-        scheduler.add_job(generate_sessions_for_today, "cron", hour=11, minute=50)
+        scheduler.add_job(generate_sessions_for_today, "cron", hour=0, minute=0)
         scheduler.start()
     else:
         await generate_sessions_for_today()
