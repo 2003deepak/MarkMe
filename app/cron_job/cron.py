@@ -12,29 +12,36 @@ from app.core.config import settings
 from app.schemas.session import Session
 from app.schemas.exception_session import ExceptionSession
 from app.schemas.swap_approval import SwapApproval
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+)
 
 
 REDIS_SESSION_JOB_PREFIX = "attendance:job:"
 SESSION_QUEUE_NAME = "session_queue"
 IST = ZoneInfo("Asia/Kolkata")
 
-redis = None
-
-
 # redis
-async def store_job_id(session_id: str, date_str: str, job_id: str):
+async def store_job_id(redis, session_id: str, date_str: str, job_id: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
     await redis.set(key, job_id, ex=48 * 3600)
 
+    #debug
+    val = await redis.get(key)
+    print("STORED:", key, val)
 
-async def delete_job_id(session_id: str, date_str: str):
+async def delete_job_id(redis, session_id: str, date_str: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
     await redis.delete(key)
-
 
 # scheduler
 async def generate_sessions_for_today():
     print("🔄 Scheduler started")
+
+    redis = await get_redis_client()
 
     now = datetime.now(tz=IST)
     target_date = now.date()
@@ -66,7 +73,7 @@ async def generate_sessions_for_today():
                 # CANCEL
                 if action == "CANCEL":
                     print(f"🚫 Cancelled {session_id}")
-                    await delete_job_id(session_id, date_str)
+                    await delete_job_id(redis , session_id, date_str)
                     continue
 
                 # RESCHEDULE
@@ -86,7 +93,7 @@ async def generate_sessions_for_today():
                     ).replace(tzinfo=IST)
 
             job_id = str(uuid.uuid4())
-            await store_job_id(session_id, date_str, job_id)
+            await store_job_id(redis, session_id, date_str, job_id)
 
             # subject resolution
             if isinstance(session.subject, DBRef):
@@ -188,9 +195,6 @@ async def generate_sessions_for_today():
 async def main():
     await init_db()
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
-    
-    global redis
-    redis = await get_redis_client()
 
     if settings.ENVIRONMENT == "production":
         scheduler.add_job(generate_sessions_for_today, "cron", hour=11, minute=50)

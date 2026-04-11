@@ -20,8 +20,6 @@ from app.core.redis import get_redis_client
 IST = ZoneInfo("Asia/Kolkata")
 REDIS_SESSION_JOB_PREFIX = "attendance:job:"
 
-redis = None
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("session_worker")
 
@@ -34,15 +32,17 @@ async def connect_rabbitmq():
         except Exception as e:
             print(f"[session_worker] RabbitMQ not ready, retrying... {e}")
             await asyncio.sleep(5)
-            
+
 # redis
-async def get_job_id_from_redis(session_id: str, date_str: str):
+async def get_job_id_from_redis(redis, session_id: str, date_str: str):
     key = f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}"
     return await redis.get(key)
 
 
 # worker
 async def process_session(message: aio_pika.IncomingMessage):
+
+    redis = await get_redis_client()
     async with message.process():
         try:
             payload = json.loads(message.body.decode())
@@ -90,12 +90,12 @@ async def process_session(message: aio_pika.IncomingMessage):
                 logger.info("⏰ Session already passed")
                 await redis.delete(f"{REDIS_SESSION_JOB_PREFIX}{session_id}:{date_str}")
                 return
-            
+
             if app_settings.ENVIRONMENT == "production":
                 if (start_time - now) > timedelta(minutes=15):
                     logger.info("⏳ Not within execution window")
                     return
-            
+
             exception = None
             swap = None
 
@@ -166,9 +166,6 @@ async def process_session(message: aio_pika.IncomingMessage):
 
 async def start_worker():
     await init_db()
-    
-    global redis
-    redis = await get_redis_client()
 
     connection = await connect_rabbitmq()
     async with connection:
