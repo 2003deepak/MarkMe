@@ -161,6 +161,19 @@ async def generate_sessions_for_today():
 
         if settings.ENVIRONMENT == "development":
             delay = 5 + i * 5
+            
+        # timing debug
+        execute_at = start_time - timedelta(minutes=15)
+
+        print("\n================ CRON DEBUG ================")
+        print("SESSION:", payload["session_id"])
+        print("JOB ID:", payload["job_id"])
+        print("NOW (IST):", now)
+        print("START TIME:", start_time)
+        print("EXECUTE AT (should run):", execute_at)
+        print("DELAY (sec):", delay)
+        print("DELAY (ms):", int(delay * 1000))
+        print("==========================================\n")
 
         await send_to_queue(
             SESSION_QUEUE_NAME,
@@ -180,7 +193,7 @@ async def main():
     redis = await get_redis_client()
 
     if settings.ENVIRONMENT == "production":
-        scheduler.add_job(generate_sessions_for_today, "cron", hour=0, minute=0)
+        scheduler.add_job(generate_sessions_for_today, "cron", hour=11, minute=50)
         scheduler.start()
     else:
         await generate_sessions_for_today()

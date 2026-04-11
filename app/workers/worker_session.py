@@ -29,10 +29,10 @@ async def connect_rabbitmq():
     while True:
         try:
             connection = await aio_pika.connect_robust(settings.rabbitmq_url)
-            print("[cleanup_worker] Connected to RabbitMQ")
+            print("[session_worker] Connected to RabbitMQ")
             return connection
         except Exception as e:
-            print(f"[cleanup_worker] RabbitMQ not ready, retrying... {e}")
+            print(f"[session_worker] RabbitMQ not ready, retrying... {e}")
             await asyncio.sleep(5)
             
 # redis
@@ -54,18 +54,37 @@ async def process_session(message: aio_pika.IncomingMessage):
             is_exception = payload.get("is_exception", False)
             exception_id = payload.get("exception_id")
             start_ts = payload.get("start_time_timestamp")
+            
+            
+            now = datetime.now(tz=IST)
+            start_time = datetime.fromtimestamp(start_ts, tz=IST)
+            
+            print("\n============== WORKER DEBUG ==============")
+            print("SESSION:", session_id)
+            print("JOB ID (payload):", job_id)
+            print("NOW:", now)
+            print("START TIME:", start_time)
+            print("TIME DIFF (min):", (start_time - now).total_seconds() / 60)
 
             if not session_id or not date_str or not job_id or not start_ts:
                 logger.error("❌ Invalid payload")
                 return
 
             redis_job_id = await get_job_id_from_redis(session_id, date_str)
+            
+            print("REDIS JOB ID:", redis_job_id)
+            print("PAYLOAD JOB ID:", job_id)
+
+            if redis_job_id:
+                print("REDIS == PAYLOAD ?", redis_job_id.decode() == job_id)
+            else:
+                print("REDIS KEY MISSING")
+
+            print("=========================================\n")
+
             if redis_job_id != job_id:
                 logger.info("🚫 Stale or cancelled job")
                 return
-
-            now = datetime.now(tz=IST)
-            start_time = datetime.fromtimestamp(start_ts, tz=IST)
 
             if start_time < now:
                 logger.info("⏰ Session already passed")

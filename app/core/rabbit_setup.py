@@ -25,6 +25,14 @@ async def setup_rabbitmq():
     connection = await connect_rabbitmq()
     channel = await connection.channel()
 
+    # normal exchange
+    normal_exchange = await channel.declare_exchange(
+        "normal_exchange",
+        type="direct",
+        durable=True
+    )
+
+    # delayed exchange
     delayed_exchange = await channel.declare_exchange(
         "delayed_exchange",
         type="x-delayed-message",
@@ -38,7 +46,11 @@ async def setup_rabbitmq():
             durable=True,
             arguments={"x-max-priority": max_priority}
         )
+
+        # bind to BOTH exchanges
+        await queue.bind(normal_exchange, routing_key=queue_name)
         await queue.bind(delayed_exchange, routing_key=queue_name)
-        print(f"[RabbitMQ] Queue '{queue_name}' declared")
+
+        print(f"[RabbitMQ] Queue '{queue_name}' bound to both exchanges")
 
     await connection.close()

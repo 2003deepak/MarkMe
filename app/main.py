@@ -28,22 +28,18 @@ WHITELIST = [
 async def lifespan(app: FastAPI):
     print("📦 Connecting to DB...")
     await init_db()
-    
-    # redis connect
+
+    print("🔌 Connecting to Redis...")
     await redis_manager.connect()
 
+    print("🐰 Setting up RabbitMQ...")
     await setup_rabbitmq()
 
-    yield
-
-    print("🔄 Initializing RabbitMQ...")
-    await setup_rabbitmq()
-
-    yield  # Application runs here
+    yield  # app runs here
 
     print("🧹 Closing DB connection...")
     await close_db()
-
+    
 # Initialize FastAPI app with lifespan
 app = FastAPI(
     title=settings.PROJECT_NAME,
