@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # MongoDB settings
     MONGO_URI: str 
     MONGO_DB_NAME: str
+    MONGO_ROOT_PASSWORD: str
 
     # JWT settings
     SECRET_KEY: str  
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
     # Redis settings
     REDIS_HOST: str 
     REDIS_PORT: int 
+    REDIS_PASSWORD: str
 
     # Mail settings    
     MAIL_USERNAME: str

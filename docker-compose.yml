@@ -194,31 +194,45 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --protected-mode yes
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    env_file:
+      - .env
 
   # mongodb (internal only)
   mongo:
     image: mongo:7
     container_name: mongo
     restart: unless-stopped
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
+    command: >
+      mongod
+      --replSet rs0
+      --auth
+      --bind_ip_all
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: >
+        mongosh -u admin -p $MONGO_ROOT_PASSWORD --eval "db.adminCommand('ping')"
       interval: 10s
       timeout: 5s
       retries: 5
+    env_file:
+      - .env
 
   # mongo replica init (runs once)
   mongo-init:
@@ -229,7 +243,7 @@ services:
     restart: "no"
     entrypoint: >
       bash -c "
-      mongosh --host mongo:27017 --eval '
+      mongosh -u admin -p $MONGO_ROOT_PASSWORD --host mongo:27017 --eval '
         try {
           rs.initiate({
             _id: \"rs0\",
@@ -238,6 +252,8 @@ services:
         } catch(e) { print(e) }
       '
       "
+    env_file:
+      - .env
 
 volumes:
   rabbitmq_data:
